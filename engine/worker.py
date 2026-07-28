@@ -65,7 +65,7 @@ class BatchWorker:
 
     def _run_batch(self, config: AppConfig, base_dir: Path) -> None:
         try:
-            process_batch(
+            ok = process_batch(
                 config,
                 base_dir,
                 log_callback=self._log,
@@ -74,8 +74,10 @@ class BatchWorker:
             )
             if self._cancel.is_set():
                 self._done and self._done(False, "任务已取消")
-            else:
+            elif ok:
                 self._done and self._done(True, "批量处理完成")
+            else:
+                self._done and self._done(False, "部分或全部任务处理失败")
         except Exception as e:
             self._done and self._done(False, f"处理异常: {e}")
 

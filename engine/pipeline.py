@@ -9,6 +9,7 @@ import random
 import shutil
 import subprocess
 import tempfile
+import textwrap
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -22,13 +23,22 @@ from engine.ffmpeg_builder import (
 )
 
 
+def _wrap_subtitles(segments: list[dict], max_chars: int) -> list[dict]:
+    """Wrap recognized text without changing timestamps."""
+    width = max(1, max_chars)
+    return [
+        {**segment, "text": "\n".join(textwrap.wrap(segment["text"], width=width))}
+        for segment in segments
+    ]
+
+
 def process_batch(
     config: AppConfig,
     base_dir: Path,
     log_callback: Optional[Callable[[str], None]] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
-) -> None:
+) -> bool:
     """批量处理主素材文件夹中的所有视频。
 
     Args:
@@ -48,11 +58,37 @@ def process_batch(
         path = Path(value)
         return path if path.is_absolute() else base_dir / path
 
+    def run_ffmpeg(command: list[str]) -> Optional[subprocess.CompletedProcess]:
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        while process.poll() is None:
+            if cancel_check and cancel_check():
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                log("[取消] 已终止当前 FFmpeg")
+                return None
+            try:
+                process.communicate(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                continue
+        stdout, stderr = process.communicate()
+        return subprocess.CompletedProcess(
+            command, process.returncode, stdout, stderr
+        )
+
     # 解析所有路径
     main_folder = resolve(config.main_folder)
     background_folder = resolve(config.background_folder)
     output_folder = resolve(config.output_folder)
     sticker_folder = resolve(config.sticker_folder)
+    moving_sticker_folder = resolve(
+        config.moving_sticker_folder or config.sticker_folder
+    )
     scanlight_folder = resolve(config.scanlight_folder)
     kaimu_folder = resolve(config.kaimu_folder)
 
@@ -64,10 +100,10 @@ def process_batch(
 
     if not mains:
         log("[错误] 主素材文件夹中没有视频文件")
-        return
+        return False
     if not backgrounds:
         log("[错误] 背景视频文件夹中没有视频文件")
-        return
+        return False
 
     log(f"主素材: {len(mains)} 个, 背景视频: {len(backgrounds)} 个")
     if config.sticker_enabled:
@@ -82,24 +118,30 @@ def process_batch(
 
     total_jobs = len(mains) * config.repeat_count
     current_job = 0
+    failed_jobs = 0
 
     for main_video in mains:
         if cancel_check and cancel_check():
             log("[取消] 用户停止了处理")
-            return
+            return False
 
         log(f"\n━━━ 处理: {main_video.name} ━━━")
 
         for repeat in range(config.repeat_count):
             if cancel_check and cancel_check():
                 log("[取消] 用户停止了处理")
-                return
+                return False
 
             current_job += 1
             if progress_callback:
                 progress_callback(current_job, total_jobs)
 
             # 随机选择素材
+            backgrounds = [path for path in backgrounds if path.exists()]
+            if not backgrounds:
+                log("  [错误] 可用辅助视频已耗尽")
+                failed_jobs += total_jobs - current_job + 1
+                return False
             background = random.choice(backgrounds)
 
             sticker_files = []
@@ -112,9 +154,12 @@ def process_batch(
                 except Exception:
                     layers = []
                 num_layers = len(layers) if layers else 1
-                for _ in range(num_layers):
-                    if sfiles:
-                        sticker_files.append(random.choice(sfiles))
+                if config.sticker_switch_sec > 0:
+                    sticker_files = sfiles
+                else:
+                    for _ in range(num_layers):
+                        if sfiles:
+                            sticker_files.append(random.choice(sfiles))
 
             scanlight_file = None
             if config.scanlight_enabled:
@@ -130,7 +175,9 @@ def process_batch(
 
             mover_files = []
             if config.moving_sticker_enabled:
-                mfiles = list_media(str(sticker_folder), VIDEO_EXTS | IMAGE_EXTS)
+                mfiles = list_media(
+                    str(moving_sticker_folder), VIDEO_EXTS | IMAGE_EXTS
+                )
                 import json as _json
                 try:
                     mlayers = _json.loads(config.mover_layers_json) if config.mover_layers_json else []
@@ -184,17 +231,27 @@ def process_batch(
                 log(f"    扫光: {scanlight_file.name}")
 
             try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                result = run_ffmpeg(cmd)
+                if result is None:
+                    compose_output.unlink(missing_ok=True)
+                    return False
+                if result.returncode != 0 and config.gpu:
+                    cpu_cmd = [
+                        "libx264" if item == "h264_nvenc"
+                        else "libx265" if item == "hevc_nvenc"
+                        else item
+                        for item in cmd
+                    ]
+                    log("  [GPU] 编码失败，自动回退 CPU")
+                    result = run_ffmpeg(cpu_cmd)
+                    if result is None:
+                        compose_output.unlink(missing_ok=True)
+                        return False
                 if result.returncode != 0:
+                    failed_jobs += 1
                     log(f"  [失败] ffmpeg 返回码 {result.returncode}")
                     stderr_lines = result.stderr.strip().split("\n")
-                    for line in stderr_lines[-5:]:
+                    for line in stderr_lines[-15:]:
                         if line.strip():
                             log(f"    {line.strip()}")
                     continue  # 跳过字幕处理，继续下一个
@@ -212,6 +269,7 @@ def process_batch(
                         current_video,
                         blurred_output,
                         blur_strength=config.face_blur_strength,
+                        blur_expand=config.face_blur_expand,
                         detect_every=config.face_detect_every,
                         log_callback=log,
                         cancel_check=cancel_check,
@@ -226,7 +284,11 @@ def process_batch(
                         current_video = blurred_output
                         log(f"  [人脸] 模糊完成: {blurred_output.name}")
                     else:
-                        log("  [人脸] 模糊失败，使用原视频")
+                        failed_jobs += 1
+                        log("  [人脸] 模糊失败，本任务不生成伪成功成品")
+                        compose_output.unlink(missing_ok=True)
+                        blurred_output.unlink(missing_ok=True)
+                        continue
 
                 # ── Pass 3: 字幕识别 + 烧录 ──
                 if do_subtitle:
@@ -259,6 +321,13 @@ def process_batch(
                             log_callback=log,
                         )
                         segments, lang = engine.transcribe(audio_file)
+                        segments = _wrap_subtitles(segments, config.subtitle_max_chars)
+                        if not engine.is_available:
+                            failed_jobs += 1
+                            log("  [字幕] 模型不可用，本任务失败")
+                            audio_file.unlink(missing_ok=True)
+                            current_video.unlink(missing_ok=True)
+                            continue
 
                         if not segments:
                             log("  [字幕] 未识别到语音，保留无字幕版本")
@@ -268,6 +337,10 @@ def process_batch(
                         else:
                             # 生成 ASS 字幕（比 SRT 样式好）
                             style = get_style(config.subtitle_style)
+                            style.font_size = config.subtitle_font_size
+                            style.margin_v = int(
+                                h * max(0, 100 - config.subtitle_pos_y) / 100
+                            )
                             w, h = map(int, config.resolution.split("x"))
                             ass_path = output_folder / f"{main_video.stem}{suffix}.ass"
                             generate_ass(segments, ass_path, style, w, h)
@@ -315,12 +388,27 @@ def process_batch(
                 # ── Pass 4: MP4 后处理 (元数据编辑) ──
                 if config.mp4_enabled and output_path.exists():
                     from engine.mp4_tool import process_mp4
+                    if config.mp4_hevc:
+                        encoded = output_path.with_name(output_path.stem + "_hevc.mp4")
+                        reencode = subprocess.run(
+                            [
+                                "ffmpeg", "-y", "-i", str(output_path),
+                                "-c:v", "libx265", "-crf", str(config.crf),
+                                "-preset", config.preset, "-c:a", "copy", str(encoded),
+                            ],
+                            capture_output=True, text=True,
+                        )
+                        if reencode.returncode == 0:
+                            encoded.replace(output_path)
+                        else:
+                            log("  [MP4] H.265 二次编码失败，保留原编码")
+                            encoded.unlink(missing_ok=True)
                     log("  [MP4] 元数据后处理...")
-                    process_mp4(
+                    mp4_ok = process_mp4(
                         output_path,
                         track_id=(
-                            None if not config.mp4_id_follow
-                            else None  # id_follow mode: keep original
+                            None if config.mp4_id_follow
+                            else config.mp4_track_id
                         ),
                         random_size=config.mp4_random_size,
                         layer_video=config.mp4_layer_video,
@@ -328,6 +416,9 @@ def process_batch(
                         elst_ms=config.mp4_elst_ms,
                         log_callback=log,
                     )
+                    if not mp4_ok:
+                        failed_jobs += 1
+                        log("  [MP4] 后处理未生效，本任务标记失败")
 
                 # ── 清理中间文件 ──
                 if needs_temp:
@@ -342,17 +433,21 @@ def process_batch(
                 if config.delete_used_aux:
                     try:
                         background.unlink()
+                        backgrounds.remove(background)
                         log(f"    已删除辅助视频: {background.name}")
                     except OSError:
                         pass
 
             except FileNotFoundError:
                 log("  [错误] 找不到 ffmpeg！请确保 ffmpeg 在系统 PATH 中")
-                return
+                return False
             except Exception as e:
+                failed_jobs += 1
                 log(f"  [异常] {e}")
 
-    log(f"\n══════ 批量处理完成，共 {total_jobs} 个任务 ══════")
+    ok = failed_jobs == 0
+    log(f"\n══════ 批量处理结束，成功 {total_jobs - failed_jobs}，失败 {failed_jobs} ══════")
+    return ok
 
 
 def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = None) -> bool:

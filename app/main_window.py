@@ -9,6 +9,7 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -18,12 +19,13 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
     QInputDialog,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 
 from config import AppConfig
 from app.theme import DARK_QSS
@@ -41,21 +43,31 @@ from engine.worker import BatchWorker
 
 
 class MainWindow(QMainWindow):
+    log_received = Signal(str)
+    progress_received = Signal(int, int)
+    work_done = Signal(bool, str)
+
     def __init__(self, config: AppConfig, root_dir: Path):
         super().__init__()
         self.config = config
         self.root_dir = root_dir
         self._preset_mgr = PresetManager(root_dir / "配置文件" / "参数预设")
+        self._import_reference_presets()
+        if not self._preset_mgr.list_presets():
+            self._preset_mgr.save("默认预设", config)
 
-        self.setWindowTitle("FlowCut Studio — 视频批量合成")
-        self.setGeometry(100, 60, 1320, 860)
-        self.setMinimumSize(1100, 700)
+        self.setWindowTitle("风无忧 · 视频剪辑软件")
+        self.setGeometry(60, 30, 1680, 940)
+        self.setMinimumSize(1280, 720)
         self.setStyleSheet(DARK_QSS)
 
+        self.log_received.connect(self._on_log)
+        self.progress_received.connect(self._on_progress)
+        self.work_done.connect(self._on_done)
         self._worker = BatchWorker(
-            log_callback=self._on_log,
-            progress_callback=self._on_progress,
-            done_callback=self._on_done,
+            log_callback=self.log_received.emit,
+            progress_callback=self.progress_received.emit,
+            done_callback=self.work_done.emit,
         )
 
         self._setup_ui()
@@ -64,154 +76,202 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root_layout = QVBoxLayout(central)
-        root_layout.setContentsMargins(14, 10, 14, 10)
-        root_layout.setSpacing(8)
+        root_layout.setContentsMargins(6, 5, 6, 5)
+        root_layout.setSpacing(6)
 
-        # ── 顶部 Header ──
-        header = QWidget()
+        header = QFrame()
+        header.setObjectName("panel")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(8, 4, 8, 4)
-
-        title = QLabel("FlowCut Studio")
-        title.setObjectName("title")
-        header_layout.addWidget(title)
-
-        subtitle = QLabel("  视频批量合成")
-        subtitle.setObjectName("subtitle")
-        header_layout.addWidget(subtitle)
-
+        header_layout.setContentsMargins(6, 3, 8, 3)
+        mode = QPushButton("HDH蒙版模式")
+        mode.setObjectName("accent")
+        header_layout.addWidget(mode)
+        tutorial = QPushButton("更新与教程")
+        tutorial.setFlat(True)
+        header_layout.addWidget(tutorial)
         header_layout.addStretch()
-
         self._status_label = QLabel("● 就绪")
         self._status_label.setObjectName("status")
         header_layout.addWidget(self._status_label)
-
         root_layout.addWidget(header)
 
-        # ── 模式导航 ──
-        mode_bar = QWidget()
-        mode_layout = QHBoxLayout(mode_bar)
-        mode_layout.setContentsMargins(8, 2, 8, 2)
-        mode_layout.setSpacing(4)
-        self._mode_buttons: dict[str, QPushButton] = {}
-        for mode_name in ["鹤漫剪辑", "语音识别", "人脸处理", "MP4工具"]:
-            btn = QPushButton(mode_name)
-            btn.setCheckable(True)
-            btn.setStyleSheet(
-                "QPushButton { background: #1a2632; color: #8899a6; border: 1px solid #2d3a47; "
-                "border-radius: 4px; padding: 5px 14px; font-size: 11px; }"
-                "QPushButton:checked { background: #6366f1; color: white; border-color: #6366f1; }"
-                "QPushButton:hover:!checked { background: #1f2d3b; color: #c4c9ef; }"
-            )
-            btn.clicked.connect(lambda checked, n=mode_name: self._switch_mode(n))
-            mode_layout.addWidget(btn)
-            self._mode_buttons[mode_name] = btn
-        self._mode_buttons["鹤漫剪辑"].setChecked(True)
-        mode_layout.addStretch()
-        root_layout.addWidget(mode_bar)
-
-        # ── 分割线 ──
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("background-color: #2d3a47; max-height: 1px;")
-        root_layout.addWidget(sep)
-
-        # ── 主体 Splitter ──
         splitter = QSplitter(Qt.Horizontal)
 
-        # 左侧面板
-        left_panel = QWidget()
+        # Left: folders, controls, presets and log.
+        left_panel = QFrame()
+        left_panel.setObjectName("panel")
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(8, 8, 8, 8)
-        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(5, 4, 5, 5)
+        left_layout.setSpacing(5)
+        self._files_page = FilesPage(self.config)
+        left_layout.addWidget(self._files_page, 4)
 
-        # 预览区
-        preview_header = QLabel("实时预览")
-        preview_header.setStyleSheet("color: #f0f4f8; font-weight: bold; font-size: 13px;")
-        left_layout.addWidget(preview_header)
+        controls = QFrame()
+        controls.setObjectName("panel")
+        controls_layout = QVBoxLayout(controls)
+        controls_layout.setContentsMargins(7, 6, 7, 6)
+        controls_layout.setSpacing(5)
+        row = QHBoxLayout()
+        self._btn_start = QPushButton("▶ 开始处理")
+        self._btn_start.setObjectName("accent")
+        self._btn_start.clicked.connect(self._on_start)
+        row.addWidget(self._btn_start)
+        self._btn_stop = QPushButton("■ 停止处理")
+        self._btn_stop.setObjectName("danger")
+        self._btn_stop.clicked.connect(self._on_stop)
+        self._btn_stop.setEnabled(False)
+        row.addWidget(self._btn_stop)
+        self._btn_test = QPushButton("🔍 检查视频")
+        self._btn_test.clicked.connect(self._on_self_test)
+        row.addWidget(self._btn_test)
+        clear_log = QPushButton("清空日志")
+        clear_log.clicked.connect(self._log_clear)
+        row.addWidget(clear_log)
+        controls_layout.addLayout(row)
 
-        self._preview = PreviewCanvas(self.config, self.root_dir)
-        left_layout.addWidget(self._preview, stretch=1)
+        batch_row = QHBoxLayout()
+        self._delete_aux = QCheckBox("删除已用辅助视频")
+        self._delete_aux.setChecked(self.config.delete_used_aux)
+        self._delete_aux.toggled.connect(
+            lambda value: setattr(self.config, "delete_used_aux", value)
+        )
+        batch_row.addWidget(self._delete_aux)
+        batch_row.addStretch()
+        batch_row.addWidget(QLabel("每个素材处理次数："))
+        self._repeat_count = QSpinBox()
+        self._repeat_count.setRange(1, 100)
+        self._repeat_count.setValue(self.config.repeat_count)
+        self._repeat_count.valueChanged.connect(
+            lambda value: setattr(self.config, "repeat_count", value)
+        )
+        batch_row.addWidget(self._repeat_count)
+        controls_layout.addLayout(batch_row)
 
-        # 进度条
+        row = QHBoxLayout()
+        row.addWidget(QLabel("参数预设："))
+        self._preset_combo = QComboBox()
+        row.addWidget(self._preset_combo, 1)
+        self._btn_load_preset = QPushButton("应用")
+        self._btn_load_preset.clicked.connect(self._on_load_preset)
+        row.addWidget(self._btn_load_preset)
+        self._btn_save_preset = QPushButton("存为")
+        self._btn_save_preset.clicked.connect(self._on_save_preset)
+        row.addWidget(self._btn_save_preset)
+        self._btn_delete_preset = QPushButton("删除")
+        self._btn_delete_preset.setObjectName("danger")
+        self._btn_delete_preset.clicked.connect(self._on_delete_preset)
+        row.addWidget(self._btn_delete_preset)
+        controls_layout.addLayout(row)
+        self._refresh_presets()
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setValue(0)
         self._progress.hide()
-        left_layout.addWidget(self._progress)
-
-        # 操作按钮
-        actions = QWidget()
-        actions_layout = QVBoxLayout(actions)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(6)
-
-        self._btn_start = QPushButton("▶  开始处理")
-        self._btn_start.setObjectName("accent")
-        self._btn_start.clicked.connect(self._on_start)
-        actions_layout.addWidget(self._btn_start)
-
-        btn_row = QHBoxLayout()
-        self._btn_stop = QPushButton("■  停止")
-        self._btn_stop.setObjectName("danger")
-        self._btn_stop.clicked.connect(self._on_stop)
-        self._btn_stop.setEnabled(False)
-        btn_row.addWidget(self._btn_stop)
-
-        self._btn_test = QPushButton("🔧  环境检查")
-        self._btn_test.clicked.connect(self._on_self_test)
-        btn_row.addWidget(self._btn_test)
-        actions_layout.addLayout(btn_row)
-
-        self._btn_output = QPushButton("📂  打开成品目录")
-        self._btn_output.clicked.connect(self._on_open_output)
-        actions_layout.addWidget(self._btn_output)
-
-        self._btn_save_preset = QPushButton("💾  存为预设")
-        self._btn_save_preset.clicked.connect(self._on_save_preset)
-        actions_layout.addWidget(self._btn_save_preset)
-
-        self._btn_load_preset = QPushButton("📋  加载预设")
-        self._btn_load_preset.clicked.connect(self._on_load_preset)
-        actions_layout.addWidget(self._btn_load_preset)
-
-        left_layout.addWidget(actions)
-
+        controls_layout.addWidget(self._progress)
+        left_layout.addWidget(controls)
+        self._log = LogPanel("处理日志")
+        left_layout.addWidget(self._log, 5)
         splitter.addWidget(left_panel)
 
-        # 右侧面板：标签页 + 日志
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(8)
+        # Center: large preview canvas.
+        center_panel = QFrame()
+        center_panel.setObjectName("panel")
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(7, 5, 7, 7)
+        preview_bar = QHBoxLayout()
+        preview_title = QLabel("● 可视化预览（与导出参数同步）")
+        preview_title.setStyleSheet("color:#ff5b57")
+        preview_bar.addWidget(preview_title)
+        preview_bar.addStretch()
+        refresh = QPushButton("刷新")
+        refresh.clicked.connect(self._preview_refresh)
+        preview_bar.addWidget(refresh)
+        center_layout.addLayout(preview_bar)
+        self._preview = PreviewCanvas(self.config, self.root_dir)
+        center_layout.addWidget(self._preview, 1)
+        hint = QLabel("⚠ 请选择有效的主视频和辅助视频文件夹")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet("color:#b3a26b")
+        center_layout.addWidget(hint)
+        splitter.addWidget(center_panel)
 
+        # Right: reference-style compact parameter tabs.
+        right_panel = QFrame()
+        right_panel.setObjectName("panel")
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(4, 4, 4, 4)
         self._tabs = QTabWidget()
+        self._tabs.tabBar().setExpanding(True)
+        self._tabs.tabBar().setUsesScrollButtons(False)
+        pip_page = PipPage(self.config)
+        sticker_page = StickerPage(self.config)
+        picture_page = QWidget()
+        picture_layout = QVBoxLayout(picture_page)
+        picture_layout.setContentsMargins(0, 0, 0, 0)
+        picture_tabs = QTabWidget()
+        picture_tabs.addTab(pip_page, "画中画")
+        picture_tabs.addTab(sticker_page, "贴纸/扫光")
+        picture_layout.addWidget(picture_tabs)
 
         self._pages = {
-            "文件与批量": FilesPage(self.config),
-            "画布与编码": CanvasPage(self.config),
-            "蒙版与横条": MaskPage(self.config),
-            "画中画与动态": PipPage(self.config),
-            "贴纸与扫光": StickerPage(self.config),
-            "开幕、封面与字幕": OpeningPage(self.config),
-            "人脸、调色与后处理": FaceColorPage(self.config),
+            "文件与批量": self._files_page,
+            "基础参数": CanvasPage(self.config),
+            "蒙版": MaskPage(self.config),
+            "画中画": pip_page,
+            "贴纸": sticker_page,
+            "封面": OpeningPage(self.config, "cover"),
+            "字幕设置": OpeningPage(self.config, "subtitle"),
+            "画面滤镜": FaceColorPage(self.config, "color"),
+            "人脸遮挡": FaceColorPage(self.config, "face"),
+            "卡秒": FaceColorPage(self.config, "mp4"),
         }
-        for name, page in self._pages.items():
+        tabs = (
+            ("基础参数", self._pages["基础参数"]),
+            ("蒙版", self._pages["蒙版"]),
+            ("贴图", picture_page),
+            ("封面", self._pages["封面"]),
+            ("画面滤镜", self._pages["画面滤镜"]),
+            ("字幕设置", self._pages["字幕设置"]),
+            ("人脸遮挡", self._pages["人脸遮挡"]),
+            ("卡秒", self._pages["卡秒"]),
+        )
+        for name, page in tabs:
             self._tabs.addTab(page, name)
-
         right_layout.addWidget(self._tabs, stretch=1)
-
-        # 日志
-        self._log = LogPanel("任务日志")
-        right_layout.addWidget(self._log)
-
         splitter.addWidget(right_panel)
-
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 7)
-        splitter.setSizes([330, 950])
-
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([390, 820, 430])
         root_layout.addWidget(splitter, stretch=1)
+
+    def _preview_refresh(self) -> None:
+        self._preview.schedule_refresh()
+
+    def _import_reference_presets(self) -> None:
+        candidates = list(
+            self.root_dir.parent.glob(
+                "风无忧剪辑软件V1.6_1/*/配置文件/参数预设"
+            )
+        )
+        if not candidates:
+            return
+        for path in candidates[0].glob("*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                config = AppConfig.from_dict(data)
+                reference_root = candidates[0].parent.parent
+                if (reference_root / "saoguang").is_dir():
+                    config.scanlight_folder = str(reference_root / "saoguang")
+                if (reference_root / "kaimu").is_dir():
+                    config.kaimu_folder = str(reference_root / "kaimu")
+                self._preset_mgr.save(path.stem, config)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+
+    def _log_clear(self) -> None:
+        if hasattr(self, "_log"):
+            self._log.clear()
 
     # ═══════════════════════════════════════
     # 操作回调
@@ -220,8 +280,8 @@ class MainWindow(QMainWindow):
     def _on_start(self) -> None:
         """开始批量处理。"""
         # 基本校验
-        if not self.config.main_folder or not self.config.background_folder:
-            QMessageBox.warning(self, "提示", "请先设置主素材文件夹和辅助视频文件夹。")
+        if not self.config.main_folder or not self.config.background_folder or not self.config.output_folder:
+            QMessageBox.warning(self, "提示", "请先设置主素材、辅助视频和输出文件夹。")
             return
 
         main_dir = self._resolve(self.config.main_folder)
@@ -272,21 +332,16 @@ class MainWindow(QMainWindow):
         if not ok or not name.strip():
             return
         if self._preset_mgr.save(name.strip(), self.config):
+            self._refresh_presets(name.strip())
             self._set_status(f"● 预设 [{name.strip()}] 已保存", "#86efac")
         else:
             QMessageBox.warning(self, "错误", "保存预设失败。")
 
     def _on_load_preset(self) -> None:
         """加载预设。"""
-        presets = self._preset_mgr.list_presets()
-        if not presets:
+        name = self._preset_combo.currentText()
+        if not name:
             QMessageBox.information(self, "提示", "没有已保存的预设。")
-            return
-
-        # 简单列表选择
-        from PySide6.QtWidgets import QInputDialog as QID
-        name, ok = QID.getItem(self, "加载预设", "选择预设：", presets, 0, False)
-        if not ok or not name:
             return
 
         loaded = self._preset_mgr.load(name)
@@ -297,8 +352,36 @@ class MainWindow(QMainWindow):
         # 更新 config
         for field in AppConfig.__dataclass_fields__:
             setattr(self.config, field, getattr(loaded, field))
+        for page in self._pages.values():
+            for key, row in getattr(page, "_rows", {}).items():
+                if hasattr(row, "value"):
+                    row.value = getattr(self.config, key)
+                elif hasattr(row, "path"):
+                    row.path = getattr(self.config, key)
+        self._delete_aux.setChecked(self.config.delete_used_aux)
+        self._repeat_count.setValue(self.config.repeat_count)
 
         self._set_status(f"● 已加载预设 [{name}]", "#93c5fd")
+
+    def _refresh_presets(self, selected: str = "") -> None:
+        names = self._preset_mgr.list_presets()
+        self._preset_combo.blockSignals(True)
+        self._preset_combo.clear()
+        self._preset_combo.addItems(names)
+        if selected in names:
+            self._preset_combo.setCurrentText(selected)
+        self._preset_combo.blockSignals(False)
+
+    def _on_delete_preset(self) -> None:
+        name = self._preset_combo.currentText()
+        if not name:
+            return
+        if QMessageBox.question(
+            self, "删除预设", f"确定删除预设“{name}”吗？"
+        ) != QMessageBox.Yes:
+            return
+        if self._preset_mgr.delete(name):
+            self._refresh_presets()
 
     # ═══════════════════════════════════════
     # Worker 回调
@@ -339,13 +422,11 @@ class MainWindow(QMainWindow):
 
     def _switch_mode(self, mode: str) -> None:
         """切换编辑模式标签页。"""
-        for name, btn in self._mode_buttons.items():
-            btn.setChecked(name == mode)
         mode_to_tab = {
             "鹤漫剪辑": 0,
-            "语音识别": 5,
-            "人脸处理": 6,
-            "MP4工具": 6,
+            "语音识别": 4,
+            "人脸处理": 5,
+            "MP4工具": 5,
         }
         idx = mode_to_tab.get(mode, 0)
         self._tabs.setCurrentIndex(idx)

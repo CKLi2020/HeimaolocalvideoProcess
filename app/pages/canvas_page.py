@@ -37,11 +37,11 @@ class CanvasPage(QWidget):
 
         canvas_params = [
             ("输出分辨率", "resolution", "text"),
-            ("输出帧率", "fps", "int:1-120"),
-            ("主视频缩放 %", "main_scale", "int:10-500"),
+            ("输出帧率", "fps", "slider:1-120"),
+            ("主视频缩放 %", "main_scale", "slider:10-500"),
             ("主视频完整适配", "main_fit", "bool"),
-            ("辅助视频缩放 %", "aux_scale", "int:10-500"),
-            ("辅助视频速度 %", "aux_speed", "int:10-500"),
+            ("辅助视频缩放 %", "aux_scale", "slider:10-500"),
+            ("辅助视频速度 %", "aux_speed", "slider:10-500"),
         ]
         for label, key, ptype in canvas_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -59,7 +59,7 @@ class CanvasPage(QWidget):
         encode_params = [
             ("启用 GPU 加速", "gpu", "bool"),
             ("H.265 (HEVC)", "hevc", "bool"),
-            ("CRF 质量", "crf", "int:0-51"),
+            ("CRF 质量", "crf", "slider:0-51"),
             ("编码速度预设", "preset", "combo:ultrafast,superfast,veryfast,faster,fast,medium,slow,slower,veryslow"),
         ]
         for label, key, ptype in encode_params:

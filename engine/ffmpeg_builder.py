@@ -143,27 +143,15 @@ def build_ffmpeg_command(
         mw = w - 2 * mx
         mh = h - 2 * my
 
-        # 用 crop + overlay 实现。将 base 裁切为蒙版区域，再做羽化
-        if feather > 0:
-            # 羽化：生成一个带羽化边缘的蒙版，用 blend 混合
-            filters.append(
-                f"[base]crop={mw}:{mh}:{mx}:{my},format=rgba[mask_inner];"
-                f"[base]format=rgba[base_rgba];"
-                f"[base_rgba][mask_inner]overlay={mx}:{my}:shortest=1"
-                f"{next_tag('masked')}"
-            )
-        else:
-            filters.append(
-                f"[base]crop={mw}:{mh}:{mx}:{my}{next_tag('masked')}"
-            )
-        # 如果羽化 > 0，增加 boxblur 做软边
-        if feather > 0:
-            feather_px = max(1, int(feather * min(w, h) / 500))
-            filters.append(
-                f"[masked]boxblur={feather_px}:enable='lt(t,0.1)'"
-                f"{next_tag('masked_soft')}"
-            )
-            current_tag = "masked_soft"
+        edge = max(1, int(feather * min(w, h) / 500))
+        filters.append(
+            f"[base]drawbox=x=0:y=0:w={w}:h={my + edge}:color=black@0.65:t=fill,"
+            f"drawbox=x=0:y={h - my - edge}:w={w}:h={my + edge}:color=black@0.65:t=fill,"
+            f"drawbox=x=0:y=0:w={mx + edge}:h={h}:color=black@0.65:t=fill,"
+            f"drawbox=x={w - mx - edge}:y=0:w={mx + edge}:h={h}:color=black@0.65:t=fill"
+            f"{next_tag('masked')}"
+        )
+        current_tag = "masked"
 
     base_tag = current_tag
 
@@ -174,10 +162,20 @@ def build_ffmpeg_command(
         ts = config.top_scale / 100.0
         to = config.top_opacity / 100.0
         tf = config.top_feather
+        if ts >= 1:
+            top_size = (
+                f"scale={int(w * ts)}:{int(h * ts)},"
+                f"crop={w}:{h}:(iw-{w})/2:(ih-{h})/2"
+            )
+        else:
+            top_size = (
+                f"scale={max(2, int(w * ts))}:{max(2, int(h * ts))},"
+                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+            )
         filters.append(
-            f"[0:v]scale=iw*{ts}:ih*{ts},"
-            f"crop={w}:{h},"
-            f"format=rgba,colorchannelmixer=aa={to}"
+            f"[0:v]{top_size},"
+            f"format=rgba,gblur=sigma={max(0.1, tf / 10):.2f},"
+            f"colorchannelmixer=aa={to}"
             f"{next_tag('topmat')}"
         )
         filters.append(
@@ -195,59 +193,32 @@ def build_ffmpeg_command(
         bot_h = config.bottom_bar_height if config.split_bars_enabled else config.bar_height
         bot_op = (config.bottom_bar_opacity if config.split_bars_enabled else config.bar_opacity) / 100.0
 
+        top_h = min(top_h, h)
+        bot_h = min(bot_h, h)
         filters.append(
-            f"[0:v]crop={w}:{top_h}:0:0,"
-            f"format=rgba,colorchannelmixer=aa={top_op}"
-            f"{next_tag('topbar')}"
-        )
-        filters.append(
-            f"[{base_tag}][topbar]overlay=0:0:shortest=1{next_tag('with_top')}"
-        )
-        filters.append(
-            f"[0:v]crop={w}:{bot_h}:0:{h - bot_h},"
-            f"format=rgba,colorchannelmixer=aa={bot_op}"
-            f"{next_tag('botbar')}"
-        )
-        filters.append(
-            f"[with_top][botbar]overlay=0:H-h:shortest=1{next_tag('bars')}"
+            f"[{base_tag}]drawbox=x=0:y=0:w={w}:h={top_h}:"
+            f"color=black@{top_op}:t=fill,"
+            f"drawbox=x=0:y={h - bot_h}:w={w}:h={bot_h}:"
+            f"color=black@{bot_op}:t=fill,"
+            f"drawbox=x=0:y={max(0, top_h - config.top_bar_feather_down)}:"
+            f"w={w}:h={max(1, config.top_bar_feather_down)}:"
+            f"color=black@{top_op / 2}:t=fill,"
+            f"drawbox=x=0:y={h - bot_h}:w={w}:"
+            f"h={max(1, config.bottom_bar_feather_up)}:"
+            f"color=black@{bot_op / 2}:t=fill{next_tag('bars')}"
         )
         base_tag = "bars"
 
-    # ═══════════════════════════════════════════════════════════
-    # SPLIT BARS: 双拼横条（非对称上下）
-    # ═══════════════════════════════════════════════════════════
-    if config.bars_enabled and config.split_bars_enabled:
-        top_h = config.top_bar_height
-        bot_h = config.bottom_bar_height
-        top_op = config.top_bar_opacity / 100.0
-        bot_op = config.bottom_bar_opacity / 100.0
-        half_w = w // 2
-
-        # 上半左/右
-        filters.append(
-            f"[0:v]crop={half_w}:{top_h}:0:0,format=rgba,"
-            f"colorchannelmixer=aa={top_op}{next_tag('tl_bar')}"
-        )
-        filters.append(
-            f"[0:v]crop={half_w}:{top_h}:{half_w}:0,format=rgba,"
-            f"colorchannelmixer=aa={top_op}{next_tag('tr_bar')}"
-        )
-        filters.append(
-            f"[0:v]crop={half_w}:{bot_h}:0:{h - bot_h},format=rgba,"
-            f"colorchannelmixer=aa={bot_op}{next_tag('bl_bar')}"
-        )
-        filters.append(
-            f"[0:v]crop={half_w}:{bot_h}:{half_w}:{h - bot_h},format=rgba,"
-            f"colorchannelmixer=aa={bot_op}{next_tag('br_bar')}"
-        )
-        filters.append(
-            f"[{base_tag}][tl_bar]overlay=0:0:shortest=1[s1];"
-            f"[s1][tr_bar]overlay={half_w}:0:shortest=1[s2];"
-            f"[s2][bl_bar]overlay=0:{h - bot_h}:shortest=1[s3];"
-            f"[s3][br_bar]overlay={half_w}:{h - bot_h}:shortest=1"
-            f"{next_tag('split_bars')}"
-        )
-        base_tag = "split_bars"
+        if config.split_bars_enabled:
+            split = max(1, config.tb_split_feather or config.split_feather)
+            filters.append(
+                f"[{base_tag}]drawbox=x={(w - split) // 2}:y=0:w={split}:h={top_h}:"
+                f"color=black@0.35:t=fill,"
+                f"drawbox=x={(w - max(1, config.bb_split_feather or config.split_feather)) // 2}:"
+                f"y={h - bot_h}:w={max(1, config.bb_split_feather or config.split_feather)}:h={bot_h}:"
+                f"color=black@0.35:t=fill{next_tag('bars_split')}"
+            )
+            base_tag = "bars_split"
 
     # ═══════════════════════════════════════════════════════════
     # LINE: 十字线/横线叠加
@@ -298,10 +269,11 @@ def build_ffmpeg_command(
         filters.append(pip_filter)
 
         if config.pip_move:
+            period = max(0.2, 10 / max(1, config.pip_move_speed))
             # 移动 PIP：用表达式控制位置（水平往返）
             filters.append(
                 f"[{base_tag}][pip1]overlay="
-                f"'(W-w)*{pip_x}+(W-w)*{pip_x}*sin(t/2)':"
+                f"'(W-w)*{pip_x}+(W-w)*{pip_x}*sin(t/{period:.3f})':"
                 f"(H-h)*{pip_y}:shortest=1"
                 f"{next_tag('with_pip1')}"
             )
@@ -329,9 +301,10 @@ def build_ffmpeg_command(
         )
 
         if config.pip2_move:
+            period = max(0.2, 10 / max(1, config.pip2_move_speed))
             filters.append(
                 f"[{base_tag}][pip2]overlay="
-                f"'(W-w)*{pip2_x}+(W-w)*{pip2_x}*sin(t/2+PI)':"
+                f"'(W-w)*{pip2_x}+(W-w)*{pip2_x}*sin(t/{period:.3f}+PI)':"
                 f"(H-h)*{pip2_y}:shortest=1"
                 f"{next_tag('with_pip2')}"
             )
@@ -348,19 +321,18 @@ def build_ffmpeg_command(
     # ═══════════════════════════════════════════════════════════
     has_motion = config.zoom_amp > 0 or config.sway_amp > 0 or config.shake_amp > 0
     if has_motion:
-        zoom_val = 1.0 + config.zoom_amp / 1000.0
         sway_val = config.sway_amp / 100.0
         shake_val = config.shake_amp / 100.0
 
-        # 用 scale + crop 模拟动态效果
-        zoom_expr = f"1+{zoom_val - 1.0}*sin(t/3)"
-        sway_expr = f"{sway_val}*sin(t/2)"
+        # 留足裁切余量，再在放大画面内移动；避免动态表达式产生小于画布的帧。
+        scale_factor = 1 + config.zoom_amp / 100.0 + 2 * sway_val + 2 * shake_val
+        sway_expr = f"{sway_val}*iw*sin(t/2)"
         shake_expr = f"{shake_val}*(random(1)-0.5)*2"
 
         filters.append(
-            f"[{base_tag}]scale=iw*{zoom_expr}:ih*{zoom_expr},"
-            f"crop={w}:{h}:(iw-{w})/2+{sway_expr}+{shake_expr}*w:"
-            f"(ih-{h})/2+{shake_expr}*h"
+            f"[{base_tag}]scale=iw*{scale_factor:.4f}:ih*{scale_factor:.4f},"
+            f"crop={w}:{h}:(iw-{w})/2+{sway_expr}+{shake_expr}*iw:"
+            f"(ih-{h})/2+{shake_expr}*ih"
             f"{next_tag('motion')}"
         )
         base_tag = "motion"
@@ -402,9 +374,15 @@ def build_ffmpeg_command(
                 f"format=rgba,colorchannelmixer=aa={op}"
                 f"[{tag}]"
             )
+            switch = ""
+            if config.sticker_switch_sec > 0 and len(sticker_files) > 1:
+                start = i * config.sticker_switch_sec
+                end = (i + 1) * config.sticker_switch_sec
+                cycle = len(sticker_files) * config.sticker_switch_sec
+                switch = f":enable='between(mod(t,{cycle}),{start},{end})'"
             filters.append(
                 f"[{base_tag}][{tag}]overlay="
-                f"(W-w)*{sx}:(H-h)*{sy}:shortest=1"
+                f"(W-w)*{sx}:(H-h)*{sy}:shortest=1{switch}"
                 f"[{base_tag}_s{i}]"
             )
             base_tag = f"{base_tag}_s{i}"
@@ -523,6 +501,7 @@ def build_ffmpeg_command(
             )
             filters.append(
                 f"[{base_tag}][km_mat]overlay=0:0:shortest=1"
+                f":enable='lt(t,{duration:.3f})'"
                 f"{next_tag('with_km')}"
             )
             base_tag = "with_km"
@@ -551,7 +530,7 @@ def build_ffmpeg_command(
             f"[{base_tag}]drawtext=text='{safe_title}':"
             f"fontsize={font_size}:"
             f"fontcolor=white@0.9:"
-            f"x=(w-text_w)/2:y=(h-text_h)/2"
+            f"x=(w-text_w)/2:y=(h-text_h)*{config.cover_y / 100:.3f}"
             f"{font_args}:"
             f"enable='between(t,0,4)'"
             f"{next_tag('cover')}"
@@ -570,8 +549,8 @@ def build_ffmpeg_command(
         saturation=config.saturation,
         temperature=config.temperature,
         vignette=config.vignette,
-        filter_name=getattr(config, "filter_name", ""),
-        filter_strength=getattr(config, "filter_strength", 100),
+        filter_name=config.filter_name,
+        filter_strength=config.filter_strength,
     )
     if filter_frag:
         filters.append(filter_frag)
@@ -618,6 +597,7 @@ def build_ffmpeg_command(
         "-crf", str(config.crf),
         "-c:a", "aac",
         "-b:a", "192k",
+        "-threads", str(max(1, config.compose_threads)),
         "-r", str(fps),
         "-shortest",
         "-movflags", "+faststart",

@@ -232,10 +232,13 @@ def apply_color_adjustments(
                 eq_parts.append(f"contrast={c:.2f}")
             if abs(s - 1.0) > 0.005:
                 eq_parts.append(f"saturation={s:.2f}")
-            if abs(t - 6500) > 50:
-                eq_parts.append(f"temperature={t}")
             if eq_parts:
                 all_filters.append(f"eq={':'.join(eq_parts)}")
+            if abs(t - 6500) > 50:
+                shift = max(-1.0, min(1.0, (t - 6500) / 3000))
+                all_filters.append(
+                    f"colorbalance=rh={shift * .12:.3f}:bh={-shift * .12:.3f}"
+                )
 
             # gamma
             g_adj = []
@@ -259,11 +262,13 @@ def apply_color_adjustments(
         eq_manual.append(f"contrast={mc:.2f}")
     if abs(ms - 1.0) > 0.005:
         eq_manual.append(f"saturation={ms:.2f}")
-    if abs(mt) > 1:
-        # 手动色温：-100 到 100 映射为 3500K 到 9500K
-        eq_manual.append(f"temperature={int(6500 + mt * 30)}")
     if eq_manual:
         all_filters.append(f"eq={':'.join(eq_manual)}")
+    if abs(mt) > 1:
+        shift = mt / 100.0
+        all_filters.append(
+            f"colorbalance=rh={shift * .12:.3f}:bh={-shift * .12:.3f}"
+        )
 
     if not all_filters:
         return "", base_tag

@@ -37,11 +37,11 @@ class StickerPage(QWidget):
 
         sticker_params = [
             ("启用贯穿贴纸", "sticker_enabled", "bool"),
-            ("缩放 %", "sticker_scale", "int:5-200"),
-            ("透明度 %", "sticker_opacity", "int:0-100"),
-            ("X 位置 %", "sticker_x", "int:0-100"),
-            ("Y 位置 %", "sticker_y", "int:0-100"),
-            ("换组间隔 (秒)", "sticker_switch_sec", "int:0-120"),
+            ("缩放 %", "sticker_scale", "slider:5-200"),
+            ("透明度 %", "sticker_opacity", "slider:0-100"),
+            ("X 位置 %", "sticker_x", "slider:0-100"),
+            ("Y 位置 %", "sticker_y", "slider:0-100"),
+            ("换组间隔 (秒)", "sticker_switch_sec", "slider:0-120"),
         ]
         for label, key, ptype in sticker_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -58,7 +58,7 @@ class StickerPage(QWidget):
 
         mover_params = [
             ("启用移动贴纸", "moving_sticker_enabled", "bool"),
-            ("移动周期 (秒)", "moving_sticker_period", "int:1-60"),
+            ("移动周期 (秒)", "moving_sticker_period", "slider:1-60"),
         ]
         for label, key, ptype in mover_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -75,8 +75,8 @@ class StickerPage(QWidget):
 
         sl_params = [
             ("启用扫光", "scanlight_enabled", "bool"),
-            ("透明度 %", "scanlight_opacity", "int:0-100"),
-            ("扫光速度 %", "scanlight_speed", "int:10-500"),
+            ("透明度 %", "scanlight_opacity", "slider:0-100"),
+            ("扫光速度 %", "scanlight_speed", "slider:10-500"),
         ]
         for label, key, ptype in sl_params:
             row = ParamRow(label, ptype, getattr(config, key))

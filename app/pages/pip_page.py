@@ -37,11 +37,12 @@ class PipPage(QWidget):
 
         pip1_params = [
             ("启用画中画 1", "pip_enabled", "bool"),
-            ("缩放 %", "pip_scale", "int:5-100"),
-            ("透明度 %", "pip_opacity", "int:0-100"),
-            ("X 位置 %", "pip_x", "int:-50-100"),
-            ("Y 位置 %", "pip_y", "int:-50-100"),
+            ("缩放 %", "pip_scale", "slider:5-100"),
+            ("透明度 %", "pip_opacity", "slider:0-100"),
+            ("X 位置 %", "pip_x", "slider:-50-100"),
+            ("Y 位置 %", "pip_y", "slider:-50-100"),
             ("移动", "pip_move", "bool"),
+            ("移动速度 %", "pip_move_speed", "slider:1-100"),
         ]
         for label, key, ptype in pip1_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -58,11 +59,12 @@ class PipPage(QWidget):
 
         pip2_params = [
             ("启用画中画 2", "pip2_enabled", "bool"),
-            ("缩放 %", "pip2_scale", "int:5-100"),
-            ("透明度 %", "pip2_opacity", "int:0-100"),
-            ("X 位置 %", "pip2_x", "int:-50-100"),
-            ("Y 位置 %", "pip2_y", "int:-50-100"),
+            ("缩放 %", "pip2_scale", "slider:5-100"),
+            ("透明度 %", "pip2_opacity", "slider:0-100"),
+            ("X 位置 %", "pip2_x", "slider:-50-100"),
+            ("Y 位置 %", "pip2_y", "slider:-50-100"),
             ("移动", "pip2_move", "bool"),
+            ("移动速度 %", "pip2_move_speed", "slider:1-100"),
         ]
         for label, key, ptype in pip2_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -78,9 +80,9 @@ class PipPage(QWidget):
         motion_form.setSpacing(10)
 
         motion_params = [
-            ("动态缩放幅度 %", "zoom_amp", "int:0-100"),
-            ("左右晃动幅度 %", "sway_amp", "int:0-100"),
-            ("随机晃动幅度 %", "shake_amp", "int:0-100"),
+            ("动态缩放幅度 %", "zoom_amp", "slider:0-100"),
+            ("左右晃动幅度 %", "sway_amp", "slider:0-100"),
+            ("随机晃动幅度 %", "shake_amp", "slider:0-100"),
         ]
         for label, key, ptype in motion_params:
             row = ParamRow(label, ptype, getattr(config, key))

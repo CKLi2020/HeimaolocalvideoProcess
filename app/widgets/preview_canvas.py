@@ -10,7 +10,7 @@ from typing import Callable, Optional
 
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
-from PySide6.QtCore import Qt, QTimer, QPoint
+from PySide6.QtCore import Qt, QTimer, QPoint, QRect
 from config import AppConfig
 
 
@@ -89,29 +89,45 @@ class PreviewCanvas(QWidget):
         bg_v = random.choice(bg_files)
 
         try:
-            from engine.ffmpeg_builder import build_ffmpeg_command
-
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-                out = Path(f.name)
-
-            cmd = build_ffmpeg_command(
-                self._config, main_v, bg_v, out,
+            from engine.ffmpeg_builder import (
+                IMAGE_EXTS, VIDEO_EXTS, build_ffmpeg_command, list_media,
             )
-            # 只取第一帧
-            cmd.insert(cmd.index("-filter_complex") + 2,
-                       cmd[cmd.index("-filter_complex") + 1].replace("[next_v]", "[preview]"))
-            # 简化：直接在 filter 链最后加 trim
-            idx = cmd.index("-filter_complex")
-            fc = cmd[idx + 1]
-            cmd[idx + 1] = fc.replace("format=yuv420p[next_v]", "trim=end_frame=1,format=rgba[preview]")
-            cmd = [a for a in cmd if a not in ("-c:v", "libx264", "libx265", "-c:a", "aac", "-b:a", "192k", "-r", "30", "-shortest", "-movflags", "+faststart")]
-            cmd += ["-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", str(out)]
+            stickers = list_media(
+                str(self._resolve(self._config.sticker_folder)),
+                VIDEO_EXTS | IMAGE_EXTS,
+            )
+            movers = list_media(
+                str(self._resolve(
+                    self._config.moving_sticker_folder
+                    or self._config.sticker_folder
+                )),
+                VIDEO_EXTS | IMAGE_EXTS,
+            )
+            scanlights = list_media(
+                str(self._resolve(self._config.scanlight_folder)), VIDEO_EXTS
+            )
+            openings = list_media(
+                str(self._resolve(self._config.kaimu_folder)),
+                VIDEO_EXTS | IMAGE_EXTS,
+            )
 
-            subprocess.run(cmd, capture_output=True, timeout=10)
-            if out.stat().st_size > 100:
-                pm = QPixmap(str(out))
-                self._show_pixmap(pm)
-            out.unlink(missing_ok=True)
+            with tempfile.TemporaryDirectory() as tmp:
+                video = Path(tmp) / "preview.mp4"
+                image = Path(tmp) / "preview.png"
+                cmd = build_ffmpeg_command(
+                    self._config, main_v, bg_v, video,
+                    sticker_files=stickers or None,
+                    scanlight_file=scanlights[0] if scanlights else None,
+                    kaimu_file=openings[0] if openings else None,
+                    mover_files=movers or None,
+                )
+                subprocess.run(cmd, capture_output=True, timeout=30, check=True)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(video), "-frames:v", "1", str(image)],
+                    capture_output=True, timeout=10, check=True,
+                )
+                if image.stat().st_size > 100:
+                    self._show_pixmap(QPixmap(str(image)))
         except Exception:
             pass
 

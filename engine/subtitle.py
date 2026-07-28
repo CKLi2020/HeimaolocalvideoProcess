@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import copy
 import shutil
 import subprocess
 import tempfile
@@ -115,7 +116,7 @@ def get_style(name: str) -> SubtitleStyle:
         "剪映式短句": STYLE_JIANYING,
         "秒剪风格": STYLE_MIAOJIAN,
     }
-    return styles.get(name, STYLE_CLASSIC)
+    return copy.copy(styles.get(name, STYLE_CLASSIC))
 
 
 # ═══════════════════════════════════════════════════
@@ -164,6 +165,10 @@ class SubtitleEngine:
             Path(__file__).parent.parent.parent / "models" / f"faster-whisper-{self._model_path}",
             Path.cwd() / "models" / f"faster-whisper-{self._model_path}",
         ]
+        local_candidates.extend(
+            reference / "models" / f"faster-whisper-{self._model_path}"
+            for reference in Path.cwd().parent.glob("风无忧剪辑软件V1.6_1/*")
+        )
         for candidate in local_candidates:
             if candidate.is_dir() and (candidate / "model.bin").exists():
                 self._log(f"[字幕] 使用本地模型: {candidate}")
@@ -369,7 +374,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         start = _fmt_ass_time(seg["start"])
         end = _fmt_ass_time(seg["end"])
         # 转义 ASS 特殊字符
-        text = seg["text"].replace("{", "\\{").replace("}", "\\}")
+        text = seg["text"].replace("{", "\\{").replace("}", "\\}").replace("\n", r"\N")
         events += f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n"
 
     try:
@@ -404,10 +409,16 @@ def burn_subtitles(
         return False
 
     sub_ext = subtitle_path.suffix.lower()
+    escaped_path = (
+        subtitle_path.resolve().as_posix()
+        .replace("\\", "\\\\")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+    )
     if sub_ext == ".ass":
-        vf = f"ass='{subtitle_path.as_posix()}'"
+        vf = f"ass=filename='{escaped_path}'"
     else:
-        vf = f"subtitles='{subtitle_path.as_posix()}':force_style='FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2.5'"
+        vf = f"subtitles=filename='{escaped_path}':force_style='FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2.5'"
 
     log(f"[字幕] 烧录字幕到视频: {output_path.name}")
     cmd = [

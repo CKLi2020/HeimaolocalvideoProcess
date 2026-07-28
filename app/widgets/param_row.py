@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Union, List
 
 from PySide6.QtWidgets import (
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QSlider,
     QSpinBox,
     QWidget,
 )
@@ -68,17 +70,23 @@ class ParamRow(QWidget):
             self._widget.currentTextChanged.connect(self.value_changed.emit)
             layout.addWidget(self._widget)
 
-        elif param_type == "int" or param_type.startswith("int:"):
+        elif param_type == "int" or param_type.startswith(("int:", "slider:")):
             lo, hi = 0, 1000
             if ":" in param_type:
-                try:
-                    parts = param_type.split(":")[1].split("-")
-                    lo, hi = int(parts[0]), int(parts[1])
-                except (ValueError, IndexError):
-                    pass
+                match = re.fullmatch(r"(-?\d+)-(-?\d+)", param_type.split(":", 1)[1])
+                if match:
+                    lo, hi = map(int, match.groups())
             self._widget = QSpinBox()
             self._widget.setRange(lo, hi)
             self._widget.setValue(int(initial) if initial else 0)
+            if param_type.startswith("slider:"):
+                self._slider = QSlider(Qt.Horizontal)
+                self._slider.setRange(lo, hi)
+                self._slider.setValue(self._widget.value())
+                self._slider.valueChanged.connect(self._widget.setValue)
+                self._widget.valueChanged.connect(self._slider.setValue)
+                layout.addWidget(self._slider, 1)
+                self._widget.setFixedWidth(68)
             self._widget.valueChanged.connect(self.value_changed.emit)
             layout.addWidget(self._widget)
             layout.addStretch()
@@ -96,7 +104,7 @@ class ParamRow(QWidget):
             return self._widget.isChecked()
         elif self._type.startswith("combo:"):
             return self._widget.currentText()
-        elif self._type == "int" or self._type.startswith("int:"):
+        elif self._type == "int" or self._type.startswith(("int:", "slider:")):
             return self._widget.value()
         else:
             return self._widget.text()
@@ -114,7 +122,7 @@ class ParamRow(QWidget):
             if str(v) in [w.itemText(i) for i in range(w.count())]:
                 w.setCurrentText(str(v))
             w.blockSignals(False)
-        elif self._type == "int" or self._type.startswith("int:"):
+        elif self._type == "int" or self._type.startswith(("int:", "slider:")):
             w.blockSignals(True)
             w.setValue(int(v) if v else 0)
             w.blockSignals(False)

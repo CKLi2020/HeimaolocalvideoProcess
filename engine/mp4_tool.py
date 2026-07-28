@@ -156,6 +156,7 @@ def modify_tkhd(
     height: Optional[int] = None,
     layer: Optional[int] = None,
     volume: Optional[int] = None,
+    track_index: Optional[int] = None,
 ) -> int:
     """修改 tkhd box 的元数据。返回修改数。"""
     boxes = parse_boxes(data)
@@ -163,7 +164,10 @@ def modify_tkhd(
         return 0
 
     modified = 0
-    for offset, size, data_start in boxes[TKHD]:
+    targets = boxes[TKHD]
+    if track_index is not None:
+        targets = targets[track_index:track_index + 1]
+    for offset, size, data_start in targets:
         version = data[data_start]
         # tkhd layout (version 0):
         #   offset 12: track_id (4B)
@@ -287,7 +291,7 @@ def fill_random_resolution(data: bytearray, min_w: int = 720, max_w: int = 3840)
     """将 tkhd 中的宽高设为随机值（在合理范围内）。"""
     w = random.randint(min_w, max_w)
     h = int(w * random.choice([9 / 16, 3 / 4, 1 / 1]))
-    return modify_tkhd(data, width=w, height=h)
+    return modify_tkhd(data, width=w, height=h, track_index=0)
 
 
 # ═══════════════════════════════════════════════════
@@ -369,7 +373,7 @@ def process_mp4(
         log(f"[MP4] mdhd: {n} 处修改")
 
     if track_id is not None:
-        n = modify_tkhd(data, track_id=track_id)
+        n = modify_tkhd(data, track_id=track_id, track_index=0)
         total_mods += n
         log(f"[MP4] track_id: {n} 处修改")
 
@@ -378,12 +382,12 @@ def process_mp4(
         total_mods += n
         log(f"[MP4] 随机分辨率: {n} 处修改")
     elif width is not None or height is not None:
-        n = modify_tkhd(data, width=width, height=height)
+        n = modify_tkhd(data, width=width, height=height, track_index=0)
         total_mods += n
         log(f"[MP4] 分辨率: {n} 处修改")
 
     if volume is not None:
-        n = modify_tkhd(data, volume=volume)
+        n = modify_tkhd(data, volume=volume, track_index=1)
         total_mods += n
         log(f"[MP4] volume: {n} 处修改")
 
@@ -392,10 +396,13 @@ def process_mp4(
         boxes = parse_boxes(data)
         if TKHD in boxes and len(boxes[TKHD]) >= 1:
             if layer_video is not None:
-                n = modify_tkhd(data, layer=layer_video)
+                n = modify_tkhd(data, layer=layer_video, track_index=0)
                 total_mods += n
                 log(f"[MP4] layer_video: {n} 处修改")
-        # 音频 layer 修改需要识别第二个 trak，简化处理
+            if layer_audio is not None and len(boxes[TKHD]) >= 2:
+                n = modify_tkhd(data, layer=layer_audio, track_index=1)
+                total_mods += n
+                log(f"[MP4] layer_audio: {n} 处修改")
 
     if stts_delta is not None:
         n = modify_stts(data, stts_delta)
@@ -412,6 +419,16 @@ def process_mp4(
     with open(out_path, "wb") as f:
         f.write(data)
 
+    requested_change = any((
+        mvhd_value is not None, tkhd_value is not None,
+        mdhd_value is not None, track_id is not None, random_size,
+        width is not None, height is not None, volume is not None,
+        layer_video is not None, layer_audio is not None,
+        stts_delta is not None, elst_ms > 0,
+    ))
+    if requested_change and total_mods == 0:
+        log("[MP4] 请求的元数据在此文件中不可修改")
+        return False
     log(f"[MP4] 后处理完成: {total_mods} 处修改, "
         f"大小 {original_size} → {len(data)} bytes")
     return True

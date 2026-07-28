@@ -17,7 +17,7 @@ from app.widgets.param_row import ParamRow
 
 
 class OpeningPage(QWidget):
-    def __init__(self, config: AppConfig, parent: Optional[QWidget] = None):
+    def __init__(self, config: AppConfig, section: str = "all", parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.config = config
         self._rows: dict[str, ParamRow] = {}
@@ -38,7 +38,7 @@ class OpeningPage(QWidget):
         kaimu_params = [
             ("启用开幕效果", "kaimu_enabled", "bool"),
             ("开幕方式", "kaimu_mode", "combo:上下开幕,左右开幕,黑屏开幕,素材-随机"),
-            ("开幕速度 %", "kaimu_speed", "int:10-500"),
+            ("开幕速度 %", "kaimu_speed", "slider:10-500"),
         ]
         for label, key, ptype in kaimu_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -47,6 +47,7 @@ class OpeningPage(QWidget):
             self._rows[key] = row
 
         root_layout.addWidget(kaimu_group)
+        kaimu_group.setVisible(section in ("all", "cover"))
 
         # ── 封面 ──
         cover_group = QGroupBox("封面标题")
@@ -57,7 +58,8 @@ class OpeningPage(QWidget):
             ("启用封面", "cover_enabled", "bool"),
             ("标题跟随文件名", "cover_follow_name", "bool"),
             ("自定义标题文字", "cover_text", "text"),
-            ("标题字号", "cover_size", "int:10-200"),
+            ("标题字号", "cover_size", "slider:10-200"),
+            ("标题位置 Y %", "cover_y", "slider:0-100"),
         ]
         for label, key, ptype in cover_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -66,6 +68,7 @@ class OpeningPage(QWidget):
             self._rows[key] = row
 
         root_layout.addWidget(cover_group)
+        cover_group.setVisible(section in ("all", "cover"))
 
         # ── 字幕 ──
         sub_group = QGroupBox("字幕 (faster-whisper)")
@@ -77,8 +80,9 @@ class OpeningPage(QWidget):
             ("导出 SRT", "subtitle_export_srt", "bool"),
             ("字幕模型", "subtitle_model", "combo:tiny,small,medium,large"),
             ("字幕样式", "subtitle_style", "combo:经典白字黑边,剪映式短句,秒剪风格"),
-            ("字幕字号", "subtitle_font_size", "int:12-72"),
-            ("每行最大字数", "subtitle_max_chars", "int:5-50"),
+            ("字幕字号", "subtitle_font_size", "slider:12-72"),
+            ("每行最大字数", "subtitle_max_chars", "slider:5-50"),
+            ("字幕位置 Y %", "subtitle_pos_y", "slider:0-100"),
         ]
         for label, key, ptype in sub_params:
             row = ParamRow(label, ptype, getattr(config, key))
@@ -87,6 +91,7 @@ class OpeningPage(QWidget):
             self._rows[key] = row
 
         root_layout.addWidget(sub_group)
+        sub_group.setVisible(section in ("all", "subtitle"))
         root_layout.addStretch()
 
         scroll.setWidget(inner)

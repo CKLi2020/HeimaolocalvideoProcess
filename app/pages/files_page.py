@@ -40,6 +40,7 @@ class FilesPage(QWidget):
             ("主素材文件夹", "main_folder"),
             ("辅助视频文件夹", "background_folder"),
             ("贴纸文件夹", "sticker_folder"),
+            ("移动贴图文件夹", "moving_sticker_folder"),
             ("扫光文件夹", "scanlight_folder"),
             ("开幕素材文件夹", "kaimu_folder"),
             ("输出文件夹", "output_folder"),
@@ -52,22 +53,6 @@ class FilesPage(QWidget):
 
         root_layout.addWidget(folder_group)
 
-        # ── 批量设置 ──
-        batch_group = QGroupBox("批量设置")
-        batch_form = QFormLayout(batch_group)
-        batch_form.setSpacing(10)
-
-        batch_params = [
-            ("每个素材处理次数", "repeat_count", "int:1-100"),
-            ("删除已用辅助视频", "delete_used_aux", "bool"),
-        ]
-        for label, key, ptype in batch_params:
-            row = ParamRow(label, ptype, getattr(config, key))
-            row.value_changed.connect(lambda v, k=key: _setattr(config, k, v))
-            batch_form.addRow(row)
-            self._rows[key] = row
-
-        root_layout.addWidget(batch_group)
         root_layout.addStretch()
 
         scroll.setWidget(inner)

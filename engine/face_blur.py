@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -43,12 +44,18 @@ class FaceBlurEngine:
         self._blur_expand = blur_expand
         self._available = False
         self._session = None
+        self._detector = None
         self._model_type = "yunet"
         self._input_size = (320, 320)
 
         # 自动查找模型
         if model_path is None:
             candidates = [
+                (
+                    Path.cwd() / "resources" / "models"
+                    / "face_detection_yunet_2023mar.onnx",
+                    "yunet",
+                ),
                 (
                     Path(__file__).parent.parent.parent / "face_detection_yunet_2023mar.onnx",
                     "yunet",
@@ -62,6 +69,11 @@ class FaceBlurEngine:
                     "scrfd",
                 ),
             ]
+            for reference in Path.cwd().parent.glob("风无忧剪辑软件V1.6_1/*"):
+                candidates.extend([
+                    (reference / "face_detection_yunet_2023mar.onnx", "yunet"),
+                    (reference / "scrfd_det_10g.onnx", "scrfd"),
+                ])
             for c, mtype in candidates:
                 if c.exists():
                     model_path = str(c)
@@ -76,11 +88,24 @@ class FaceBlurEngine:
         self._input_size = self.INPUT_SIZES.get(self._model_type, (640, 640))
 
         try:
-            import onnxruntime as ort
-            self._session = ort.InferenceSession(
-                str(model_path),
-                providers=["CPUExecutionProvider"],
-            )
+            if self._model_type == "yunet":
+                if not str(model_path).isascii():
+                    safe_model = (
+                        Path(tempfile.gettempdir())
+                        / "flowcut_face_detection_yunet.onnx"
+                    )
+                    shutil.copy2(model_path, safe_model)
+                    model_path = str(safe_model)
+                self._detector = cv2.FaceDetectorYN.create(
+                    str(model_path), "", self._input_size,
+                    score_threshold=self._score_thresh,
+                )
+            else:
+                import onnxruntime as ort
+                self._session = ort.InferenceSession(
+                    str(model_path),
+                    providers=["CPUExecutionProvider"],
+                )
             self._available = True
             self._log(f"[人脸] 模型加载完成: {Path(model_path).name}")
         except Exception as e:
@@ -97,6 +122,17 @@ class FaceBlurEngine:
 
         h, w = image.shape[:2]
         iw, ih = self._input_size
+        if self._model_type == "yunet" and self._detector is not None:
+            self._detector.setInputSize((w, h))
+            _, detections = self._detector.detect(image)
+            if detections is None:
+                return []
+            return [
+                (max(0, int(det[0])), max(0, int(det[1])),
+                 min(w, int(det[2])), min(h, int(det[3])))
+                for det in detections
+                if float(det[-1]) >= self._score_thresh
+            ]
 
         # 预处理
         resized = cv2.resize(image, (iw, ih))
@@ -289,6 +325,7 @@ def apply_face_blur_ffmpeg(
     output_path: Path,
     model_path: Optional[str] = None,
     blur_strength: int = 35,
+    blur_expand: int = 100,
     detect_every: int = 1,
     log_callback: Optional[Callable[[str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
@@ -316,14 +353,14 @@ def apply_face_blur_ffmpeg(
     engine = FaceBlurEngine(
         model_path=model_path,
         blur_strength=blur_strength,
+        blur_expand=blur_expand,
         detect_every=detect_every,
         log_callback=log,
     )
 
     if not engine.is_available:
-        log("[人脸] 人脸模糊不可用，保留原视频")
-        shutil.copy2(str(input_path), str(output_path))
-        return True
+        log("[人脸] 人脸模糊不可用")
+        return False
 
     # Step 1: OpenCV 处理
     temp_raw = input_path.parent / f"{input_path.stem}_blur_raw.mp4"

@@ -6,7 +6,7 @@ import sys
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).resolve().parent
 # 注意：不要将 ROOT 加入 sys.path，否则捆绑的 Python 3.12 .pyd
 # 会与系统 Python 冲突。系统已通过 pip 安装所需依赖（PySide6,
 # faster-whisper 等）。

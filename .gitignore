@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+config.json
+配置文件/
+.codex_video_frames/
