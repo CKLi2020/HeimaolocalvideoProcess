@@ -11,34 +11,51 @@ MIDNIGHT_QSS = """
    ══════════════════════════════════════════════════════════════ */
 
 QWidget {
-    background: #0f1b30;
+    background: #172640;
     color: #d4dff0;
     font-family: "Microsoft YaHei UI", "Segoe UI", system-ui;
     font-size: 12px;
 }
 
 QMainWindow {
-    background: #0a1425;
+    background: #111d32;
 }
 
 /* ── Panel cards (raised surfaces) ── */
 QFrame#panel {
-    background: #152136;
-    border: 1px solid #1e3052;
+    background: #1b2c49;
+    border: 1px solid #2c456d;
     border-radius: 10px;
 }
 
 /* ── Sidebar & navigation rail ── */
 QFrame#sidebar {
-    background: #111d31;
-    border: 1px solid #1b2c48;
+    background: #192a46;
+    border: 1px solid #2b4369;
     border-radius: 10px;
 }
 
 QFrame#channelBar {
-    background: #0d1729;
-    border: 1px solid #17263f;
+    background: #070f1d;
+    border: 1px solid #13213a;
     border-radius: 10px;
+}
+
+QFrame#rightPanel {
+    background: #223858;
+    border: 1px solid #42618e;
+    border-radius: 10px;
+}
+
+QFrame#rightPanel QTabWidget::pane {
+    background: #223858;
+    border-color: #42618e;
+}
+
+QFrame#rightPanel QGroupBox,
+QFrame#rightPanel QGroupBox::title {
+    background: #294267;
+    border-color: #4a6b99;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -99,8 +116,8 @@ QLabel#previewHint {
    ══════════════════════════════════════════════════════════════ */
 
 QGroupBox {
-    background: #152136;
-    border: 1px solid #1e3052;
+    background: #1b2c49;
+    border: 1px solid #2c456d;
     border-radius: 10px;
     margin-top: 16px;
     padding: 18px 12px 12px;
@@ -114,8 +131,8 @@ QGroupBox::title {
     left: 14px;
     padding: 2px 10px;
     color: #93bbf5;
-    background: #152136;
-    border: 1px solid #1e3052;
+    background: #1b2c49;
+    border: 1px solid #2c456d;
     border-radius: 6px;
     font-size: 11px;
 }
@@ -189,6 +206,18 @@ QSpinBox::up-button, QSpinBox::down-button {
     margin: 2px;
 }
 
+QSpinBox::up-arrow {
+    image: url(resources/spin-up.svg);
+    width: 10px;
+    height: 7px;
+}
+
+QSpinBox::down-arrow {
+    image: url(resources/spin-down.svg);
+    width: 10px;
+    height: 7px;
+}
+
 QSpinBox::up-button:hover, QSpinBox::down-button:hover {
     background: #243558;
 }
@@ -246,6 +275,7 @@ QCheckBox::indicator:checked {
         stop:0 #3b82f6, stop:1 #2563eb
     );
     border-color: #60a5fa;
+    image: url(resources/check.svg);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -414,8 +444,8 @@ QPushButton#channelButton:checked {
    ══════════════════════════════════════════════════════════════ */
 
 QTabWidget::pane {
-    background: #121e34;
-    border: 1px solid #1c2e4e;
+    background: #192a46;
+    border: 1px solid #2b456e;
     border-radius: 8px;
     top: -1px;
 }

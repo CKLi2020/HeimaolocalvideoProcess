@@ -20,7 +20,7 @@ from app.main_window import MainWindow
 
 def main() -> None:
     app = QApplication(sys.argv)
-    app.setApplicationName("FlowCut Studio")
+    app.setApplicationName("黑猫苍老师")
 
     # 设置默认字体
     font = QFont("Microsoft YaHei UI", 10)

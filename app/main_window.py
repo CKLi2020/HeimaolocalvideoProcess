@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         if not self._preset_mgr.list_presets():
             self._preset_mgr.save("默认预设", config)
 
-        self.setWindowTitle("风无忧 · 视频剪辑软件")
+        self.setWindowTitle("黑猫苍老师")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
         self.setStyleSheet(MIDNIGHT_QSS)
@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
         header.setObjectName("panel")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(6, 3, 8, 3)
-        brand = QLabel("BLACKCAT FLOWCUT")
+        brand = QLabel("黑猫苍老师")
         brand.setObjectName("brand")
         header_layout.addWidget(brand)
         brand_sub = QLabel("VIDEO COMPOSER")
@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         channel_layout = QVBoxLayout(channel_panel)
         channel_layout.setContentsMargins(12, 18, 12, 12)
         channel_layout.setSpacing(9)
-        channel_brand = QLabel("BLACKCAT")
+        channel_brand = QLabel("黑猫苍老师")
         channel_brand.setObjectName("channelBrand")
         channel_layout.addWidget(channel_brand)
         channel_caption = QLabel("FLOWCUT STUDIO")
@@ -149,7 +149,7 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(5, 4, 5, 5)
         left_layout.setSpacing(5)
         self._files_page = FilesPage(self.config)
-        left_layout.addWidget(self._files_page, 4)
+        left_layout.addWidget(self._files_page, 6)
 
         controls = QFrame()
         controls.setObjectName("panel")
@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
         left_layout.addSpacing(24)
         self._log = LogPanel("处理日志")
         self._log.header_layout.addWidget(clear_log)
-        left_layout.addWidget(self._log, 5)
+        left_layout.addWidget(self._log, 3)
         splitter.addWidget(left_panel)
 
         # Center: large preview canvas.
@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
 
         # Right: reference-style compact parameter tabs.
         right_panel = QFrame()
-        right_panel.setObjectName("panel")
+        right_panel.setObjectName("rightPanel")
         right_panel.setMinimumWidth(380)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(4, 4, 4, 4)

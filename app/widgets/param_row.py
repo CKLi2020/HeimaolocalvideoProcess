@@ -80,6 +80,7 @@ class ParamRow(QWidget):
             self._widget.setRange(lo, hi)
             self._widget.setValue(int(initial) if initial else 0)
             if param_type.startswith("slider:"):
+                self._widget.setButtonSymbols(QSpinBox.NoButtons)
                 self._slider = QSlider(Qt.Horizontal)
                 self._slider.setRange(lo, hi)
                 self._slider.setValue(self._widget.value())
