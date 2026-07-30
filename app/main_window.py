@@ -144,7 +144,7 @@ class MainWindow(QMainWindow):
         # Left: folders, controls, presets and log.
         left_panel = QFrame()
         left_panel.setObjectName("sidebar")
-        left_panel.setMinimumWidth(320)
+        left_panel.setMinimumWidth(380)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(5, 4, 5, 5)
         left_layout.setSpacing(5)
@@ -171,7 +171,6 @@ class MainWindow(QMainWindow):
         row.addWidget(self._btn_test)
         clear_log = QPushButton("清空日志")
         clear_log.clicked.connect(self._log_clear)
-        row.addWidget(clear_log)
         controls_layout.addLayout(row)
 
         batch_row = QHBoxLayout()
@@ -216,6 +215,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(controls)
         left_layout.addSpacing(24)
         self._log = LogPanel("处理日志")
+        self._log.header_layout.addWidget(clear_log)
         left_layout.addWidget(self._log, 5)
         splitter.addWidget(left_panel)
 
@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
         # Right: reference-style compact parameter tabs.
         right_panel = QFrame()
         right_panel.setObjectName("panel")
-        right_panel.setMinimumWidth(430)
+        right_panel.setMinimumWidth(380)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(4, 4, 4, 4)
         self._tabs = QTabWidget()
@@ -290,7 +290,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 0)
         splitter.setStretchFactor(2, 1)
         splitter.setStretchFactor(3, 0)
-        splitter.setSizes([180, 340, 700, 470])
+        splitter.setSizes([180, 390, 720, 400])
         root_layout.addWidget(splitter, stretch=1)
 
     def _preview_refresh(self) -> None:

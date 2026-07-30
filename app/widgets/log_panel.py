@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtWidgets import QTextEdit, QWidget, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QTextEdit, QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PySide6.QtGui import QTextCursor, QColor
 from PySide6.QtCore import Qt
 
@@ -19,9 +19,12 @@ class LogPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
+        self.header_layout = QHBoxLayout()
         header = QLabel(title)
         header.setStyleSheet("color: #94a3b8; font-weight: bold; font-size: 11px;")
-        layout.addWidget(header)
+        self.header_layout.addWidget(header)
+        self.header_layout.addStretch()
+        layout.addLayout(self.header_layout)
 
         self._text = QTextEdit()
         self._text.setReadOnly(True)
