@@ -154,12 +154,11 @@ def process_batch(
                 except Exception:
                     layers = []
                 num_layers = len(layers) if layers else 1
-                if config.sticker_switch_sec > 0:
-                    sticker_files = sfiles
-                else:
-                    for _ in range(num_layers):
-                        if sfiles:
-                            sticker_files.append(random.choice(sfiles))
+                # ponytail: two alternating groups keep FFmpeg inputs bounded.
+                group_count = 2 if config.sticker_switch_sec > 0 else 1
+                for _ in range(num_layers * group_count):
+                    if sfiles:
+                        sticker_files.append(random.choice(sfiles))
 
             scanlight_file = None
             if config.scanlight_enabled:

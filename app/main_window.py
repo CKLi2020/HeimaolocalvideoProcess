@@ -39,6 +39,7 @@ from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
+from app.widgets.param_row import ParamRow
 from app.preset_manager import PresetManager
 from engine.worker import BatchWorker
 
@@ -235,6 +236,7 @@ class MainWindow(QMainWindow):
         preview_bar.addWidget(refresh)
         center_layout.addLayout(preview_bar)
         self._preview = PreviewCanvas(self.config, self.root_dir)
+        self._files_page.paths_changed.connect(self._preview.schedule_refresh)
         center_layout.addWidget(self._preview, 1)
         hint = QLabel("⚠ 请选择有效的主视频和辅助视频文件夹")
         hint.setAlignment(Qt.AlignCenter)
@@ -286,6 +288,8 @@ class MainWindow(QMainWindow):
         for name, page in tabs:
             self._tabs.addTab(page, name)
         right_layout.addWidget(self._tabs, stretch=1)
+        for row in right_panel.findChildren(ParamRow):
+            row.value_changed.connect(self._preview.schedule_refresh)
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 0)

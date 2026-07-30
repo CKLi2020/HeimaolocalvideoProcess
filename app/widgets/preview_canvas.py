@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import copy
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
-from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
+from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QFont
 from PySide6.QtCore import Qt, QTimer, QPoint, QRect
 from config import AppConfig
 
@@ -33,6 +34,7 @@ class PreviewCanvas(QWidget):
         self._config = config
         self._root = root_dir
         self._pixmap: Optional[QPixmap] = None
+        self._face_engine = None
         self._sticker_rects: list[QRect] = []  # 贴纸边界框
         self._dragging_idx: int = -1
         self._drag_start: QPoint = QPoint()
@@ -41,7 +43,7 @@ class PreviewCanvas(QWidget):
 
         self._debounce = QTimer()
         self._debounce.setSingleShot(True)
-        self._debounce.setInterval(500)
+        self._debounce.setInterval(300)
         self._debounce.timeout.connect(self._refresh_preview)
 
         layout = QVBoxLayout(self)
@@ -61,6 +63,8 @@ class PreviewCanvas(QWidget):
         self.show_placeholder()
 
     def show_placeholder(self) -> None:
+        self._pixmap = None
+        self._label.setPixmap(QPixmap())
         self._label.setText(
             '<div style="text-align:center;color:#4a6088;padding:40px;">'
             '<div style="font-size:42px;color:#3b82f6;margin-bottom:6px;">▶</div>'
@@ -79,31 +83,45 @@ class PreviewCanvas(QWidget):
         main_folder = self._resolve(self._config.main_folder)
         bg_folder = self._resolve(self._config.background_folder)
 
-        main_files = list(main_folder.glob("*")) if main_folder.is_dir() else []
-        bg_files = list(bg_folder.glob("*")) if bg_folder.is_dir() else []
+        from engine.ffmpeg_builder import (
+            IMAGE_EXTS, VIDEO_EXTS, build_ffmpeg_command, list_media,
+        )
+        main_files = list_media(str(main_folder), VIDEO_EXTS)
+        bg_files = list_media(str(bg_folder), VIDEO_EXTS)
 
-        if not main_files or not bg_files:
+        if not main_files and not bg_files:
+            self.show_placeholder()
             return
 
-        import random
-        main_v = random.choice(main_files)
-        bg_v = random.choice(bg_files)
+        main_v = main_files[0] if main_files else None
+        bg_v = bg_files[0] if bg_files else None
+        if not main_v or not bg_v:
+            self._show_video_frame(main_v or bg_v)
+            return
 
         try:
-            from engine.ffmpeg_builder import (
-                IMAGE_EXTS, VIDEO_EXTS, build_ffmpeg_command, list_media,
-            )
-            stickers = list_media(
+            sticker_pool = list_media(
                 str(self._resolve(self._config.sticker_folder)),
                 VIDEO_EXTS | IMAGE_EXTS,
             )
-            movers = list_media(
+            sticker_layers = self._get_layers()
+            stickers = [
+                sticker_pool[i % len(sticker_pool)]
+                for i in range(len(sticker_layers))
+            ] if self._config.sticker_enabled and sticker_pool else []
+
+            mover_pool = list_media(
                 str(self._resolve(
                     self._config.moving_sticker_folder
                     or self._config.sticker_folder
                 )),
                 VIDEO_EXTS | IMAGE_EXTS,
             )
+            mover_layers = self._get_mover_layers()
+            movers = [
+                mover_pool[i % len(mover_pool)]
+                for i in range(len(mover_layers))
+            ] if self._config.moving_sticker_enabled and mover_pool else []
             scanlights = list_media(
                 str(self._resolve(self._config.scanlight_folder)), VIDEO_EXTS
             )
@@ -115,28 +133,101 @@ class PreviewCanvas(QWidget):
             with tempfile.TemporaryDirectory() as tmp:
                 video = Path(tmp) / "preview.mp4"
                 image = Path(tmp) / "preview.png"
+                preview_config = copy.copy(self._config)
+                preview_config.sticker_switch_sec = 0
                 cmd = build_ffmpeg_command(
-                    self._config, main_v, bg_v, video,
+                    preview_config, main_v, bg_v, video,
                     sticker_files=stickers or None,
                     scanlight_file=scanlights[0] if scanlights else None,
                     kaimu_file=openings[0] if openings else None,
                     mover_files=movers or None,
                 )
+                cmd[-1:-1] = ["-t", "1"]
                 subprocess.run(cmd, capture_output=True, timeout=30, check=True)
                 subprocess.run(
-                    ["ffmpeg", "-y", "-i", str(video), "-frames:v", "1", str(image)],
+                    [
+                        "ffmpeg", "-y", "-ss", "0.5", "-i", str(video),
+                        "-frames:v", "1", str(image),
+                    ],
                     capture_output=True, timeout=10, check=True,
                 )
                 if image.stat().st_size > 100:
+                    self._apply_face_blur(image)
                     self._show_pixmap(QPixmap(str(image)))
+        except Exception as exc:
+            self._show_video_frame(main_v)
+            self._label.setToolTip(f"完整叠加预览生成失败：{exc}")
+
+    def _show_video_frame(self, video: Path) -> None:
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                image = Path(tmp) / "source.png"
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-ss", "0.5", "-i", str(video),
+                        "-frames:v", "1", str(image),
+                    ],
+                    capture_output=True, timeout=10, check=True,
+                )
+                if image.stat().st_size > 100:
+                    self._apply_face_blur(image)
+                    self._show_pixmap(QPixmap(str(image)))
+                    return
         except Exception:
             pass
+        self.show_placeholder()
 
     def _show_pixmap(self, pm: QPixmap) -> None:
+        self._draw_subtitle_preview(pm)
+        self._label.setToolTip("")
         self._pixmap = pm.scaled(
             self._label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
         )
         self._label.setPixmap(self._pixmap)
+
+    def _apply_face_blur(self, image: Path) -> None:
+        if not self._config.face_blur_enabled:
+            return
+        try:
+            import cv2
+            from engine.face_blur import FaceBlurEngine
+
+            if self._face_engine is None:
+                self._face_engine = FaceBlurEngine(log_callback=lambda _: None)
+            self._face_engine._blur_strength = self._config.face_blur_strength
+            self._face_engine._blur_expand = self._config.face_blur_expand
+            frame = cv2.imread(str(image))
+            faces = self._face_engine.detect_faces(frame)
+            cv2.imwrite(str(image), self._face_engine.blur_faces(frame, faces))
+        except Exception:
+            pass
+
+    def _draw_subtitle_preview(self, pm: QPixmap) -> None:
+        if not self._config.subtitle_enabled or pm.isNull():
+            return
+
+        text = "这是字幕动态预览效果"
+        width = max(1, self._config.subtitle_max_chars)
+        lines = [text[i:i + width] for i in range(0, len(text), width)]
+        painter = QPainter(pm)
+        painter.setRenderHint(QPainter.Antialiasing)
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(self._config.subtitle_font_size)
+        font.setBold(True)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        line_height = metrics.height()
+        y = int(pm.height() * self._config.subtitle_pos_y / 100)
+        style_index = sum(map(ord, self._config.subtitle_style)) % 3
+        color = (QColor("#ffffff"), QColor("#fde047"), QColor("#67e8f9"))[style_index]
+        for index, line in enumerate(lines):
+            x = (pm.width() - metrics.horizontalAdvance(line)) // 2
+            line_y = y + index * line_height
+            painter.setPen(QPen(QColor("#000000"), 5))
+            painter.drawText(x, line_y, line)
+            painter.setPen(color)
+            painter.drawText(x, line_y, line)
+        painter.end()
 
     # ── 拖拽 + 滚轮 ──
 
@@ -204,6 +295,14 @@ class PreviewCanvas(QWidget):
             "x": self._config.sticker_x,
             "y": self._config.sticker_y,
         }]
+
+    def _get_mover_layers(self) -> list[dict]:
+        try:
+            if self._config.mover_layers_json:
+                return json.loads(self._config.mover_layers_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return [{}]
 
     def _update_layer(self, idx: int, **kwargs) -> None:
         layers = self._get_layers()

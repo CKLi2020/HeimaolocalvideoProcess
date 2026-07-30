@@ -98,7 +98,10 @@ def build_ffmpeg_command(
         bg_filter_parts.insert(0, f"setpts={1/aux_speed}*PTS")
     if abs(aux_scale_val - 1.0) > 0.01:
         bg_filter_parts.append(f"scale=iw*{aux_scale_val}:ih*{aux_scale_val}")
-        bg_filter_parts.append(f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}")
+        if aux_scale_val > 1:
+            bg_filter_parts.append(f"crop={w}:{h}:(iw-{w})/2:(ih-{h})/2")
+        else:
+            bg_filter_parts.append(f"pad={w}:{h}:({w}-iw)/2:({h}-ih)/2:black")
     bg_filter_parts.append(f"fps={fps}")
 
     filters.append(f"[0:v]{','.join(bg_filter_parts)}{next_tag('bg')}")
@@ -110,16 +113,18 @@ def build_ffmpeg_command(
     input_idx = 2
 
     if config.main_fit:
-        # 完整适配模式：缩放到刚好填满画布（可能有裁切）
+        # 完整适配模式：先填满画布，再应用用户缩放。
         main_filter = (
             f"[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
-            f"crop={w}:{h},fps={fps},format=rgba{next_tag('main')}"
+            f"crop={w}:{h},"
+            f"scale=iw*{main_scale}:ih*{main_scale},"
+            f"fps={fps},format=rgba{next_tag('main')}"
         )
     else:
-        # 百分比缩放模式，保持比例居中
+        # 完整显示模式：先适配画布，再应用用户缩放。
         main_filter = (
-            f"[1:v]scale=iw*{main_scale}:ih*{main_scale},"
             f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"scale=iw*{main_scale}:ih*{main_scale},"
             f"fps={fps},format=rgba{next_tag('main')}"
         )
     filters.append(main_filter)
@@ -350,23 +355,32 @@ def build_ffmpeg_command(
             "x": config.sticker_x,
             "y": config.sticker_y,
         }]
+    centered_sticker_positions = any(
+        layer.get("x", 0) < 0 or layer.get("y", 0) < 0
+        for layer in sticker_layer_configs
+    )
+    sticker_layer_count = len(sticker_layer_configs)
+    sticker_group_count = max(
+        1, (len(sticker_files or []) + sticker_layer_count - 1) // sticker_layer_count
+    )
 
     if config.sticker_enabled and sticker_files:
         for i, sf in enumerate(sticker_files):
             if not sf or not sf.exists():
                 continue
-            layer_cfg = sticker_layer_configs[i] if i < len(sticker_layer_configs) else sticker_layer_configs[-1]
+            layer_cfg = sticker_layer_configs[i % sticker_layer_count]
 
-            is_video = sf.suffix.lower() in VIDEO_EXTS
-            loop_args = ["-stream_loop", "-1"] if is_video else ["-loop", "1"]
+            is_stream = sf.suffix.lower() in VIDEO_EXTS | {".gif"}
+            loop_args = ["-stream_loop", "-1"] if is_stream else ["-loop", "1"]
             cmd += loop_args + ["-i", str(sf)]
             idx = input_idx
             input_idx += 1
 
             sc = layer_cfg["scale"] / 100.0
             op = layer_cfg["opacity"] / 100.0
-            sx = layer_cfg["x"] / 100.0
-            sy = layer_cfg["y"] / 100.0
+            offset = 50 if centered_sticker_positions else 0
+            sx = (layer_cfg["x"] + offset) / 100.0
+            sy = (layer_cfg["y"] + offset) / 100.0
             tag = f"sticker{i}"
 
             filters.append(
@@ -375,10 +389,11 @@ def build_ffmpeg_command(
                 f"[{tag}]"
             )
             switch = ""
-            if config.sticker_switch_sec > 0 and len(sticker_files) > 1:
-                start = i * config.sticker_switch_sec
-                end = (i + 1) * config.sticker_switch_sec
-                cycle = len(sticker_files) * config.sticker_switch_sec
+            if config.sticker_switch_sec > 0 and sticker_group_count > 1:
+                group = i // sticker_layer_count
+                start = group * config.sticker_switch_sec
+                end = (group + 1) * config.sticker_switch_sec
+                cycle = sticker_group_count * config.sticker_switch_sec
                 switch = f":enable='between(mod(t,{cycle}),{start},{end})'"
             filters.append(
                 f"[{base_tag}][{tag}]overlay="
@@ -405,8 +420,8 @@ def build_ffmpeg_command(
                 continue
             layer_cfg = mover_layer_configs[i] if i < len(mover_layer_configs) else mover_layer_configs[-1]
 
-            is_video = mf.suffix.lower() in VIDEO_EXTS
-            loop_args = ["-stream_loop", "-1"] if is_video else ["-loop", "1"]
+            is_stream = mf.suffix.lower() in VIDEO_EXTS | {".gif"}
+            loop_args = ["-stream_loop", "-1"] if is_stream else ["-loop", "1"]
             cmd += loop_args + ["-i", str(mf)]
             idx = input_idx
             input_idx += 1
@@ -488,7 +503,7 @@ def build_ffmpeg_command(
         if kaimu_file and kaimu_file.exists():
             loop_args = (
                 ["-stream_loop", "-1"]
-                if kaimu_file.suffix.lower() in VIDEO_EXTS
+                if kaimu_file.suffix.lower() in VIDEO_EXTS | {".gif"}
                 else ["-loop", "1"]
             )
             cmd += loop_args + ["-i", str(kaimu_file)]

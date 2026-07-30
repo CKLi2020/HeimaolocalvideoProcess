@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QFormLayout,
 )
+from PySide6.QtCore import Signal
 
 from config import AppConfig
 from app.widgets.folder_row import FolderRow
@@ -18,6 +19,8 @@ from app.widgets.param_row import ParamRow
 
 
 class FilesPage(QWidget):
+    paths_changed = Signal()
+
     def __init__(self, config: AppConfig, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.config = config
@@ -47,7 +50,7 @@ class FilesPage(QWidget):
         ]
         for label, key in folders:
             row = FolderRow(placeholder=f"选择{label}...", initial=str(getattr(config, key, "")))
-            row.path_changed.connect(lambda v, k=key: setattr(config, k, v))
+            row.path_changed.connect(lambda v, k=key: self._set_folder(k, v))
             folder_form.addRow(label, row)
             self._rows[key] = row
 
@@ -60,6 +63,10 @@ class FilesPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(scroll)
+
+    def _set_folder(self, key: str, value: str) -> None:
+        setattr(self.config, key, value)
+        self.paths_changed.emit()
 
 
 def _setattr(obj, key, value):
