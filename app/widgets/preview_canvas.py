@@ -237,14 +237,13 @@ class PreviewCanvas(QWidget):
         pos = ev.pos()
         layers = self._get_layers()
         for i, layer in enumerate(layers):
-            rx = int(self._label.width() * layer.get("x", 50) / 100)
-            ry = int(self._label.height() * layer.get("y", 50) / 100)
-            rs = int(30 * layer.get("scale", 20) / 20)
+            rx, ry = self._layer_point(layer)
+            rs = max(24, int(35 * layer.get("scale", 100) / 100))
             if abs(pos.x() - rx) < rs and abs(pos.y() - ry) < rs:
                 self._dragging_idx = i
                 self._drag_start = pos
-                self._orig_x = layer.get("x", 50)
-                self._orig_y = layer.get("y", 50)
+                self._orig_x = layer.get("x", 0)
+                self._orig_y = layer.get("y", 0)
                 self._label.setCursor(Qt.ClosedHandCursor)
                 return
 
@@ -252,10 +251,10 @@ class PreviewCanvas(QWidget):
         if self._dragging_idx < 0:
             return
         delta = ev.pos() - self._drag_start
-        dx = int(delta.x() / self._label.width() * 100)
-        dy = int(delta.y() / self._label.height() * 100)
-        new_x = max(0, min(100, self._orig_x + dx))
-        new_y = max(0, min(100, self._orig_y + dy))
+        dx = int(delta.x() / max(1, self._pixmap.width()) * 100)
+        dy = int(delta.y() / max(1, self._pixmap.height()) * 100)
+        new_x = max(-50, min(50, self._orig_x + dx))
+        new_y = max(-50, min(50, self._orig_y + dy))
         self._update_layer(self._dragging_idx, x=new_x, y=new_y)
 
     def _on_mouse_release(self, ev) -> None:
@@ -269,11 +268,10 @@ class PreviewCanvas(QWidget):
         delta = 1 if ev.angleDelta().y() > 0 else -1
         layers = self._get_layers()
         for i, layer in enumerate(layers):
-            rx = int(self._label.width() * layer.get("x", 50) / 100)
-            ry = int(self._label.height() * layer.get("y", 50) / 100)
-            rs = int(30 * layer.get("scale", 20) / 20)
+            rx, ry = self._layer_point(layer)
+            rs = max(24, int(35 * layer.get("scale", 100) / 100))
             if abs(pos.x() - rx) < rs and abs(pos.y() - ry) < rs:
-                new_scale = max(5, min(200, layer.get("scale", 20) + delta * 3))
+                new_scale = max(5, min(200, layer.get("scale", 100) + delta * 3))
                 self._update_layer(i, scale=new_scale)
                 return
 
@@ -282,6 +280,17 @@ class PreviewCanvas(QWidget):
     def _resolve(self, value: str) -> Path:
         p = Path(value)
         return p if p.is_absolute() else self._root / p
+
+    def _layer_point(self, layer: dict) -> tuple[int, int]:
+        """Map reference coordinates (-50..50) into the centered preview pixmap."""
+        left = (self._label.width() - self._pixmap.width()) // 2
+        top = (self._label.height() - self._pixmap.height()) // 2
+        x = (layer.get("x", 0) + 50) / 100
+        y = (layer.get("y", 0) + 50) / 100
+        return (
+            left + int(self._pixmap.width() * x),
+            top + int(self._pixmap.height() * y),
+        )
 
     def _get_layers(self) -> list[dict]:
         try:

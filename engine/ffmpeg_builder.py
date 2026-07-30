@@ -107,23 +107,24 @@ def build_ffmpeg_command(
     filters.append(f"[0:v]{','.join(bg_filter_parts)}{next_tag('bg')}")
 
     # ═══════════════════════════════════════════════════════════
-    # INPUT 1: Main video
+    # INPUT 1: Main video — 完全匹配参考软件逻辑
     # ═══════════════════════════════════════════════════════════
     cmd += ["-i", str(main_video)]
     input_idx = 2
 
     if config.main_fit:
-        # 完整适配模式：先填满画布，再应用用户缩放。
+        # 参考软件逻辑：先按用户比例缩放，再缩小适配画布（不超出）
+        # 主视频始终在画布内，背景视频在上下方可见
         main_filter = (
-            f"[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
-            f"crop={w}:{h},"
-            f"scale=iw*{main_scale}:ih*{main_scale},"
+            f"[1:v]scale=iw*{main_scale}:ih*{main_scale},"
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
             f"fps={fps},format=rgba{next_tag('main')}"
         )
     else:
-        # 完整显示模式：先适配画布，再应用用户缩放。
+        # 强制填满：increase+crop 确保画布无黑边
         main_filter = (
-            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+            f"crop={w}:{h},"
             f"scale=iw*{main_scale}:ih*{main_scale},"
             f"fps={fps},format=rgba{next_tag('main')}"
         )
@@ -189,41 +190,76 @@ def build_ffmpeg_command(
         base_tag = "matted"
 
     # ═══════════════════════════════════════════════════════════
-    # BARS: 非对称顶底横条
+    # BARS: 顶底横条 — 参考软件逻辑：背景视频裁剪 + alpha 叠加
     # ═══════════════════════════════════════════════════════════
     if config.bars_enabled:
-        # 顶部横条（可使用独立参数或对称参数）
-        top_h = config.top_bar_height if config.split_bars_enabled else config.bar_height
+        top_h_use = config.top_bar_height if config.split_bars_enabled else config.bar_height
         top_op = (config.top_bar_opacity if config.split_bars_enabled else config.bar_opacity) / 100.0
-        bot_h = config.bottom_bar_height if config.split_bars_enabled else config.bar_height
+        bot_h_use = config.bottom_bar_height if config.split_bars_enabled else config.bar_height
         bot_op = (config.bottom_bar_opacity if config.split_bars_enabled else config.bar_opacity) / 100.0
 
-        top_h = min(top_h, h)
-        bot_h = min(bot_h, h)
-        filters.append(
-            f"[{base_tag}]drawbox=x=0:y=0:w={w}:h={top_h}:"
-            f"color=black@{top_op}:t=fill,"
-            f"drawbox=x=0:y={h - bot_h}:w={w}:h={bot_h}:"
-            f"color=black@{bot_op}:t=fill,"
-            f"drawbox=x=0:y={max(0, top_h - config.top_bar_feather_down)}:"
-            f"w={w}:h={max(1, config.top_bar_feather_down)}:"
-            f"color=black@{top_op / 2}:t=fill,"
-            f"drawbox=x=0:y={h - bot_h}:w={w}:"
-            f"h={max(1, config.bottom_bar_feather_up)}:"
-            f"color=black@{bot_op / 2}:t=fill{next_tag('bars')}"
-        )
-        base_tag = "bars"
+        top_h_use = min(top_h_use, h)
+        bot_h_use = min(bot_h_use, h)
+
+        # 顶部横条：从 [0:v] 重新处理背景 → 裁切顶部区域 → alpha 混合叠加
+        if top_h_use > 0:
+            filters.append(
+                f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"crop={w}:{h},crop={w}:{top_h_use}:0:0,"
+                f"format=rgba,colorchannelmixer=aa={top_op}"
+                f"{next_tag('topbar')}"
+            )
+            filters.append(
+                f"[{base_tag}][topbar]overlay=0:0:shortest=1{next_tag('bars_t')}"
+            )
+            base_tag = "bars_t"
+
+        # 底部横条：同理
+        if bot_h_use > 0:
+            filters.append(
+                f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"crop={w}:{h},crop={w}:{bot_h_use}:0:{h - bot_h_use},"
+                f"format=rgba,colorchannelmixer=aa={bot_op}"
+                f"{next_tag('botbar')}"
+            )
+            filters.append(
+                f"[{base_tag}][botbar]overlay=0:{h - bot_h_use}:shortest=1"
+                f"{next_tag('bars')}"
+            )
+            base_tag = "bars"
+
+        # 顶部羽化：半透明黑色渐变
+        feather_h = max(1, config.top_bar_feather_down)
+        if feather_h > 0 and top_op > 0.05:
+            fop = min(top_op * 0.6, 0.9)
+            filters.append(
+                f"[{base_tag}]drawbox=x=0:y={max(0, top_h_use - feather_h)}:"
+                f"w={w}:h={feather_h}:"
+                f"color=black@{fop}:t=fill{next_tag('bars_tf')}"
+            )
+            base_tag = "bars_tf"
+
+        # 底部羽化
+        feather_h = max(1, config.bottom_bar_feather_up)
+        if feather_h > 0 and bot_op > 0.05:
+            fop = min(bot_op * 0.6, 0.9)
+            filters.append(
+                f"[{base_tag}]drawbox=x=0:y={h - bot_h_use}:w={w}:h={feather_h}:"
+                f"color=black@{fop}:t=fill{next_tag('bars_bf')}"
+            )
+            base_tag = "bars_bf"
 
         if config.split_bars_enabled:
             split = max(1, config.tb_split_feather or config.split_feather)
-            filters.append(
-                f"[{base_tag}]drawbox=x={(w - split) // 2}:y=0:w={split}:h={top_h}:"
-                f"color=black@0.35:t=fill,"
-                f"drawbox=x={(w - max(1, config.bb_split_feather or config.split_feather)) // 2}:"
-                f"y={h - bot_h}:w={max(1, config.bb_split_feather or config.split_feather)}:h={bot_h}:"
-                f"color=black@0.35:t=fill{next_tag('bars_split')}"
-            )
-            base_tag = "bars_split"
+            if split > 0:
+                filters.append(
+                    f"[{base_tag}]drawbox=x={(w - split) // 2}:y=0:w={split}:h={top_h_use}:"
+                    f"color=black@0.35:t=fill,"
+                    f"drawbox=x={(w - max(1, config.bb_split_feather or config.split_feather)) // 2}:"
+                    f"y={h - bot_h_use}:w={max(1, config.bb_split_feather or config.split_feather)}:h={bot_h_use}:"
+                    f"color=black@0.35:t=fill{next_tag('bars_split')}"
+                )
+                base_tag = "bars_split"
 
     # ═══════════════════════════════════════════════════════════
     # LINE: 十字线/横线叠加
@@ -355,7 +391,8 @@ def build_ffmpeg_command(
             "x": config.sticker_x,
             "y": config.sticker_y,
         }]
-    centered_sticker_positions = any(
+    # 参考软件坐标系：-100~100，0=居中，负数=从对边算
+    _use_ref_coords = any(
         layer.get("x", 0) < 0 or layer.get("y", 0) < 0
         for layer in sticker_layer_configs
     )
@@ -378,9 +415,12 @@ def build_ffmpeg_command(
 
             sc = layer_cfg["scale"] / 100.0
             op = layer_cfg["opacity"] / 100.0
-            offset = 50 if centered_sticker_positions else 0
-            sx = (layer_cfg["x"] + offset) / 100.0
-            sy = (layer_cfg["y"] + offset) / 100.0
+            if _use_ref_coords:
+                sx = (layer_cfg["x"] + 50) / 100.0
+                sy = (layer_cfg["y"] + 50) / 100.0
+            else:
+                sx = layer_cfg["x"] / 100.0
+                sy = layer_cfg["y"] / 100.0
             tag = f"sticker{i}"
 
             filters.append(
@@ -415,6 +455,10 @@ def build_ffmpeg_command(
         }]
 
     if config.moving_sticker_enabled and mover_files:
+        _mover_use_ref = any(
+            l.get("x", 0) < 0 or l.get("y", 0) < 0
+            for l in mover_layer_configs
+        )
         for i, mf in enumerate(mover_files):
             if not mf or not mf.exists():
                 continue
@@ -431,6 +475,13 @@ def build_ffmpeg_command(
             period = max(1, layer_cfg.get("period", config.moving_sticker_period))
             tag = f"mover{i}"
 
+            if _mover_use_ref:
+                mx = (layer_cfg["x"] + 100) / 200.0
+                my = (layer_cfg["y"] + 100) / 200.0
+            else:
+                mx = layer_cfg.get("x", 50) / 100.0
+                my = layer_cfg.get("y", 50) / 100.0
+
             filters.append(
                 f"[{idx}:v]scale=iw*{sc}:ih*{sc},"
                 f"format=rgba,colorchannelmixer=aa={op}"
@@ -438,8 +489,8 @@ def build_ffmpeg_command(
             )
             filters.append(
                 f"[{base_tag}][{tag}]overlay="
-                f"'(W-w)/2+(W-w)/2*sin(2*PI*t/{period})':"
-                f"'(H-h)/2+(H-h)/2*cos(2*PI*t/{period})':shortest=1"
+                f"'(W-w)*{mx}+(W-w)*{mx}*sin(2*PI*t/{period})':"
+                f"'(H-h)*{my}+(H-h)*{my}*cos(2*PI*t/{period})':shortest=1"
                 f"[{base_tag}_m{i}]"
             )
             base_tag = f"{base_tag}_m{i}"
@@ -458,11 +509,12 @@ def build_ffmpeg_command(
         filters.append(
             f"[{sl_idx}:v]scale={w}:{h},"
             f"setpts={1/sl_speed}*PTS,"
-            f"format=rgba,colorchannelmixer=aa={sl_opacity}"
+            f"format=gbrp"
             f"{next_tag('scan')}"
         )
         filters.append(
-            f"[{base_tag}][scan]blend=all_mode=screen:"
+            f"[{base_tag}]format=gbrp[scan_base];"
+            f"[scan_base][scan]blend=all_mode=screen:"
             f"all_opacity={sl_opacity}:shortest=1"
             f"{next_tag('scanned')}"
         )

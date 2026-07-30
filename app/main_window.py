@@ -237,6 +237,7 @@ class MainWindow(QMainWindow):
         center_layout.addLayout(preview_bar)
         self._preview = PreviewCanvas(self.config, self.root_dir)
         self._files_page.paths_changed.connect(self._preview.schedule_refresh)
+        self._files_page.paths_changed.connect(lambda: self._save_config())
         center_layout.addWidget(self._preview, 1)
         hint = QLabel("⚠ 请选择有效的主视频和辅助视频文件夹")
         hint.setAlignment(Qt.AlignCenter)
@@ -255,12 +256,13 @@ class MainWindow(QMainWindow):
         self._tabs.tabBar().setUsesScrollButtons(False)
         pip_page = PipPage(self.config)
         sticker_page = StickerPage(self.config)
+        sticker_page.preview_changed.connect(self._preview_refresh)
         picture_page = QWidget()
         picture_layout = QVBoxLayout(picture_page)
         picture_layout.setContentsMargins(0, 0, 0, 0)
         picture_tabs = QTabWidget()
-        picture_tabs.addTab(pip_page, "画中画")
         picture_tabs.addTab(sticker_page, "贴纸/扫光")
+        picture_tabs.addTab(pip_page, "画中画")
         picture_layout.addWidget(picture_tabs)
 
         self._pages = {
@@ -288,8 +290,8 @@ class MainWindow(QMainWindow):
         for name, page in tabs:
             self._tabs.addTab(page, name)
         right_layout.addWidget(self._tabs, stretch=1)
-        for row in right_panel.findChildren(ParamRow):
-            row.value_changed.connect(self._preview.schedule_refresh)
+        # ── Wire every parameter row across all pages to live preview ──
+        self._wire_params_to_preview()
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 0)
@@ -300,6 +302,15 @@ class MainWindow(QMainWindow):
 
     def _preview_refresh(self) -> None:
         self._preview.schedule_refresh()
+
+    def _wire_params_to_preview(self) -> None:
+        """Connect every parameter row across all pages to live preview refresh."""
+        for page in self._pages.values():
+            for row in getattr(page, "_rows", {}).values():
+                if hasattr(row, "value_changed"):
+                    row.value_changed.connect(self._preview.schedule_refresh)
+                if hasattr(row, "path_changed"):
+                    row.path_changed.connect(self._preview.schedule_refresh)
 
     def _select_channel(self, tab_index: int) -> None:
         self._tabs.setCurrentIndex(tab_index)
@@ -414,10 +425,13 @@ class MainWindow(QMainWindow):
                     row.value = getattr(self.config, key)
                 elif hasattr(row, "path"):
                     row.path = getattr(self.config, key)
+            if hasattr(page, "_rebuild_layers"):
+                page._rebuild_layers()
         self._delete_aux.setChecked(self.config.delete_used_aux)
         self._repeat_count.setValue(self.config.repeat_count)
 
         self._set_status(f"● 已加载预设 [{name}]", "#93c3fd", "#111c30", "#1e3a6e")
+        self._preview.schedule_refresh()
 
     def _refresh_presets(self, selected: str = "") -> None:
         names = self._preset_mgr.list_presets()
