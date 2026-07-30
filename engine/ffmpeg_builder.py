@@ -524,35 +524,17 @@ def build_ffmpeg_command(
     # KAIMU: 开幕效果
     # ═══════════════════════════════════════════════════════════
     if config.kaimu_enabled:
-        speed = config.kaimu_speed / 100.0
+        speed = max(0.1, config.kaimu_speed / 100.0)
         mode = config.kaimu_mode
-        duration = 1.5 / speed  # 开幕动画持续时间（秒）
+        duration = 1.5 / speed
+        transition = (
+            "vertopen" if "上下" in mode
+            else "horzopen" if "左右" in mode
+            else "fadeblack"
+        )
 
-        if "上下" in mode:
-            # 上下开幕：从中心线向上下展开
-            filters.append(
-                f"[{base_tag}]crop={w}:ih*t/{duration}:0:"
-                f"(ih-ih*t/{duration})/2:exact=1"
-                f"{next_tag('kaimu')}"
-            )
-        elif "左右" in mode:
-            # 左右开幕：从中心线向左右展开
-            filters.append(
-                f"[{base_tag}]crop=iw*t/{duration}:{h}:"
-                f"(iw-iw*t/{duration})/2:0:exact=1"
-                f"{next_tag('kaimu')}"
-            )
-        else:
-            # 黑屏开幕：淡入效果
-            filters.append(
-                f"[{base_tag}]fade=in:0:{int(duration * fps)}"
-                f"{next_tag('kaimu')}"
-            )
-
-        base_tag = "kaimu"
-
-        # 开幕素材叠加
-        if kaimu_file and kaimu_file.exists():
+        # 素材模式从封面素材平滑过渡到成片；其余模式从黑场开幕。
+        if "素材" in mode and kaimu_file and kaimu_file.exists():
             loop_args = (
                 ["-stream_loop", "-1"]
                 if kaimu_file.suffix.lower() in VIDEO_EXTS | {".gif"}
@@ -563,15 +545,26 @@ def build_ffmpeg_command(
             input_idx += 1
 
             filters.append(
-                f"[{km_idx}:v]scale={w}:{h},format=rgba"
-                f"{next_tag('km_mat')}"
+                f"[{km_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"crop={w}:{h},fps={fps},format=yuv420p,"
+                f"settb=AVTB,setpts=PTS-STARTPTS[km_open]"
             )
+            opening_tag = "km_open"
+            transition = "fade"
+        else:
             filters.append(
-                f"[{base_tag}][km_mat]overlay=0:0:shortest=1"
-                f":enable='lt(t,{duration:.3f})'"
-                f"{next_tag('with_km')}"
+                f"color=c=black:s={w}x{h}:r={fps}:d={duration + 1:.3f},"
+                f"format=yuv420p,settb=AVTB[kaimu_black]"
             )
-            base_tag = "with_km"
+            opening_tag = "kaimu_black"
+
+        filters.append(
+            f"[{base_tag}]format=yuv420p,settb=AVTB,"
+            f"setpts=PTS-STARTPTS[kaimu_content];"
+            f"[{opening_tag}][kaimu_content]xfade=transition={transition}:"
+            f"duration={duration:.3f}:offset=0{next_tag('kaimu')}"
+        )
+        base_tag = "kaimu"
 
     # ═══════════════════════════════════════════════════════════
     # COVER: 封面标题 (drawtext)
