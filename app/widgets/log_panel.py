@@ -21,7 +21,7 @@ class LogPanel(QWidget):
 
         self.header_layout = QHBoxLayout()
         header = QLabel(title)
-        header.setStyleSheet("color: #94a3b8; font-weight: bold; font-size: 11px;")
+        header.setObjectName("logHeader")
         self.header_layout.addWidget(header)
         self.header_layout.addStretch()
         layout.addLayout(self.header_layout)
@@ -31,7 +31,7 @@ class LogPanel(QWidget):
         self._text.setMinimumHeight(120)
         layout.addWidget(self._text)
 
-    def append(self, text: str, color: str = "#a7f3d0") -> None:
+    def append(self, text: str, color: str = "#6ee7b7") -> None:
         """追加一行日志。"""
         self._text.moveCursor(QTextCursor.End)
         fmt = self._text.currentCharFormat()

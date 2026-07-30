@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, Signal
 
 from config import AppConfig
-from app.theme import DARK_QSS
+from app.theme import MIDNIGHT_QSS
 from app.pages.files_page import FilesPage
 from app.pages.canvas_page import CanvasPage
 from app.pages.mask_page import MaskPage
@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("风无忧 · 视频剪辑软件")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
-        self.setStyleSheet(DARK_QSS)
+        self.setStyleSheet(MIDNIGHT_QSS)
 
         self.log_received.connect(self._on_log)
         self.progress_received.connect(self._on_progress)
@@ -226,7 +226,8 @@ class MainWindow(QMainWindow):
         center_layout.setContentsMargins(7, 5, 7, 7)
         preview_bar = QHBoxLayout()
         preview_title = QLabel("● 可视化预览（与导出参数同步）")
-        preview_title.setStyleSheet("color:#25e7f4; font-weight:700")
+        preview_title.setObjectName("sectionTitle")
+        preview_title.setStyleSheet("font-size: 11px;")
         preview_bar.addWidget(preview_title)
         preview_bar.addStretch()
         refresh = QPushButton("刷新")
@@ -237,7 +238,7 @@ class MainWindow(QMainWindow):
         center_layout.addWidget(self._preview, 1)
         hint = QLabel("⚠ 请选择有效的主视频和辅助视频文件夹")
         hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet("color:#b3a26b")
+        hint.setObjectName("previewHint")
         center_layout.addWidget(hint)
         splitter.addWidget(center_panel)
 
@@ -346,7 +347,7 @@ class MainWindow(QMainWindow):
 
         self._save_config()
         self._log.clear()
-        self._set_status("● 正在处理", "#fbbf24")
+        self._set_status("● 正在处理", "#fbbf24", "#1f1a0e", "#4a3a15")
         self._progress.setRange(0, 0)
         self._progress.show()
         self._btn_start.setEnabled(False)
@@ -363,8 +364,8 @@ class MainWindow(QMainWindow):
     def _on_self_test(self) -> None:
         """环境自检。"""
         self._log.clear()
-        self._log.append("═══ 环境自检 ═══", "#93c5fd")
-        self._set_status("● 自检中", "#93c5fd")
+        self._log.append("═══ 环境自检 ═══", "#60a5fa")
+        self._set_status("● 自检中", "#93c3fd", "#111c30", "#1e3a6e")
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(False)
         self._btn_test.setEnabled(False)
@@ -384,7 +385,7 @@ class MainWindow(QMainWindow):
             return
         if self._preset_mgr.save(name.strip(), self.config):
             self._refresh_presets(name.strip())
-            self._set_status(f"● 预设 [{name.strip()}] 已保存", "#86efac")
+            self._set_status(f"● 预设 [{name.strip()}] 已保存", "#34d399", "#0d2a1f", "#1a5a3e")
         else:
             QMessageBox.warning(self, "错误", "保存预设失败。")
 
@@ -412,7 +413,7 @@ class MainWindow(QMainWindow):
         self._delete_aux.setChecked(self.config.delete_used_aux)
         self._repeat_count.setValue(self.config.repeat_count)
 
-        self._set_status(f"● 已加载预设 [{name}]", "#93c5fd")
+        self._set_status(f"● 已加载预设 [{name}]", "#93c3fd", "#111c30", "#1e3a6e")
 
     def _refresh_presets(self, selected: str = "") -> None:
         names = self._preset_mgr.list_presets()
@@ -451,20 +452,21 @@ class MainWindow(QMainWindow):
         self._btn_stop.setEnabled(False)
         self._btn_test.setEnabled(True)
         if success:
-            self._set_status("● 就绪", "#86efac")
+            self._set_status("● 就绪", "#34d399", "#0d2a1f", "#1a5a3e")
         else:
-            self._set_status("● " + message, "#fda4af")
-        self._log.append("--- " + message + " ---", "#94a3b8")
+            self._set_status("● " + message, "#f87171", "#1f1518", "#3d1f28")
+        self._log.append("--- " + message + " ---", "#5a7aa5")
 
     # ═══════════════════════════════════════
     # 辅助方法
     # ═══════════════════════════════════════
 
-    def _set_status(self, text: str, color: str) -> None:
+    def _set_status(self, text: str, color: str, bg: str = "#0d2a1f", border: str = "#1a5a3e") -> None:
         self._status_label.setText(text)
         self._status_label.setStyleSheet(
-            f"font-size: 12px; padding: 6px 14px;"
-            f"background-color: #162232; border-radius: 12px; color: {color};"
+            f"font-size: 11px; padding: 5px 14px;"
+            f"background: {bg}; border: 1px solid {border};"
+            f"border-radius: 12px; color: {color}; font-weight: 700;"
         )
 
     def _resolve(self, value: str) -> Path:

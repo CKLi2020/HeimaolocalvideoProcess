@@ -62,10 +62,11 @@ class PreviewCanvas(QWidget):
 
     def show_placeholder(self) -> None:
         self._label.setText(
-            '<div style="text-align:center;color:#64748b;padding:40px;">'
-            '<div style="font-size:36px;color:#6366f1;">▶</div>'
-            '<div style="margin-top:16px;">选择素材后可预览<br/>'
-            '<span style="font-size:10px;">拖拽贴纸调整位置 | 滚轮缩放</span></div>'
+            '<div style="text-align:center;color:#4a6088;padding:40px;">'
+            '<div style="font-size:42px;color:#3b82f6;margin-bottom:6px;">▶</div>'
+            '<div style="font-size:13px;color:#7a95c0;font-weight:500;">选择素材后可预览</div>'
+            '<div style="margin-top:10px;font-size:10px;color:#4a6088;">'
+            '拖拽贴纸调整位置 &nbsp;|&nbsp; 滚轮缩放贴纸</div>'
             "</div>"
         )
 
