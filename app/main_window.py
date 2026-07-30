@@ -9,6 +9,7 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -57,7 +58,7 @@ class MainWindow(QMainWindow):
             self._preset_mgr.save("默认预设", config)
 
         self.setWindowTitle("风无忧 · 视频剪辑软件")
-        self.setGeometry(60, 30, 1680, 940)
+        self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
         self.setStyleSheet(DARK_QSS)
 
@@ -83,9 +84,12 @@ class MainWindow(QMainWindow):
         header.setObjectName("panel")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(6, 3, 8, 3)
-        mode = QPushButton("HDH蒙版模式")
-        mode.setObjectName("accent")
-        header_layout.addWidget(mode)
+        brand = QLabel("BLACKCAT FLOWCUT")
+        brand.setObjectName("brand")
+        header_layout.addWidget(brand)
+        brand_sub = QLabel("VIDEO COMPOSER")
+        brand_sub.setObjectName("brandSub")
+        header_layout.addWidget(brand_sub)
         tutorial = QPushButton("更新与教程")
         tutorial.setFlat(True)
         header_layout.addWidget(tutorial)
@@ -96,10 +100,51 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(header)
 
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(20)
+
+        # Persistent channel navigation. Every channel routes to a real page.
+        channel_panel = QFrame()
+        channel_panel.setObjectName("channelBar")
+        channel_panel.setMinimumWidth(170)
+        channel_panel.setMaximumWidth(190)
+        channel_layout = QVBoxLayout(channel_panel)
+        channel_layout.setContentsMargins(12, 18, 12, 12)
+        channel_layout.setSpacing(9)
+        channel_brand = QLabel("BLACKCAT")
+        channel_brand.setObjectName("channelBrand")
+        channel_layout.addWidget(channel_brand)
+        channel_caption = QLabel("FLOWCUT STUDIO")
+        channel_caption.setObjectName("brandSub")
+        channel_layout.addWidget(channel_caption)
+        channel_layout.addSpacing(18)
+        channel_layout.addWidget(QLabel("选择通道"))
+
+        self._channel_group = QButtonGroup(self)
+        self._channel_group.setExclusive(True)
+        channels = (
+            ("01", "HDH 蒙版通道", 0),
+        )
+        for number, name, tab_index in channels:
+            button = QPushButton(f"{number}   {name}")
+            button.setObjectName("channelButton")
+            button.setCheckable(True)
+            button.clicked.connect(
+                lambda checked=False, index=tab_index: self._select_channel(index)
+            )
+            self._channel_group.addButton(button)
+            channel_layout.addWidget(button)
+            if tab_index == 0:
+                button.setChecked(True)
+        channel_layout.addStretch()
+        channel_footer = QLabel("BLACK CAT VIDEO")
+        channel_footer.setObjectName("brandSub")
+        channel_layout.addWidget(channel_footer)
+        splitter.addWidget(channel_panel)
 
         # Left: folders, controls, presets and log.
         left_panel = QFrame()
-        left_panel.setObjectName("panel")
+        left_panel.setObjectName("sidebar")
+        left_panel.setMinimumWidth(320)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(5, 4, 5, 5)
         left_layout.setSpacing(5)
@@ -169,6 +214,7 @@ class MainWindow(QMainWindow):
         self._progress.hide()
         controls_layout.addWidget(self._progress)
         left_layout.addWidget(controls)
+        left_layout.addSpacing(24)
         self._log = LogPanel("处理日志")
         left_layout.addWidget(self._log, 5)
         splitter.addWidget(left_panel)
@@ -180,7 +226,7 @@ class MainWindow(QMainWindow):
         center_layout.setContentsMargins(7, 5, 7, 7)
         preview_bar = QHBoxLayout()
         preview_title = QLabel("● 可视化预览（与导出参数同步）")
-        preview_title.setStyleSheet("color:#ff5b57")
+        preview_title.setStyleSheet("color:#25e7f4; font-weight:700")
         preview_bar.addWidget(preview_title)
         preview_bar.addStretch()
         refresh = QPushButton("刷新")
@@ -198,6 +244,7 @@ class MainWindow(QMainWindow):
         # Right: reference-style compact parameter tabs.
         right_panel = QFrame()
         right_panel.setObjectName("panel")
+        right_panel.setMinimumWidth(430)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(4, 4, 4, 4)
         self._tabs = QTabWidget()
@@ -240,13 +287,17 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._tabs, stretch=1)
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 0)
-        splitter.setSizes([390, 820, 430])
+        splitter.setStretchFactor(1, 0)
+        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(3, 0)
+        splitter.setSizes([180, 340, 700, 470])
         root_layout.addWidget(splitter, stretch=1)
 
     def _preview_refresh(self) -> None:
         self._preview.schedule_refresh()
+
+    def _select_channel(self, tab_index: int) -> None:
+        self._tabs.setCurrentIndex(tab_index)
 
     def _import_reference_presets(self) -> None:
         candidates = list(
