@@ -18,6 +18,23 @@ from config import AppConfig
 from app.main_window import MainWindow
 
 
+def _style_native_title_bar(window: MainWindow) -> None:
+    if sys.platform != "win32":
+        return
+
+    import ctypes
+
+    hwnd = ctypes.c_void_p(int(window.winId()))
+    dwm = ctypes.windll.dwmapi
+    dark = ctypes.c_int(1)
+    if dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark), ctypes.sizeof(dark)):
+        dwm.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(dark), ctypes.sizeof(dark))
+
+    for attribute, color in ((35, 0x1F1007), (36, 0xF6EBE4), (34, 0x3A2113)):
+        value = ctypes.c_int(color)
+        dwm.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
+
+
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("黑猫苍老师")
@@ -43,6 +60,7 @@ def main() -> None:
     # 显示窗口
     window = MainWindow(config, ROOT)
     window.show()
+    _style_native_title_bar(window)
 
     sys.exit(app.exec())
 
