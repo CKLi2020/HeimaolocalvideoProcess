@@ -16,7 +16,7 @@ BLACKCAT_FLOWCUT_REQUEST_SECRET=fc-client-request-v1-8c7f67c5e4fa49c3888e21135d7
 ```
 
 发布时运行 `build_protected.bat`。脚本使用 Nuitka onefile 编译，再以
-VMProtect Ultra 保护入口点，输出到 `dist-protected\黑猫苍老师.exe`。
+VMProtect Ultra 保护入口点，输出到 `dist-protected\黑猫@苍狼_V<版本号>`。
 
 构建会先生成 `app\_flowcut_core.pyd`，以下逻辑没有 Python 回退：
 

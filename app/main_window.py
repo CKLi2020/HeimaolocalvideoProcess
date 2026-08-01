@@ -42,7 +42,7 @@ from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
 from app.widgets.param_row import ParamRow
 from engine.worker import BatchWorker
-from version import APP_VERSION
+from version import APP_NAME, APP_VERSION
 
 
 class MainWindow(QMainWindow):
@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.root_dir = root_dir
         self._license_client = license_client
-        self.setWindowTitle(f"黑猫苍老师 V{APP_VERSION}")
+        self.setWindowTitle(f"{APP_NAME} V{APP_VERSION}")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
         self.setStyleSheet(MIDNIGHT_QSS)
@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         header.setObjectName("panel")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(6, 3, 8, 3)
-        brand = QLabel("黑猫苍老师")
+        brand = QLabel(APP_NAME)
         brand.setObjectName("brand")
         header_layout.addWidget(brand)
         brand_sub = QLabel("BLACKCAT")
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "feng_logo.ico")).pixmap(120, 120))
         channel_logo.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_logo)
-        channel_brand = QLabel("黑猫苍老师")
+        channel_brand = QLabel(APP_NAME)
         channel_brand.setObjectName("channelBrand")
         channel_brand.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_brand)

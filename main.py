@@ -18,7 +18,7 @@ from PySide6.QtGui import QFont
 from config import AppConfig
 from app.license import LicenseClient, LicenseDialog, LicenseError
 from app.main_window import MainWindow
-from version import APP_VERSION
+from version import APP_NAME, APP_VERSION
 
 
 def _style_native_title_bar(window: MainWindow) -> None:
@@ -40,7 +40,7 @@ def _style_native_title_bar(window: MainWindow) -> None:
 
 def main() -> None:
     app = QApplication(sys.argv)
-    app.setApplicationName("黑猫苍老师")
+    app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
 
     # 设置默认字体

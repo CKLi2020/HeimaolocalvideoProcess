@@ -16,3 +16,4 @@ dist-protected/
 app/_flowcut_core.pyd
 showlight/
 startmovie/
+ico/*.png

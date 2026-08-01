@@ -1,4 +1,4 @@
-# 黑猫苍老师：构建、加壳与授权保护流程
+# 黑猫@苍狼：构建、加壳与授权保护流程
 
 ## 1. 当前结论
 
@@ -17,6 +17,7 @@
 版本号在项目根目录的 `version.py` 中配置：
 
 ```python
+APP_NAME = "黑猫@苍狼"
 APP_VERSION = "1.0.0"
 ```
 
@@ -25,7 +26,7 @@ APP_VERSION = "1.0.0"
 - 登录窗口和主窗口标题；
 - 客户端授权请求中的 `appVersion`；
 - Windows EXE 的文件版本和产品版本；
-- 成品文件名，例如 `黑猫苍老师_V1.0.0.exe`。
+- 成品文件名，例如 `黑猫@苍狼_V1.0.0.exe`。
 
 ## 3. 默认构建入口
 
@@ -105,7 +106,7 @@ Nuitka 构建完成后，脚本自动生成 VMProtect 项目文件，并使用 V
 ```text
 BlackCatFlowCut.nuitka.exe
         ↓ VMProtect
-dist-protected\黑猫苍老师_V<版本号>.exe
+dist-protected\黑猫@苍狼_V<版本号>.exe
 ```
 
 脚本会检查 VMProtect 返回码和最终文件是否存在。保护失败时构建终止。
@@ -197,8 +198,9 @@ FlowCut 任务令牌最长有效期为 5 分钟。处理线程收到令牌后，
 7. 不发布 `.flowcut_private_key.pem`、服务器环境配置或数据库备份。
 8. 在干净电脑上验证登录、HDH 蒙版、蝴蝶 AB 和任务令牌过期后的拒绝行为。
 
-构建脚本会同时复制 `ico`、`resources`、`showlight`、`startmovie`、`贴纸`
-和 `配置文件`，并复制 `ffmpeg.exe`、`ffprobe.exe`。脚本只创建空的
+每次构建会生成独立的 `dist-protected\黑猫@苍狼_V<版本号>` 发布文件夹。
+构建脚本会把 EXE、`ico`、`resources`、`showlight`、`startmovie`、`贴纸`
+和 `配置文件` 放入该文件夹，并复制 `ffmpeg.exe`、`ffprobe.exe`。脚本只创建空的
 `主视频`、`辅助视频`、`蒙版成品`、`蝴蝶AB成品` 目录，不会复制开发机
 中的测试视频或历史成品。包含开发机绝对路径的 `config.json` 也不会进入
 发布目录，软件首次启动时会在 EXE 旁生成新的相对路径配置。

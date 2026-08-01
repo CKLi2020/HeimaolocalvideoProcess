@@ -13,11 +13,13 @@ $Version = (& $Python -c "import runpy; print(runpy.run_path(r'$Root\version.py'
 if ($LASTEXITCODE -ne 0 -or $Version -notmatch '^\d+(\.\d+){2,3}$') {
     throw "Invalid APP_VERSION in version.py: $Version"
 }
+$ProductNameBase64 = (& $Python -c "import base64,runpy; print(base64.b64encode(runpy.run_path(r'$Root\version.py')['APP_NAME'].encode()).decode())").Trim()
+$ProductName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ProductNameBase64))
 function ConvertFrom-CodePoints([int[]]$Codes) {
     return -join ($Codes | ForEach-Object { [char]$_ })
 }
-$ProductName = ConvertFrom-CodePoints @(0x9ED1, 0x732B, 0x82CD, 0x8001, 0x5E08)
-$FinalExe = Join-Path $Dist "${ProductName}_V$Version.exe"
+$Release = Join-Path $Dist "${ProductName}_V$Version"
+$FinalExe = Join-Path $Release "${ProductName}_V$Version.exe"
 $Icon = Join-Path $Root "ico\feng_logo.ico"
 $VmProtect = Join-Path $VmProtectDir "VMProtect_Con.exe"
 $Project = Join-Path $Build "flowcut.vmp"
@@ -31,7 +33,7 @@ if (-not $SkipVmProtect -and -not (Test-Path -LiteralPath $VmProtect)) {
     throw "VMProtect not found: $VmProtect"
 }
 
-New-Item -ItemType Directory -Force -Path $Build, $Dist | Out-Null
+New-Item -ItemType Directory -Force -Path $Build, $Release | Out-Null
 & powershell -NoProfile -ExecutionPolicy Bypass -File $NativeBuild -Python $Python -VmProtectDir $VmProtectDir
 if ($LASTEXITCODE -ne 0) { throw "Native protection failed" }
 & $Python -m nuitka --version
@@ -46,8 +48,8 @@ try {
         --include-package=cryptography `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
         --windows-icon-from-ico="$Icon" `
-        --product-name="BlackCat FlowCut" `
-        --file-description="BlackCat FlowCut" `
+        --product-name="$ProductName" `
+        --file-description="$ProductName" `
         --file-version="$Version" --product-version="$Version" `
         --output-dir="$Build" --output-filename="BlackCatFlowCut.nuitka.exe" `
         main.py
@@ -82,14 +84,14 @@ else {
 }
 
 $ReleaseAssets = @(
-    "ico", "resources", "showlight", "startmovie",
+    "resources", "showlight", "startmovie",
     (ConvertFrom-CodePoints @(0x8D34, 0x7EB8)),
     (ConvertFrom-CodePoints @(0x914D, 0x7F6E, 0x6587, 0x4EF6))
 )
 foreach ($name in $ReleaseAssets) {
     $source = Join-Path $Root $name
     if (-not (Test-Path -LiteralPath $source)) { throw "Release directory not found: $source" }
-    Copy-Item -LiteralPath $source -Destination $Dist -Recurse -Force
+    Copy-Item -LiteralPath $source -Destination $Release -Recurse -Force
 }
 $WorkingDirectories = @(
     (ConvertFrom-CodePoints @(0x4E3B, 0x89C6, 0x9891)),
@@ -98,9 +100,11 @@ $WorkingDirectories = @(
     ((ConvertFrom-CodePoints @(0x8774, 0x8776)) + "AB" + (ConvertFrom-CodePoints @(0x6210, 0x54C1)))
 )
 foreach ($name in $WorkingDirectories) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $Dist $name) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $Release $name) | Out-Null
 }
-Copy-Item -LiteralPath $Ffmpeg, $Ffprobe -Destination $Dist -Force
+New-Item -ItemType Directory -Force -Path (Join-Path $Release "ico") | Out-Null
+Copy-Item -LiteralPath $Icon -Destination (Join-Path $Release "ico") -Force
+Copy-Item -LiteralPath $Ffmpeg, $Ffprobe -Destination $Release -Force
 
 Write-Host "Protected executable: $FinalExe" -ForegroundColor Green
-Write-Host "Release directory: $Dist" -ForegroundColor Green
+Write-Host "Release directory: $Release" -ForegroundColor Green

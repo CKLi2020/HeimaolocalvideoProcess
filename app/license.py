@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from app._flowcut_core import sign_request, verify_response
-from version import APP_VERSION
+from version import APP_NAME, APP_VERSION
 
 
 APP_ID = "blackcat-flowcut"
@@ -217,7 +217,7 @@ class LicenseDialog(QDialog):
     def __init__(self, client: LicenseClient):
         super().__init__()
         self.client = client
-        self.setWindowTitle(f"黑猫苍老师 V{APP_VERSION} - 卡密登录")
+        self.setWindowTitle(f"{APP_NAME} V{APP_VERSION} - 卡密登录")
         self.setModal(True)
         self.setFixedSize(552, 360)
         icon = Path(__file__).resolve().parents[1] / "ico" / "feng_logo.ico"
