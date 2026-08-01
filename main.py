@@ -54,7 +54,8 @@ def main() -> None:
     if config_path.exists():
         config = AppConfig.from_json(config_path)
     else:
-        config = AppConfig()
+        default_path = ROOT / "配置文件" / "参数预设" / "明花老师.json"
+        config = AppConfig.from_json(default_path) if default_path.exists() else AppConfig()
         config.to_json(config_path)
 
     # 显示窗口

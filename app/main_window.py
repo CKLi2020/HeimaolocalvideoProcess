@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -24,7 +23,6 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
-    QInputDialog,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 
@@ -40,7 +38,6 @@ from app.pages.face_color_page import FaceColorPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
 from app.widgets.param_row import ParamRow
-from app.preset_manager import PresetManager
 from engine.worker import BatchWorker
 
 
@@ -53,11 +50,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = config
         self.root_dir = root_dir
-        self._preset_mgr = PresetManager(root_dir / "配置文件" / "参数预设")
-        self._import_reference_presets()
-        if not self._preset_mgr.list_presets():
-            self._preset_mgr.save("默认预设", config)
-
         self.setWindowTitle("黑猫苍老师")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
@@ -73,6 +65,7 @@ class MainWindow(QMainWindow):
         )
 
         self._setup_ui()
+        self._preview.schedule_refresh()
 
     def _setup_ui(self) -> None:
         central = QWidget()
@@ -167,9 +160,6 @@ class MainWindow(QMainWindow):
         self._btn_stop.clicked.connect(self._on_stop)
         self._btn_stop.setEnabled(False)
         row.addWidget(self._btn_stop)
-        self._btn_test = QPushButton("🔍 检查视频")
-        self._btn_test.clicked.connect(self._on_self_test)
-        row.addWidget(self._btn_test)
         clear_log = QPushButton("清空日志")
         clear_log.clicked.connect(self._log_clear)
         controls_layout.addLayout(row)
@@ -192,22 +182,6 @@ class MainWindow(QMainWindow):
         batch_row.addWidget(self._repeat_count)
         controls_layout.addLayout(batch_row)
 
-        row = QHBoxLayout()
-        row.addWidget(QLabel("参数预设："))
-        self._preset_combo = QComboBox()
-        row.addWidget(self._preset_combo, 1)
-        self._btn_load_preset = QPushButton("应用")
-        self._btn_load_preset.clicked.connect(self._on_load_preset)
-        row.addWidget(self._btn_load_preset)
-        self._btn_save_preset = QPushButton("存为")
-        self._btn_save_preset.clicked.connect(self._on_save_preset)
-        row.addWidget(self._btn_save_preset)
-        self._btn_delete_preset = QPushButton("删除")
-        self._btn_delete_preset.setObjectName("danger")
-        self._btn_delete_preset.clicked.connect(self._on_delete_preset)
-        row.addWidget(self._btn_delete_preset)
-        controls_layout.addLayout(row)
-        self._refresh_presets()
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setValue(0)
@@ -223,6 +197,7 @@ class MainWindow(QMainWindow):
         # Center: large preview canvas.
         center_panel = QFrame()
         center_panel.setObjectName("panel")
+        center_panel.setMaximumWidth(420)
         center_layout = QVBoxLayout(center_panel)
         center_layout.setContentsMargins(7, 5, 7, 7)
         preview_bar = QHBoxLayout()
@@ -283,9 +258,7 @@ class MainWindow(QMainWindow):
             ("贴图", picture_page),
             ("封面", self._pages["封面"]),
             ("画面滤镜", self._pages["画面滤镜"]),
-            ("字幕设置", self._pages["字幕设置"]),
             ("人脸遮挡", self._pages["人脸遮挡"]),
-            ("卡秒", self._pages["卡秒"]),
         )
         for name, page in tabs:
             self._tabs.addTab(page, name)
@@ -314,27 +287,6 @@ class MainWindow(QMainWindow):
 
     def _select_channel(self, tab_index: int) -> None:
         self._tabs.setCurrentIndex(tab_index)
-
-    def _import_reference_presets(self) -> None:
-        candidates = list(
-            self.root_dir.parent.glob(
-                "风无忧剪辑软件V1.6_1/*/配置文件/参数预设"
-            )
-        )
-        if not candidates:
-            return
-        for path in candidates[0].glob("*.json"):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                config = AppConfig.from_dict(data)
-                reference_root = candidates[0].parent.parent
-                if (reference_root / "saoguang").is_dir():
-                    config.scanlight_folder = str(reference_root / "saoguang")
-                if (reference_root / "kaimu").is_dir():
-                    config.kaimu_folder = str(reference_root / "kaimu")
-                self._preset_mgr.save(path.stem, config)
-            except (OSError, ValueError, TypeError, json.JSONDecodeError):
-                continue
 
     def _log_clear(self) -> None:
         if hasattr(self, "_log"):
@@ -367,8 +319,6 @@ class MainWindow(QMainWindow):
         self._progress.show()
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
-        self._btn_test.setEnabled(False)
-
         self._worker.start(self.config, self.root_dir)
 
     def _on_stop(self) -> None:
@@ -383,7 +333,6 @@ class MainWindow(QMainWindow):
         self._set_status("● 自检中", "#93c3fd", "#111c30", "#1e3a6e")
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(False)
-        self._btn_test.setEnabled(False)
         self._worker.start_self_test(self.root_dir)
 
     def _on_open_output(self) -> None:
@@ -392,66 +341,6 @@ class MainWindow(QMainWindow):
         output = self._resolve(self.config.output_folder)
         output.mkdir(parents=True, exist_ok=True)
         subprocess.Popen(["explorer", str(output.resolve())])
-
-    def _on_save_preset(self) -> None:
-        """保存为预设。"""
-        name, ok = QInputDialog.getText(self, "保存预设", "请输入预设名称：")
-        if not ok or not name.strip():
-            return
-        if self._preset_mgr.save(name.strip(), self.config):
-            self._refresh_presets(name.strip())
-            self._set_status(f"● 预设 [{name.strip()}] 已保存", "#34d399", "#0d2a1f", "#1a5a3e")
-        else:
-            QMessageBox.warning(self, "错误", "保存预设失败。")
-
-    def _on_load_preset(self) -> None:
-        """加载预设。"""
-        name = self._preset_combo.currentText()
-        if not name:
-            QMessageBox.information(self, "提示", "没有已保存的预设。")
-            return
-
-        loaded = self._preset_mgr.load(name)
-        if loaded is None:
-            QMessageBox.warning(self, "错误", "加载预设失败。")
-            return
-
-        # 更新 config
-        for field in AppConfig.__dataclass_fields__:
-            setattr(self.config, field, getattr(loaded, field))
-        for page in self._pages.values():
-            for key, row in getattr(page, "_rows", {}).items():
-                if hasattr(row, "value"):
-                    row.value = getattr(self.config, key)
-                elif hasattr(row, "path"):
-                    row.path = getattr(self.config, key)
-            if hasattr(page, "_rebuild_layers"):
-                page._rebuild_layers()
-        self._delete_aux.setChecked(self.config.delete_used_aux)
-        self._repeat_count.setValue(self.config.repeat_count)
-
-        self._set_status(f"● 已加载预设 [{name}]", "#93c3fd", "#111c30", "#1e3a6e")
-        self._preview.schedule_refresh()
-
-    def _refresh_presets(self, selected: str = "") -> None:
-        names = self._preset_mgr.list_presets()
-        self._preset_combo.blockSignals(True)
-        self._preset_combo.clear()
-        self._preset_combo.addItems(names)
-        if selected in names:
-            self._preset_combo.setCurrentText(selected)
-        self._preset_combo.blockSignals(False)
-
-    def _on_delete_preset(self) -> None:
-        name = self._preset_combo.currentText()
-        if not name:
-            return
-        if QMessageBox.question(
-            self, "删除预设", f"确定删除预设“{name}”吗？"
-        ) != QMessageBox.Yes:
-            return
-        if self._preset_mgr.delete(name):
-            self._refresh_presets()
 
     # ═══════════════════════════════════════
     # Worker 回调
@@ -468,7 +357,6 @@ class MainWindow(QMainWindow):
         self._progress.hide()
         self._btn_start.setEnabled(True)
         self._btn_stop.setEnabled(False)
-        self._btn_test.setEnabled(True)
         if success:
             self._set_status("● 就绪", "#34d399", "#0d2a1f", "#1a5a3e")
         else:

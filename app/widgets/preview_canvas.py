@@ -131,26 +131,21 @@ class PreviewCanvas(QWidget):
             )
 
             with tempfile.TemporaryDirectory() as tmp:
-                video = Path(tmp) / "preview.mp4"
                 image = Path(tmp) / "preview.png"
                 preview_config = copy.copy(self._config)
                 preview_config.sticker_switch_sec = 0
+                preview_config.kaimu_enabled = False
                 cmd = build_ffmpeg_command(
-                    preview_config, main_v, bg_v, video,
+                    preview_config, main_v, bg_v, image,
                     sticker_files=stickers or None,
                     scanlight_file=scanlights[0] if scanlights else None,
                     kaimu_file=openings[0] if openings else None,
                     mover_files=movers or None,
                 )
-                cmd[-1:-1] = ["-t", "1"]
+                cmd[cmd.index("-map"):] = [
+                    "-map", "[next_v]", "-frames:v", "1", str(image),
+                ]
                 subprocess.run(cmd, capture_output=True, timeout=30, check=True)
-                subprocess.run(
-                    [
-                        "ffmpeg", "-y", "-ss", "0.5", "-i", str(video),
-                        "-frames:v", "1", str(image),
-                    ],
-                    capture_output=True, timeout=10, check=True,
-                )
                 if image.stat().st_size > 100:
                     self._apply_face_blur(image)
                     self._show_pixmap(QPixmap(str(image)))

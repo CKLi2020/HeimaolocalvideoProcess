@@ -12,13 +12,13 @@ class AppConfig:
     """完整应用配置，与 GUI 标签页一一对应。"""
 
     # ── 文件与批量 ──
-    main_folder: str = ""
-    background_folder: str = ""
-    sticker_folder: str = ""
-    moving_sticker_folder: str = ""
-    scanlight_folder: str = ""
-    kaimu_folder: str = ""
-    output_folder: str = ""
+    main_folder: str = "主视频"
+    background_folder: str = "辅助视频"
+    sticker_folder: str = "贴纸"
+    moving_sticker_folder: str = "贴纸"
+    scanlight_folder: str = "扫光"
+    kaimu_folder: str = "开幕"
+    output_folder: str = "成品视频"
     repeat_count: int = 1
     delete_used_aux: bool = False
 

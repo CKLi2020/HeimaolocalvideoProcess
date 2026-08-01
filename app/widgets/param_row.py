@@ -127,6 +127,8 @@ class ParamRow(QWidget):
             w.blockSignals(True)
             w.setValue(int(v) if v else 0)
             w.blockSignals(False)
+            if hasattr(self, "_slider"):
+                self._slider.setValue(w.value())
         else:
             w.blockSignals(True)
             w.setText(str(v) if v else "")
