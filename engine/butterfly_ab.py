@@ -1,12 +1,17 @@
-"""2026-08-01 00:50 恢复版：媒体内 A头+B+A尾，MP4 编辑列表播放时跳过 B。"""
+"""2026-08-01 蝴蝶AB：媒体内 A头+B+A尾，MP4 编辑列表播放时跳过 B。
+Phase 2: 真实进度条 —— 解析 ffmpeg time= 输出。
+"""
 
 import argparse
 import json
 import random
+import re
 import shutil
 import struct
 import subprocess
 import tempfile
+import threading
+import time as _time_module
 from pathlib import Path
 
 from engine.output_naming import output_name
@@ -15,7 +20,97 @@ FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE = shutil.which("ffprobe") or "ffprobe"
 
 
+def _probe_duration(path) -> float:
+    """用 ffprobe 获取视频时长（秒）。"""
+    try:
+        result = subprocess.run(
+            [str(FFPROBE), "-v", "error", "-show_format", "-of", "json", str(path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=20,
+        )
+        if result.returncode == 0:
+            info = json.loads(result.stdout)
+            return float(info["format"].get("duration", 0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _run_ffmpeg(
+    cmd: list,
+    duration: float,
+    progress_callback=None,
+    stop_event=None,
+) -> subprocess.CompletedProcess:
+    """运行 ffmpeg，从 stderr 解析 time= 获得真实编码进度。
+
+    Args:
+        cmd: ffmpeg 命令行
+        duration: 预期输出时长（秒）
+        progress_callback: 进度回调 0.0~1.0
+        stop_event: 取消事件
+
+    Returns:
+        CompletedProcess
+    """
+    process = subprocess.Popen(
+        [str(x) for x in cmd],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace",
+    )
+
+    time_re = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
+    stderr_lines: list[str] = []
+    _last_frac = 0.0
+
+    def _reader() -> None:
+        nonlocal _last_frac
+        try:
+            for line in process.stderr:  # type: ignore[union-attr]
+                stderr_lines.append(line)
+                if duration <= 0:
+                    continue
+                m = time_re.search(line)
+                if m:
+                    h, mi, s, cs = map(int, m.groups())
+                    current = h * 3600 + mi * 60 + s + cs / 100.0
+                    frac = min(current / duration, 0.98)
+                    if frac > _last_frac + 0.005 and progress_callback:
+                        _last_frac = frac
+                        progress_callback(frac)
+        except Exception:
+            pass
+
+    reader = threading.Thread(target=_reader, daemon=True)
+    reader.start()
+
+    import time as _time
+    try:
+        while process.poll() is None:
+            if stop_event and stop_event.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                reader.join(timeout=2)
+                raise InterruptedError("用户已停止处理")
+            _time.sleep(0.3)
+    finally:
+        reader.join(timeout=2)
+
+    if _last_frac > 0 and progress_callback:
+        progress_callback(min(_last_frac + 0.02, 1.0))
+
+    if process.returncode and process.returncode != 0:
+        stderr = "".join(stderr_lines)
+        raise subprocess.CalledProcessError(process.returncode, cmd, stderr=stderr)
+
+    return subprocess.CompletedProcess(cmd, process.returncode, "", "")
+
+
 def run(cmd, stop_event=None):
+    """向后兼容：无进度的快速 ffmpeg 调用。"""
     process = subprocess.Popen([str(x) for x in cmd])
     while process.poll() is None:
         if stop_event and stop_event.wait(0.2):
@@ -111,7 +206,6 @@ CONTAINERS = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"dinf", b"edts"}
 
 
 def shift_chunk_offsets(raw, delta):
-    """moov 在 mdat 前且 moov 变大时，同步修正 stco/co64。"""
     rebuilt = []
     for pos, size, kind, header in boxes(raw):
         payload = raw[pos + header:pos + size]
@@ -213,9 +307,11 @@ def validate_edit_lists(path, visible_duration, head, hidden):
             raise RuntimeError(f"编辑列表校验失败：{actual=}，{expected=}")
 
 
-def encode_standard(source, output, duration=None, stop_event=None, width=720, height=1280):
+def encode_standard(source, output, duration=None, stop_event=None, width=720, height=1280,
+                    progress_callback=None):
+    """标准化视频编码，支持真实进度回调。"""
     source_duration, has_audio = video_info(source)
-    args = [FFMPEG, "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
+    args = [FFMPEG, "-y", "-nostdin", "-hide_banner", "-loglevel", "info", "-stats"]
     if duration:
         args += ["-stream_loop", "-1"]
     args += ["-i", source]
@@ -236,7 +332,9 @@ def encode_standard(source, output, duration=None, stop_event=None, width=720, h
     if duration:
         args += ["-t", str(duration)]
     args.append(output)
-    run(args, stop_event)
+
+    real_duration = duration if duration else source_duration
+    _run_ffmpeg(args, real_duration, progress_callback=progress_callback, stop_event=stop_event)
     return source_duration
 
 
@@ -245,28 +343,58 @@ def butterfly_ab(
     log_callback=None, progress_callback=None, stop_event=None,
     width=720, height=1280,
 ):
+    """蝴蝶AB：A头+B段+A尾，通过编辑列表让平台跳过B。
+
+    progress_callback: 每个阶段调用，传入 0.0~1.0 的真实进度。
+    """
     log = log_callback or (lambda _: None)
     progress = progress_callback or (lambda _: None)
+
     duration, _ = video_info(main)
     if not 0 < head < duration:
         raise ValueError("head 必须大于 0 且小于主视频时长")
     hidden = duration + 0.0667 if hidden is None else hidden
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    # 预估总工作量：编码主视频(主时长) + 编码辅助(23s) + 拼接(主时长+隐藏) + 封装(快)
+    # 权重：阶段1=30%, 阶段2=15%, 阶段3=50%, 阶段4=5%
+    total_work = duration + 23.0 + (duration + hidden) + 1.0
+    w1 = duration / total_work
+    w2 = 23.0 / total_work
+    w3 = (duration + hidden) / total_work
+    w4 = 1.0 / total_work
+
     with tempfile.TemporaryDirectory(prefix="hdh_hb_") as folder:
         folder = Path(folder)
         a_std, b_full = folder / "A_std.mp4", folder / "B_full.mp4"
-        log("阶段 1/3：标准化主视频 A")
-        progress(10)
-        encode_standard(main, a_std, stop_event=stop_event, width=width, height=height)
-        log("阶段 2/3：生成23秒辅助视频 B 块")
-        progress(35)
-        encode_standard(auxiliary, b_full, 23, stop_event, width, height)
+
+        log("  编码主视频...")
+
+        def _stage1(frac: float) -> None:
+            progress(w1 * frac)
+
+        encode_standard(
+            main, a_std,
+            stop_event=stop_event, width=width, height=height,
+            progress_callback=_stage1,
+        )
+
+        log("  编码辅助视频...")
+
+        def _stage2(frac: float) -> None:
+            progress(w1 + w2 * frac)
+
+        encode_standard(
+            auxiliary, b_full, 23,
+            stop_event=stop_event, width=width, height=height,
+            progress_callback=_stage2,
+        )
 
         chunk_durations = [23.0] * int(hidden // 23)
         if hidden - sum(chunk_durations) > 0.02:
             chunk_durations.append(hidden - sum(chunk_durations))
-        inputs = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", a_std]
+        inputs = [FFMPEG, "-y", "-hide_banner", "-loglevel", "info", "-stats", "-i", a_std]
         for _ in chunk_durations:
             inputs += ["-i", b_full]
 
@@ -289,14 +417,14 @@ def butterfly_ab(
             ]
             concat_v.append(f"[vb{i}]")
             concat_a.append(f"[ab{i}]")
-        tail = len(chunk_durations) + 1
+        tail_idx = len(chunk_durations) + 1
         filters += [
-            f"[0:v]trim=start={head},setpts=PTS-STARTPTS,{vf}[v{tail}]",
+            f"[0:v]trim=start={head},setpts=PTS-STARTPTS,{vf}[v{tail_idx}]",
             f"[0:a]atrim=start={head},asetpts=PTS-STARTPTS,"
-            f"aformat=sample_rates=44100:channel_layouts=stereo[a{tail}]",
+            f"aformat=sample_rates=44100:channel_layouts=stereo[a{tail_idx}]",
         ]
-        concat_v.append(f"[v{tail}]")
-        concat_a.append(f"[a{tail}]")
+        concat_v.append(f"[v{tail_idx}]")
+        concat_a.append(f"[a{tail_idx}]")
         n = len(concat_v)
         filters += [
             f"{''.join(concat_v)}concat=n={n}:v=1:a=0[v]",
@@ -311,17 +439,27 @@ def butterfly_ab(
             if use_gpu else
             ["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p"]
         )
-        log(f"阶段 3/3：合成并隐藏 {hidden:.4f} 秒 B 段")
-        progress(55)
-        run(inputs + [
-            "-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]",
-            "-vsync", "cfr", "-r", "30", "-force_key_frames:v",
-            f"expr:eq(n,0)+eq(n,{jump_frame})+eq(n,{main_frames})",
-        ] + enc + [
-            "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100", output,
-        ], stop_event)
-    log("封装优化：写入 MP4 编辑列表")
-    progress(90)
+
+        log("  合成拼接...")
+
+        def _stage3(frac: float) -> None:
+            progress(w1 + w2 + w3 * frac)
+
+        _run_ffmpeg(
+            inputs + [
+                "-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]",
+                "-vsync", "cfr", "-r", "30", "-force_key_frames:v",
+                f"expr:eq(n,0)+eq(n,{jump_frame})+eq(n,{main_frames})",
+            ] + enc + [
+                "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100", str(output),
+            ],
+            duration + hidden,  # 拼接输出时长
+            progress_callback=_stage3,
+            stop_event=stop_event,
+        )
+
+    log("  写入编辑列表...")
+    progress(w1 + w2 + w3)
     hide_middle(output, duration, head, hidden)
     validate_edit_lists(output, duration, head, hidden)
     reported = float(probe(output)["format"]["duration"])
@@ -329,9 +467,8 @@ def butterfly_ab(
         raise RuntimeError(
             f"编辑列表校验失败：主视频 {duration:.3f}s，输出识别为 {reported:.3f}s"
         )
-    progress(100)
-    log(f"封装校验通过：平台识别时长 {reported:.3f} 秒")
-    log("处理完成")
+    progress(1.0)
+    log("  校验通过")
     return output
 
 
@@ -339,8 +476,10 @@ def process_batch(
     config, base_dir, log_callback=None, progress_callback=None,
     stop_event=None, task_callback=None,
 ):
-    """Use the app's folders and batch settings for Butterfly AB."""
+    """使用 App 的文件夹和批量设置执行蝴蝶 AB 批量处理（含真实进度）。"""
     from engine.ffmpeg_builder import VIDEO_EXTS, list_media
+
+    _start_time = _time_module.time()
 
     resolve = lambda value: Path(value) if Path(value).is_absolute() else base_dir / value
     mains = list_media(str(resolve(config.ab_main_folder)), VIDEO_EXTS)
@@ -351,17 +490,38 @@ def process_batch(
         (log_callback or print)("[错误] 主素材或辅助视频文件夹中没有视频")
         return False
 
+    # ── 预扫描视频时长，计算总工作量 ──
+    # 预扫描视频时长（静默）
+    main_durations = {}
+    total_work = 0.0
+    for mv in mains:
+        dur = _probe_duration(mv)
+        main_durations[str(mv)] = max(dur, 0.5)
+        # 每个视频工作量 ≈ 编码主视频(主时长) + 编码辅助(23s) + 拼接(时长+隐藏) + 封装
+        hidden = dur + 0.0667
+        total_work += (dur + 23.0 + (dur + hidden) + 1.0) * config.ab_repeat_count
+
+    if total_work <= 0:
+        total_work = float(len(mains) * config.ab_repeat_count)
+
+    # 已分析完成
+
+    total_jobs = len(mains) * config.ab_repeat_count
     width, height = map(int, config.ab_resolution.split("x"))
-    total = len(mains) * config.ab_repeat_count
     failed = 0
-    for main in mains:
+    cumulative_work = 0.0
+
+    for main_idx, main in enumerate(mains):
+        main_dur = main_durations[str(main)]
         for repeat in range(config.ab_repeat_count):
             if stop_event and stop_event.is_set():
                 return False
+
             auxiliary = random.choice(auxiliaries)
             suffix = f"_{repeat + 1}" if config.ab_repeat_count > 1 else ""
             output = output_folder / output_name(main)
-            job = len(mains[:mains.index(main)]) * config.ab_repeat_count + repeat + 1
+            job = main_idx * config.ab_repeat_count + repeat + 1
+
             if task_callback:
                 task_callback({
                     "channel": "butterfly_ab",
@@ -369,29 +529,51 @@ def process_batch(
                     "background": auxiliary,
                 })
             (log_callback or print)(
-                f"\n━━━ 蝴蝶AB [{job}/{total}]: {main.name} + {auxiliary.name} ━━━"
+                f"\n━━━ 蝴蝶AB [{job}/{total_jobs}]: {main.name} + {auxiliary.name} ━━━"
             )
+
+            # 当前 job 的工作量
+            hidden = main_dur + 0.0667
+            job_work = main_dur + 23.0 + (main_dur + hidden) + 1.0
+
+            def _make_progress(base_work: float, job_w: float):
+                def _report(frac: float) -> None:
+                    if progress_callback:
+                        current = base_work + job_w * frac
+                        progress_callback(int(current * 1000), int(total_work * 1000))
+                return _report
+
+            job_progress = _make_progress(cumulative_work, job_work)
+
             try:
                 butterfly_ab(
                     main, auxiliary, output, use_gpu=config.ab_gpu,
                     log_callback=log_callback,
-                    progress_callback=(
-                        (lambda value, j=job: progress_callback((j - 1) * 100 + value, total * 100))
-                        if progress_callback else None
-                    ),
+                    progress_callback=job_progress,
                     stop_event=stop_event, width=width, height=height,
                 )
                 if config.ab_delete_used_aux:
                     auxiliary.unlink()
                     auxiliaries.remove(auxiliary)
-                    if not auxiliaries and job < total:
+                    if not auxiliaries and job < total_jobs:
                         raise RuntimeError("可用辅助视频已耗尽")
             except InterruptedError:
                 return False
             except Exception as error:
                 failed += 1
                 (log_callback or print)(f"[失败] {error}")
-    (log_callback or print)(f"\n══════ 蝴蝶AB结束，成功 {total - failed}，失败 {failed} ══════")
+
+            cumulative_work += job_work
+            if progress_callback:
+                progress_callback(int(cumulative_work * 1000), int(total_work * 1000))
+
+    # 确保 100%
+    if progress_callback:
+        progress_callback(int(total_work * 1000), int(total_work * 1000))
+
+    _elapsed = _time_module.time() - _start_time
+    _elapsed_str = f"{int(_elapsed // 60)}分{int(_elapsed % 60)}秒" if _elapsed >= 60 else f"{_elapsed:.0f}秒"
+    (log_callback or print)(f"\n══════ 蝴蝶AB结束，成功 {total_jobs - failed}，失败 {failed}，耗时 {_elapsed_str} ══════")
     return failed == 0
 
 
@@ -401,12 +583,12 @@ def self_test(use_gpu=False):
         a, b = folder / "a.mp4", folder / "b.mp4"
         out, transcoded = folder / "out.mp4", folder / "transcoded.mp4"
         for path, color, tone, seconds in ((a, "red", 440, 4), (b, "blue", 880, 2)):
-            run([
+            _run_ffmpeg([
                 FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
                 "-f", "lavfi", "-i", f"color={color}:s=360x640:d={seconds}",
                 "-f", "lavfi", "-i", f"sine={tone}:d={seconds}",
                 "-c:v", "libx264", "-c:a", "aac", "-shortest", str(path),
-            ])
+            ], seconds)
         butterfly_ab(a, b, out, use_gpu=use_gpu)
         got = float(probe(out)["format"]["duration"])
         assert abs(got - 4) < 0.1, (got, "编辑列表未生效")
@@ -426,30 +608,29 @@ def self_test(use_gpu=False):
         assert visible[0] > visible[2] * 2, ("正常播放没有得到主视频A", visible)
         assert physical[2] > physical[0] * 2, ("物理媒体中没有辅助视频B", physical)
 
-        run([
+        _run_ffmpeg([
             FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-i", out,
             "-c:v", "libx264", "-c:a", "aac", transcoded,
-        ])
+        ], got)
         after_transcode = pixel(transcoded)
         assert after_transcode[0] > after_transcode[2] * 2, (
             "按编辑列表转码后没有得到主视频A", after_transcode,
         )
 
-        # 跨过23秒分块边界，并覆盖“辅助视频无音轨自动补静音”。
         long_a, silent_b, long_out = (
             folder / "long_a.mp4", folder / "silent_b.mp4", folder / "long_out.mp4"
         )
-        run([
+        _run_ffmpeg([
             FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
             "-f", "lavfi", "-i", "color=red:s=180x320:d=25",
             "-f", "lavfi", "-i", "sine=440:d=25",
             "-c:v", "libx264", "-c:a", "aac", "-shortest", long_a,
-        ])
-        run([
+        ], 25)
+        _run_ffmpeg([
             FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
             "-f", "lavfi", "-i", "color=blue:s=180x320:d=2",
             "-c:v", "libx264", silent_b,
-        ])
+        ], 2)
         butterfly_ab(
             long_a, silent_b, long_out, use_gpu=use_gpu, width=180, height=320
         )

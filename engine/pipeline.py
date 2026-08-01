@@ -1,15 +1,20 @@
 """批量处理管道：遍历主素材，随机选择背景/贴纸/扫光，调用 ffmpeg 合成。
 Phase 2: 集成字幕识别和烧录（两遍编码）。
+Phase 3: 真实进度条 —— 解析 ffmpeg time= 输出。
 """
 
 from __future__ import annotations
 
+import json as _json
 import os
 import random
+import re
 import shutil
 import subprocess
 import tempfile
 import textwrap
+import threading
+import time as _time_module
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -33,6 +38,99 @@ def _wrap_subtitles(segments: list[dict], max_chars: int) -> list[dict]:
     ]
 
 
+def _probe_duration(path: Path) -> float:
+    """用 ffprobe 获取视频时长（秒）。失败返回 0。"""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_format", "-of", "json", str(path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=20,
+        )
+        if result.returncode == 0:
+            info = _json.loads(result.stdout)
+            return float(info["format"].get("duration", 0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _run_ffmpeg(
+    command: list[str],
+    duration: float,
+    progress_callback: Optional[Callable[[float], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    log: Optional[Callable[[str], None]] = None,
+) -> Optional[subprocess.CompletedProcess]:
+    """运行 ffmpeg，从 stderr 解析 time= 获得真实编码进度。
+
+    Args:
+        command: ffmpeg 命令行
+        duration: 输出视频预期时长（秒），用于计算进度百分比
+        progress_callback: 进度回调，参数为 0.0~1.0
+        cancel_check: 返回 True 表示取消
+        log: 日志回调
+
+    Returns:
+        CompletedProcess 或 None（被取消时）
+    """
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace",
+    )
+
+    time_re = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
+    stderr_lines: list[str] = []
+    _last_frac = 0.0
+    _read_done = threading.Event()
+
+    def _read_stderr() -> None:
+        nonlocal _last_frac
+        try:
+            for line in process.stderr:  # type: ignore[union-attr]
+                stderr_lines.append(line)
+                if duration <= 0:
+                    continue
+                m = time_re.search(line)
+                if m:
+                    h, mi, s, cs = map(int, m.groups())
+                    current = h * 3600 + mi * 60 + s + cs / 100.0
+                    frac = min(current / duration, 0.98)
+                    if frac > _last_frac + 0.005:  # 去抖动
+                        _last_frac = frac
+                        if progress_callback:
+                            progress_callback(frac)
+        except Exception:
+            pass
+        finally:
+            _read_done.set()
+
+    reader = threading.Thread(target=_read_stderr, daemon=True)
+    reader.start()
+
+    import time as _time
+    try:
+        while process.poll() is None:
+            if cancel_check and cancel_check():
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                if log:
+                    log("[取消] 已终止当前 FFmpeg")
+                return None
+            _time.sleep(0.3)
+    finally:
+        _read_done.wait(timeout=2)
+
+    # 最后 2% 留给后续步骤
+    if _last_frac > 0 and progress_callback:
+        progress_callback(min(_last_frac + 0.01, 1.0))
+
+    stderr = "".join(stderr_lines)
+    return subprocess.CompletedProcess(command, process.returncode, "", stderr)
+
+
 def process_batch(
     config: AppConfig,
     base_dir: Path,
@@ -45,11 +143,14 @@ def process_batch(
 
     Args:
         config: 应用配置
-        base_dir: 程序根目录（用于相对路径解析）
+        base_dir: 程序根目录
         log_callback: 日志回调
-        progress_callback: 进度回调 (current, total)
-        cancel_check: 返回 True 表示用户请求取消
+        progress_callback: 进度回调 (elapsed, total) — 单位秒，反映真实编码时间
+        cancel_check: 返回 True 表示取消
+        task_callback: 当前任务信息回调
     """
+
+    _start_time = _time_module.time()
 
     def log(msg: str) -> None:
         print(msg)
@@ -60,30 +161,7 @@ def process_batch(
         path = Path(value)
         return path if path.is_absolute() else base_dir / path
 
-    def run_ffmpeg(command: list[str]) -> Optional[subprocess.CompletedProcess]:
-        process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", errors="replace",
-        )
-        while process.poll() is None:
-            if cancel_check and cancel_check():
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                log("[取消] 已终止当前 FFmpeg")
-                return None
-            try:
-                process.communicate(timeout=0.2)
-            except subprocess.TimeoutExpired:
-                continue
-        stdout, stderr = process.communicate()
-        return subprocess.CompletedProcess(
-            command, process.returncode, stdout, stderr
-        )
-
-    # 解析所有路径
+    # 解析路径
     main_folder = resolve(config.main_folder)
     background_folder = resolve(config.background_folder)
     output_folder = resolve(config.output_folder)
@@ -96,7 +174,6 @@ def process_batch(
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # 列出素材
     mains = list_media(str(main_folder), VIDEO_EXTS)
     backgrounds = list_media(str(background_folder), VIDEO_EXTS)
 
@@ -108,6 +185,7 @@ def process_batch(
         return False
 
     log(f"主素材: {len(mains)} 个, 背景视频: {len(backgrounds)} 个")
+
     if config.sticker_enabled:
         stickers = list_media(str(sticker_folder), VIDEO_EXTS | IMAGE_EXTS)
         log(f"贴纸: {len(stickers)} 个")
@@ -118,45 +196,70 @@ def process_batch(
         kaimus = list_media(str(kaimu_folder), VIDEO_EXTS | IMAGE_EXTS)
         log(f"开幕素材: {len(kaimus)} 个")
 
+    # ── 预扫描所有主视频时长，用于真实进度 ──
+    log("正在分析视频时长...")
+    main_durations: dict[str, float] = {}
+    total_duration = 0.0
+    for mv in mains:
+        dur = _probe_duration(mv)
+        main_durations[str(mv)] = max(dur, 0.5)  # 至少 0.5 秒防止除零
+        total_duration += main_durations[str(mv)] * config.repeat_count
+
+    if total_duration <= 0:
+        # 回退：如果 ffprobe 全部失败，用文件数量作为进度单位
+        total_duration = float(len(mains) * config.repeat_count)
+        for mv in mains:
+            main_durations[str(mv)] = 1.0
+
+    log(f"总编码时长约 {total_duration / 60:.1f} 分钟")
+
     total_jobs = len(mains) * config.repeat_count
-    current_job = 0
+    job_index = 0
+    elapsed_duration = 0.0
     failed_jobs = 0
+
+    # 进度上报：把累计秒数映射到 0~total_duration
+    def _report_progress(job_duration_fraction: float = 0.0) -> None:
+        if not progress_callback:
+            return
+        current = elapsed_duration + job_duration_fraction
+        # 用整数毫秒上报，Qt 进度条更平滑
+        progress_callback(int(current * 1000), int(total_duration * 1000))
+
+    # 初始进度
+    _report_progress(0.0)
 
     for main_video in mains:
         if cancel_check and cancel_check():
             log("[取消] 用户停止了处理")
             return False
 
-        log(f"\n━━━ 处理: {main_video.name} ━━━")
+        main_dur = main_durations[str(main_video)]
+        log(f"\n━━━ 处理: {main_video.name} ({main_dur:.1f}s) ━━━")
 
         for repeat in range(config.repeat_count):
             if cancel_check and cancel_check():
                 log("[取消] 用户停止了处理")
                 return False
 
-            current_job += 1
-            if progress_callback:
-                progress_callback(current_job, total_jobs)
+            job_index += 1
 
             # 随机选择素材
-            backgrounds = [path for path in backgrounds if path.exists()]
+            backgrounds = [p for p in backgrounds if p.exists()]
             if not backgrounds:
                 log("  [错误] 可用辅助视频已耗尽")
-                failed_jobs += total_jobs - current_job + 1
+                failed_jobs += total_jobs - job_index + 1
                 return False
             background = random.choice(backgrounds)
 
-            sticker_files = []
+            sticker_files: list[Path] = []
             if config.sticker_enabled:
                 sfiles = list_media(str(sticker_folder), VIDEO_EXTS | IMAGE_EXTS)
-                # 从 sticker_layers_json 读取层数，否则默认 1 层
-                import json as _json
                 try:
                     layers = _json.loads(config.sticker_layers_json) if config.sticker_layers_json else []
                 except Exception:
                     layers = []
                 num_layers = len(layers) if layers else 1
-                # ponytail: two alternating groups keep FFmpeg inputs bounded.
                 group_count = 2 if config.sticker_switch_sec > 0 else 1
                 for _ in range(num_layers * group_count):
                     if sfiles:
@@ -174,12 +277,9 @@ def process_batch(
                 if not kaimu_file:
                     log("  [警告] 开幕素材为空，跳过开幕效果")
 
-            mover_files = []
+            mover_files: list[Path] = []
             if config.moving_sticker_enabled:
-                mfiles = list_media(
-                    str(moving_sticker_folder), VIDEO_EXTS | IMAGE_EXTS
-                )
-                import json as _json
+                mfiles = list_media(str(moving_sticker_folder), VIDEO_EXTS | IMAGE_EXTS)
                 try:
                     mlayers = _json.loads(config.mover_layers_json) if config.mover_layers_json else []
                 except Exception:
@@ -199,14 +299,9 @@ def process_batch(
                     "movers": mover_files,
                 })
 
-            # 输出文件名
             suffix = f"_{repeat + 1}" if config.repeat_count > 1 else ""
             output_path = output_folder / output_name(main_video)
 
-            # 多阶段后处理管线：
-            #   Pass 1: ffmpeg 合成 → compose_output
-            #   Pass 2: [可选] 人脸模糊 → blurred_output
-            #   Pass 3: [可选] 字幕识别 + 烧录 → output_path
             do_subtitle = (
                 config.subtitle_enabled
                 and main_video.suffix.lower() in VIDEO_EXTS
@@ -222,7 +317,11 @@ def process_batch(
                 if needs_temp else output_path
             )
 
-            # ── Pass 1: 视频合成 ──
+            # ── 本次 job 的进度回调（0.0~1.0）──
+            def _job_progress(frac: float) -> None:
+                _report_progress(main_dur * frac)
+
+            # ── Pass 1: 视频合成（主要耗时）──
             cmd = build_ffmpeg_command(
                 config,
                 main_video=main_video,
@@ -234,7 +333,7 @@ def process_batch(
                 mover_files=mover_files or None,
             )
 
-            log(f"  [{current_job}/{total_jobs}] {main_video.stem}{suffix}")
+            log(f"  [{job_index}/{total_jobs}] {main_video.stem}{suffix}")
             log(f"    背景: {background.name}")
             if sticker_files:
                 log(f"    贴纸: {len(sticker_files)} 层")
@@ -242,7 +341,12 @@ def process_batch(
                 log(f"    扫光: {scanlight_file.name}")
 
             try:
-                result = run_ffmpeg(cmd)
+                result = _run_ffmpeg(
+                    cmd, main_dur,
+                    progress_callback=_job_progress,
+                    cancel_check=cancel_check,
+                    log=log,
+                )
                 if result is None:
                     compose_output.unlink(missing_ok=True)
                     return False
@@ -254,18 +358,25 @@ def process_batch(
                         for item in cmd
                     ]
                     log("  [GPU] 编码失败，自动回退 CPU")
-                    result = run_ffmpeg(cpu_cmd)
+                    result = _run_ffmpeg(
+                        cpu_cmd, main_dur,
+                        progress_callback=_job_progress,
+                        cancel_check=cancel_check,
+                        log=log,
+                    )
                     if result is None:
                         compose_output.unlink(missing_ok=True)
                         return False
                 if result.returncode != 0:
                     failed_jobs += 1
+                    elapsed_duration += main_dur
                     log(f"  [失败] ffmpeg 返回码 {result.returncode}")
                     stderr_lines = result.stderr.strip().split("\n")
                     for line in stderr_lines[-15:]:
                         if line.strip():
                             log(f"    {line.strip()}")
-                    continue  # 跳过字幕处理，继续下一个
+                    _report_progress(0.0)
+                    continue
 
                 log(f"  [合成完成] {compose_output.name}")
 
@@ -286,7 +397,6 @@ def process_batch(
                         cancel_check=cancel_check,
                     )
                     if ok and blurred_output.exists():
-                        # 清理上一个中间文件
                         if current_video != compose_output:
                             try:
                                 current_video.unlink()
@@ -296,9 +406,11 @@ def process_batch(
                         log(f"  [人脸] 模糊完成: {blurred_output.name}")
                     else:
                         failed_jobs += 1
+                        elapsed_duration += main_dur
                         log("  [人脸] 模糊失败，本任务不生成伪成功成品")
                         compose_output.unlink(missing_ok=True)
                         blurred_output.unlink(missing_ok=True)
+                        _report_progress(0.0)
                         continue
 
                 # ── Pass 3: 字幕识别 + 烧录 ──
@@ -313,8 +425,6 @@ def process_batch(
                     )
 
                     log("  [字幕] 开始语音识别...")
-
-                    # 提取音频
                     audio_file = extract_audio(
                         main_video,
                         output_dir=output_folder,
@@ -326,7 +436,6 @@ def process_batch(
                             shutil.move(str(current_video), str(output_path))
                         current_video = output_path
                     else:
-                        # 语音识别
                         engine = SubtitleEngine(
                             model_size_or_path=config.subtitle_model,
                             log_callback=log,
@@ -335,9 +444,11 @@ def process_batch(
                         segments = _wrap_subtitles(segments, config.subtitle_max_chars)
                         if not engine.is_available:
                             failed_jobs += 1
+                            elapsed_duration += main_dur
                             log("  [字幕] 模型不可用，本任务失败")
                             audio_file.unlink(missing_ok=True)
                             current_video.unlink(missing_ok=True)
+                            _report_progress(0.0)
                             continue
 
                         if not segments:
@@ -346,27 +457,21 @@ def process_batch(
                                 shutil.move(str(current_video), str(output_path))
                             current_video = output_path
                         else:
-                            # 生成 ASS 字幕（比 SRT 样式好）
                             style = get_style(config.subtitle_style)
                             style.font_size = config.subtitle_font_size
-                            style.margin_v = int(
-                                h * max(0, 100 - config.subtitle_pos_y) / 100
-                            )
                             w, h = map(int, config.resolution.split("x"))
+                            style.margin_v = int(h * max(0, 100 - config.subtitle_pos_y) / 100)
                             ass_path = output_folder / f"{main_video.stem}{suffix}.ass"
                             generate_ass(segments, ass_path, style, w, h)
 
-                            # 导出 SRT（如果用户勾选）
                             if config.subtitle_export_srt:
                                 srt_path = output_folder / f"{main_video.stem}{suffix}.srt"
                                 generate_srt(segments, srt_path)
                                 log(f"  [字幕] SRT 已导出: {srt_path.name}")
 
-                            # 烧录字幕到视频
                             log("  [字幕] 烧录字幕到视频...")
                             if burn_subtitles(current_video, ass_path, output_path, log_callback=log):
                                 log(f"  [完成] {output_path.name} (含字幕)")
-                                # 清理中间文件
                                 for tmp in [compose_output, current_video]:
                                     try:
                                         if tmp.exists() and tmp != output_path:
@@ -381,7 +486,6 @@ def process_batch(
                                 log("  [字幕] 烧录失败，保留无字幕版本")
                                 shutil.move(str(current_video), str(output_path))
 
-                        # 清理音频临时文件
                         try:
                             if audio_file.exists():
                                 audio_file.unlink()
@@ -389,14 +493,13 @@ def process_batch(
                             pass
 
                 elif do_face_blur and current_video != output_path:
-                    # 只有人脸模糊、无字幕：将模糊后的视频移到最终输出
                     shutil.move(str(current_video), str(output_path))
                     log(f"  [完成] {output_path.name} (人脸模糊)")
 
                 elif not do_subtitle and not do_face_blur:
                     log(f"  [完成] {output_path.name}")
 
-                # ── Pass 4: MP4 后处理 (元数据编辑) ──
+                # ── Pass 4: MP4 后处理 ──
                 if config.mp4_enabled and output_path.exists():
                     from engine.mp4_tool import process_mp4
                     if config.mp4_hevc:
@@ -431,7 +534,7 @@ def process_batch(
                         failed_jobs += 1
                         log("  [MP4] 后处理未生效，本任务标记失败")
 
-                # ── 清理中间文件 ──
+                # 清理中间文件
                 if needs_temp:
                     for tmp in [compose_output]:
                         try:
@@ -440,7 +543,6 @@ def process_batch(
                         except OSError:
                             pass
 
-                # ── 可选：删除已用辅助视频 ──
                 if config.delete_used_aux:
                     try:
                         background.unlink()
@@ -456,8 +558,19 @@ def process_batch(
                 failed_jobs += 1
                 log(f"  [异常] {e}")
 
+            # 本 job 完成，累计时长
+            elapsed_duration += main_dur
+            _report_progress(0.0)
+
     ok = failed_jobs == 0
-    log(f"\n══════ 批量处理结束，成功 {total_jobs - failed_jobs}，失败 {failed_jobs} ══════")
+    _elapsed = _time_module.time() - _start_time
+    _elapsed_str = f"{int(_elapsed // 60)}分{int(_elapsed % 60)}秒" if _elapsed >= 60 else f"{_elapsed:.0f}秒"
+    log(f"\n══════ 批量处理结束，成功 {total_jobs - failed_jobs}，失败 {failed_jobs}，耗时 {_elapsed_str} ══════")
+
+    # 确保最终进度为 100%
+    if progress_callback:
+        progress_callback(int(total_duration * 1000), int(total_duration * 1000))
+
     return ok
 
 
@@ -485,7 +598,6 @@ def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = No
         bg_dir.mkdir()
         out_dir.mkdir()
 
-        # 生成测试视频 (1 秒)
         for name, source, folder in [
             ("main", "testsrc2=s=320x240:r=15:d=1", main_dir),
             ("bg", "smptebars=s=320x240:r=15:d=2", bg_dir),
@@ -503,7 +615,6 @@ def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = No
 
         log("[OK] 测试素材生成成功")
 
-        # 用最小配置运行合成
         test_config = AppConfig()
         test_config.main_folder = str(main_dir)
         test_config.background_folder = str(bg_dir)
@@ -523,7 +634,6 @@ def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = No
             log(f"[失败] 合成异常: {e}")
             return False
 
-        # 检查输出
         outputs = list(out_dir.glob("*.mp4"))
         if not outputs:
             log("[失败] 未生成输出文件")
