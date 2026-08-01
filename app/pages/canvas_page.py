@@ -36,7 +36,7 @@ class CanvasPage(QWidget):
         canvas_form.setSpacing(10)
 
         canvas_params = [
-            ("输出分辨率", "resolution", "text"),
+            ("输出分辨率", "resolution", "combo:720x1280,1080x1920,1080x2338"),
             ("输出帧率", "fps", "slider:1-120"),
             ("主视频缩放 %", "main_scale", "slider:10-500"),
             ("主视频完整适配", "main_fit", "bool"),

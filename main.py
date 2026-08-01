@@ -57,6 +57,11 @@ def main() -> None:
         default_path = ROOT / "配置文件" / "参数预设" / "明花老师.json"
         config = AppConfig.from_json(default_path) if default_path.exists() else AppConfig()
         config.to_json(config_path)
+    if config.output_folder == "成品视频":
+        config.output_folder = "蒙版成品"
+    if config.ab_output_folder == "成品视频":
+        config.ab_output_folder = "蝴蝶AB成品"
+    config.to_json(config_path)
 
     # 显示窗口
     window = MainWindow(config, ROOT)

@@ -48,6 +48,7 @@ class MainWindow(QMainWindow):
     log_received = Signal(str)
     progress_received = Signal(int, int)
     work_done = Signal(bool, str)
+    task_received = Signal(object)
 
     def __init__(self, config: AppConfig, root_dir: Path):
         super().__init__()
@@ -61,10 +62,12 @@ class MainWindow(QMainWindow):
         self.log_received.connect(self._on_log)
         self.progress_received.connect(self._on_progress)
         self.work_done.connect(self._on_done)
+        self.task_received.connect(self._on_task)
         self._worker = BatchWorker(
             log_callback=self.log_received.emit,
             progress_callback=self.progress_received.emit,
             done_callback=self.work_done.emit,
+            task_callback=self.task_received.emit,
         )
 
         self._setup_ui()
@@ -152,7 +155,8 @@ class MainWindow(QMainWindow):
         # Left: folders, controls, presets and log.
         left_panel = QFrame()
         left_panel.setObjectName("sidebar")
-        left_panel.setMinimumWidth(380)
+        left_panel.setMinimumWidth(330)
+        left_panel.setMaximumWidth(350)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(5, 4, 5, 5)
         left_layout.setSpacing(5)
@@ -211,14 +215,14 @@ class MainWindow(QMainWindow):
         # Center: large preview canvas.
         center_panel = QFrame()
         center_panel.setObjectName("panel")
-        center_panel.setMaximumWidth(420)
+        center_panel.setMinimumWidth(440)
         center_layout = QVBoxLayout(center_panel)
         center_layout.setContentsMargins(7, 5, 7, 7)
         preview_bar = QHBoxLayout()
-        preview_title = QLabel("● 可视化预览（与导出参数同步）")
-        preview_title.setObjectName("sectionTitle")
-        preview_title.setStyleSheet("font-size: 11px;")
-        preview_bar.addWidget(preview_title)
+        self._preview_title = QLabel("● 可视化预览（与导出参数同步）")
+        self._preview_title.setObjectName("sectionTitle")
+        self._preview_title.setStyleSheet("font-size: 11px;")
+        preview_bar.addWidget(self._preview_title)
         preview_bar.addStretch()
         refresh = QPushButton("刷新")
         refresh.clicked.connect(self._preview_refresh)
@@ -237,7 +241,8 @@ class MainWindow(QMainWindow):
         # Right: reference-style compact parameter tabs.
         right_panel = QFrame()
         right_panel.setObjectName("rightPanel")
-        right_panel.setMinimumWidth(380)
+        right_panel.setMinimumWidth(340)
+        right_panel.setMaximumWidth(360)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(4, 4, 4, 4)
         self._tabs = QTabWidget()
@@ -283,7 +288,7 @@ class MainWindow(QMainWindow):
         hdh_workspace.setStretchFactor(0, 0)
         hdh_workspace.setStretchFactor(1, 1)
         hdh_workspace.setStretchFactor(2, 0)
-        hdh_workspace.setSizes([390, 720, 400])
+        hdh_workspace.setSizes([340, 850, 350])
 
         self._butterfly_page = ButterflyABPage(self.config)
         self._butterfly_page.start_requested.connect(self._on_start)
@@ -420,6 +425,13 @@ class MainWindow(QMainWindow):
         )
         progress.setRange(0, total)
         progress.setValue(current)
+
+    def _on_task(self, task: dict) -> None:
+        if getattr(self, "_running_channel", "hdh") == "butterfly_ab":
+            self._butterfly_page.show_task(task)
+            return
+        self._preview_title.setText(f"● 正在处理：{Path(task['main']).name}")
+        self._preview.show_task(task)
 
     def _on_done(self, success: bool, message: str) -> None:
         butterfly = getattr(self, "_running_channel", "hdh") == "butterfly_ab"

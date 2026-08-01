@@ -18,6 +18,7 @@ class BatchWorker:
         log_callback: Optional[Callable[[str], None]] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         done_callback: Optional[Callable[[bool, str], None]] = None,
+        task_callback: Optional[Callable[[dict], None]] = None,
     ):
         """
         Args:
@@ -28,6 +29,7 @@ class BatchWorker:
         self._log = log_callback
         self._progress = progress_callback
         self._done = done_callback
+        self._task = task_callback
         self._thread: Optional[threading.Thread] = None
         self._cancel = threading.Event()
 
@@ -68,7 +70,8 @@ class BatchWorker:
             if channel == "butterfly_ab":
                 from engine.butterfly_ab import process_batch as process_butterfly_ab
                 ok = process_butterfly_ab(
-                    config, base_dir, self._log, self._progress, self._cancel
+                    config, base_dir, self._log, self._progress, self._cancel,
+                    self._task,
                 )
             else:
                 ok = process_batch(
@@ -77,6 +80,7 @@ class BatchWorker:
                     log_callback=self._log,
                     progress_callback=self._progress,
                     cancel_check=lambda: self._cancel.is_set(),
+                    task_callback=self._task,
                 )
             if self._cancel.is_set():
                 self._done and self._done(False, "任务已取消")

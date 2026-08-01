@@ -18,14 +18,14 @@ class AppConfig:
     moving_sticker_folder: str = "贴纸"
     scanlight_folder: str = "扫光"
     kaimu_folder: str = "开幕"
-    output_folder: str = "成品视频"
+    output_folder: str = "蒙版成品"
     repeat_count: int = 1
     delete_used_aux: bool = False
 
     # ── 蝴蝶AB通道（与 HDH 独立）──
     ab_main_folder: str = "主视频"
     ab_auxiliary_folder: str = "辅助视频"
-    ab_output_folder: str = "成品视频"
+    ab_output_folder: str = "蝴蝶AB成品"
     ab_resolution: str = "720x1280"
     ab_gpu: bool = False
     ab_repeat_count: int = 1
@@ -49,11 +49,11 @@ class AppConfig:
     mask_margin_tb: int = 1
     mask_margin_lr: int = 2
     mask_feather: int = 15
-    top_step_enabled: bool = False
+    top_step_enabled: bool = True
     top_scale: int = 60
     top_opacity: int = 3
     top_feather: int = 20
-    bars_enabled: bool = False
+    bars_enabled: bool = True
     bar_height: int = 300
     bar_opacity: int = 40
     top_bar_height: int = 300
@@ -183,9 +183,9 @@ class AppConfig:
             "repeat_count": options.get("repeat_count", 1),
             "delete_used_aux": options.get("delete_used_aux", False),
             "main_fit": options.get("main_fit", True),
-            "mask_enabled": options.get("mask_step_enabled", False),
-            "top_step_enabled": options.get("top_step_enabled", False),
-            "bars_enabled": options.get("bars_step_enabled", False),
+            "mask_enabled": options.get("mask_step_enabled", True),
+            "top_step_enabled": options.get("top_step_enabled", True),
+            "bars_enabled": options.get("bars_step_enabled", True),
             "pip_enabled": options.get("pip_step_enabled", False),
             "pip_move": options.get("pip_move_enabled", False),
             "pip2_enabled": options.get("pip2_step_enabled", False),

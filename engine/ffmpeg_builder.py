@@ -112,13 +112,14 @@ def build_ffmpeg_command(
     cmd += ["-i", str(main_video)]
     input_idx = 2
 
+    main_tag = "main_raw" if config.mask_enabled else "main"
     if config.main_fit:
         # 参考软件逻辑：先按用户比例缩放，再缩小适配画布（不超出）
         # 主视频始终在画布内，背景视频在上下方可见
         main_filter = (
             f"[1:v]scale=iw*{main_scale}:ih*{main_scale},"
             f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-            f"fps={fps},format=rgba{next_tag('main')}"
+            f"fps={fps},format=rgba[{main_tag}]"
         )
     else:
         # 强制填满：increase+crop 确保画布无黑边
@@ -126,38 +127,29 @@ def build_ffmpeg_command(
             f"[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
             f"crop={w}:{h},"
             f"scale=iw*{main_scale}:ih*{main_scale},"
-            f"fps={fps},format=rgba{next_tag('main')}"
+            f"fps={fps},format=rgba[{main_tag}]"
         )
     filters.append(main_filter)
+
+    if config.mask_enabled:
+        margin_tb = config.mask_margin_tb / 100.0
+        margin_lr = config.mask_margin_lr / 100.0
+        edge = max(1, int(config.mask_feather * min(w, h) / 500))
+        alpha = (
+            f"255*min("
+            f"min(clip((X-W*{margin_lr})/{edge},0,1),"
+            f"clip((W*(1-{margin_lr})-X)/{edge},0,1)),"
+            f"min(clip((Y-H*{margin_tb})/{edge},0,1),"
+            f"clip((H*(1-{margin_tb})-Y)/{edge},0,1)))"
+        )
+        filters.append(
+            f"[main_raw]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[main]"
+        )
 
     # ── Overlay main on background (centered) ──
     filters.append(
         f"[bg][main]overlay=(W-w)/2:(H-h)/2:shortest=1{next_tag('base')}"
     )
-
-    # ═══════════════════════════════════════════════════════════
-    # MASK: 矩形蒙版
-    # ═══════════════════════════════════════════════════════════
-    if config.mask_enabled:
-        margin_tb = config.mask_margin_tb / 100.0
-        margin_lr = config.mask_margin_lr / 100.0
-        feather = config.mask_feather
-
-        # 蒙版区域 (画布扣掉边距)
-        mx = int(w * margin_lr)
-        my = int(h * margin_tb)
-        mw = w - 2 * mx
-        mh = h - 2 * my
-
-        edge = max(1, int(feather * min(w, h) / 500))
-        filters.append(
-            f"[base]drawbox=x=0:y=0:w={w}:h={my + edge}:color=black@0.65:t=fill,"
-            f"drawbox=x=0:y={h - my - edge}:w={w}:h={my + edge}:color=black@0.65:t=fill,"
-            f"drawbox=x=0:y=0:w={mx + edge}:h={h}:color=black@0.65:t=fill,"
-            f"drawbox=x={w - mx - edge}:y=0:w={mx + edge}:h={h}:color=black@0.65:t=fill"
-            f"{next_tag('masked')}"
-        )
-        current_tag = "masked"
 
     base_tag = current_tag
 
@@ -190,23 +182,48 @@ def build_ffmpeg_command(
         base_tag = "matted"
 
     # ═══════════════════════════════════════════════════════════
+    # MOTION: 只先处理基础画面，避免裁掉后加的横条和贴纸
+    # ═══════════════════════════════════════════════════════════
+    has_motion = config.zoom_amp > 0 or config.sway_amp > 0 or config.shake_amp > 0
+    if has_motion:
+        zoom_val = config.zoom_amp / 1000.0
+        sway_val = config.sway_amp / 1000.0
+        shake_val = config.shake_amp / 1000.0
+        scale_factor = 1 + zoom_val + 2 * sway_val + 2 * shake_val
+        sway_x = f"{sway_val}*iw*sin(t/2)"
+        shake_x = f"{shake_val}*iw*sin(7*t)"
+        shake_y = f"{shake_val}*ih*cos(5*t)"
+
+        filters.append(
+            f"[{base_tag}]scale=iw*{scale_factor:.4f}:ih*{scale_factor:.4f},"
+            f"crop={w}:{h}:(iw-{w})/2+{sway_x}+{shake_x}:"
+            f"(ih-{h})/2+{shake_y}"
+            f"{next_tag('motion')}"
+        )
+        base_tag = "motion"
+
+    # ═══════════════════════════════════════════════════════════
     # BARS: 顶底横条 — 参考软件逻辑：背景视频裁剪 + alpha 叠加
     # ═══════════════════════════════════════════════════════════
     if config.bars_enabled:
-        top_h_use = config.top_bar_height if config.split_bars_enabled else config.bar_height
-        top_op = (config.top_bar_opacity if config.split_bars_enabled else config.bar_opacity) / 100.0
-        bot_h_use = config.bottom_bar_height if config.split_bars_enabled else config.bar_height
-        bot_op = (config.bottom_bar_opacity if config.split_bars_enabled else config.bar_opacity) / 100.0
+        top_h_use = config.top_bar_height
+        top_op = config.top_bar_opacity / 100.0
+        bot_h_use = config.bottom_bar_height
+        bot_op = config.bottom_bar_opacity / 100.0
 
         top_h_use = min(top_h_use, h)
         bot_h_use = min(bot_h_use, h)
+        top_feather = max(1, min(config.top_bar_feather_down, top_h_use))
+        bot_feather = max(1, min(config.bottom_bar_feather_up, bot_h_use))
 
         # 顶部横条：从 [0:v] 重新处理背景 → 裁切顶部区域 → alpha 混合叠加
         if top_h_use > 0:
             filters.append(
                 f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
                 f"crop={w}:{h},crop={w}:{top_h_use}:0:0,"
-                f"format=rgba,colorchannelmixer=aa={top_op}"
+                f"gblur=sigma={top_feather / 10:.2f},format=rgba,geq="
+                f"r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                f"a='255*{top_op}*min(1,(H-Y)/{top_feather})'"
                 f"{next_tag('topbar')}"
             )
             filters.append(
@@ -219,7 +236,9 @@ def build_ffmpeg_command(
             filters.append(
                 f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
                 f"crop={w}:{h},crop={w}:{bot_h_use}:0:{h - bot_h_use},"
-                f"format=rgba,colorchannelmixer=aa={bot_op}"
+                f"gblur=sigma={bot_feather / 10:.2f},format=rgba,geq="
+                f"r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                f"a='255*{bot_op}*min(1,(Y+1)/{bot_feather})'"
                 f"{next_tag('botbar')}"
             )
             filters.append(
@@ -227,27 +246,6 @@ def build_ffmpeg_command(
                 f"{next_tag('bars')}"
             )
             base_tag = "bars"
-
-        # 顶部羽化：半透明黑色渐变
-        feather_h = max(1, config.top_bar_feather_down)
-        if feather_h > 0 and top_op > 0.05:
-            fop = min(top_op * 0.6, 0.9)
-            filters.append(
-                f"[{base_tag}]drawbox=x=0:y={max(0, top_h_use - feather_h)}:"
-                f"w={w}:h={feather_h}:"
-                f"color=black@{fop}:t=fill{next_tag('bars_tf')}"
-            )
-            base_tag = "bars_tf"
-
-        # 底部羽化
-        feather_h = max(1, config.bottom_bar_feather_up)
-        if feather_h > 0 and bot_op > 0.05:
-            fop = min(bot_op * 0.6, 0.9)
-            filters.append(
-                f"[{base_tag}]drawbox=x=0:y={h - bot_h_use}:w={w}:h={feather_h}:"
-                f"color=black@{fop}:t=fill{next_tag('bars_bf')}"
-            )
-            base_tag = "bars_bf"
 
         if config.split_bars_enabled:
             split = max(1, config.tb_split_feather or config.split_feather)
@@ -356,27 +354,6 @@ def build_ffmpeg_command(
                 f"{next_tag('with_pip2')}"
             )
         base_tag = "with_pip2"
-
-    # ═══════════════════════════════════════════════════════════
-    # MOTION: 动态缩放/晃动/抖动
-    # ═══════════════════════════════════════════════════════════
-    has_motion = config.zoom_amp > 0 or config.sway_amp > 0 or config.shake_amp > 0
-    if has_motion:
-        sway_val = config.sway_amp / 100.0
-        shake_val = config.shake_amp / 100.0
-
-        # 留足裁切余量，再在放大画面内移动；避免动态表达式产生小于画布的帧。
-        scale_factor = 1 + config.zoom_amp / 100.0 + 2 * sway_val + 2 * shake_val
-        sway_expr = f"{sway_val}*iw*sin(t/2)"
-        shake_expr = f"{shake_val}*(random(1)-0.5)*2"
-
-        filters.append(
-            f"[{base_tag}]scale=iw*{scale_factor:.4f}:ih*{scale_factor:.4f},"
-            f"crop={w}:{h}:(iw-{w})/2+{sway_expr}+{shake_expr}*iw:"
-            f"(ih-{h})/2+{shake_expr}*ih"
-            f"{next_tag('motion')}"
-        )
-        base_tag = "motion"
 
     # ═══════════════════════════════════════════════════════════
     # STICKER: 多层贯穿贴纸

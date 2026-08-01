@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from engine.output_naming import output_name
+
 FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE = shutil.which("ffprobe") or "ffprobe"
 
@@ -333,7 +335,10 @@ def butterfly_ab(
     return output
 
 
-def process_batch(config, base_dir, log_callback=None, progress_callback=None, stop_event=None):
+def process_batch(
+    config, base_dir, log_callback=None, progress_callback=None,
+    stop_event=None, task_callback=None,
+):
     """Use the app's folders and batch settings for Butterfly AB."""
     from engine.ffmpeg_builder import VIDEO_EXTS, list_media
 
@@ -355,8 +360,14 @@ def process_batch(config, base_dir, log_callback=None, progress_callback=None, s
                 return False
             auxiliary = random.choice(auxiliaries)
             suffix = f"_{repeat + 1}" if config.ab_repeat_count > 1 else ""
-            output = output_folder / f"{main.stem}{suffix}_蝴蝶AB.mp4"
-            job = len(mains[:mains.index(main)]) * config.repeat_count + repeat + 1
+            output = output_folder / output_name(main)
+            job = len(mains[:mains.index(main)]) * config.ab_repeat_count + repeat + 1
+            if task_callback:
+                task_callback({
+                    "channel": "butterfly_ab",
+                    "main": main,
+                    "background": auxiliary,
+                })
             (log_callback or print)(
                 f"\n━━━ 蝴蝶AB [{job}/{total}]: {main.name} + {auxiliary.name} ━━━"
             )

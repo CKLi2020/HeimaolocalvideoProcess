@@ -33,6 +33,7 @@ class PreviewCanvas(QWidget):
         super().__init__(parent)
         self._config = config
         self._root = root_dir
+        self._task: Optional[dict] = None
         self._pixmap: Optional[QPixmap] = None
         self._face_engine = None
         self._sticker_rects: list[QRect] = []  # 贴纸边界框
@@ -78,16 +79,25 @@ class PreviewCanvas(QWidget):
         """参数改动后调用，防抖刷新。"""
         self._debounce.start()
 
+    def show_task(self, task: dict) -> None:
+        """Preview the exact media selected for the current batch job."""
+        self._task = task
+        self.schedule_refresh()
+
     def _refresh_preview(self) -> None:
         """用 ffmpeg 生成一帧预览图。"""
-        main_folder = self._resolve(self._config.main_folder)
-        bg_folder = self._resolve(self._config.background_folder)
-
         from engine.ffmpeg_builder import (
             IMAGE_EXTS, VIDEO_EXTS, build_ffmpeg_command, list_media,
         )
-        main_files = list_media(str(main_folder), VIDEO_EXTS)
-        bg_files = list_media(str(bg_folder), VIDEO_EXTS)
+        task = self._task
+        main_files = (
+            [Path(task["main"])] if task else
+            list_media(str(self._resolve(self._config.main_folder)), VIDEO_EXTS)
+        )
+        bg_files = (
+            [Path(task["background"])] if task else
+            list_media(str(self._resolve(self._config.background_folder)), VIDEO_EXTS)
+        )
 
         if not main_files and not bg_files:
             self.show_placeholder()
@@ -100,35 +110,44 @@ class PreviewCanvas(QWidget):
             return
 
         try:
-            sticker_pool = list_media(
-                str(self._resolve(self._config.sticker_folder)),
-                VIDEO_EXTS | IMAGE_EXTS,
-            )
-            sticker_layers = self._get_layers()
-            stickers = [
-                sticker_pool[i % len(sticker_pool)]
-                for i in range(len(sticker_layers))
-            ] if self._config.sticker_enabled and sticker_pool else []
-
-            mover_pool = list_media(
-                str(self._resolve(
-                    self._config.moving_sticker_folder
-                    or self._config.sticker_folder
-                )),
-                VIDEO_EXTS | IMAGE_EXTS,
-            )
-            mover_layers = self._get_mover_layers()
-            movers = [
-                mover_pool[i % len(mover_pool)]
-                for i in range(len(mover_layers))
-            ] if self._config.moving_sticker_enabled and mover_pool else []
-            scanlights = list_media(
-                str(self._resolve(self._config.scanlight_folder)), VIDEO_EXTS
-            )
-            openings = list_media(
-                str(self._resolve(self._config.kaimu_folder)),
-                VIDEO_EXTS | IMAGE_EXTS,
-            )
+            if task:
+                stickers = [
+                    Path(path) for path in task["stickers"][:len(self._get_layers())]
+                ]
+                movers = [Path(path) for path in task["movers"]]
+                scanlight = task["scanlight"]
+                opening = task["kaimu"]
+            else:
+                sticker_pool = list_media(
+                    str(self._resolve(self._config.sticker_folder)),
+                    VIDEO_EXTS | IMAGE_EXTS,
+                )
+                sticker_layers = self._get_layers()
+                stickers = [
+                    sticker_pool[i % len(sticker_pool)]
+                    for i in range(len(sticker_layers))
+                ] if self._config.sticker_enabled and sticker_pool else []
+                mover_pool = list_media(
+                    str(self._resolve(
+                        self._config.moving_sticker_folder
+                        or self._config.sticker_folder
+                    )),
+                    VIDEO_EXTS | IMAGE_EXTS,
+                )
+                mover_layers = self._get_mover_layers()
+                movers = [
+                    mover_pool[i % len(mover_pool)]
+                    for i in range(len(mover_layers))
+                ] if self._config.moving_sticker_enabled and mover_pool else []
+                scanlights = list_media(
+                    str(self._resolve(self._config.scanlight_folder)), VIDEO_EXTS
+                )
+                openings = list_media(
+                    str(self._resolve(self._config.kaimu_folder)),
+                    VIDEO_EXTS | IMAGE_EXTS,
+                )
+                scanlight = scanlights[0] if scanlights else None
+                opening = openings[0] if openings else None
 
             with tempfile.TemporaryDirectory() as tmp:
                 image = Path(tmp) / "preview.png"
@@ -138,12 +157,13 @@ class PreviewCanvas(QWidget):
                 cmd = build_ffmpeg_command(
                     preview_config, main_v, bg_v, image,
                     sticker_files=stickers or None,
-                    scanlight_file=scanlights[0] if scanlights else None,
-                    kaimu_file=openings[0] if openings else None,
+                    scanlight_file=scanlight,
+                    kaimu_file=opening,
                     mover_files=movers or None,
                 )
                 cmd[cmd.index("-map"):] = [
-                    "-map", "[next_v]", "-frames:v", "1", str(image),
+                    "-map", "[next_v]", "-ss", "0.5",
+                    "-frames:v", "1", str(image),
                 ]
                 subprocess.run(cmd, capture_output=True, timeout=30, check=True)
                 if image.stat().st_size > 100:

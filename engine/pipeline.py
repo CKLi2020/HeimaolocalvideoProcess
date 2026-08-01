@@ -21,6 +21,7 @@ from engine.ffmpeg_builder import (
     pick_random,
     build_ffmpeg_command,
 )
+from engine.output_naming import output_name
 
 
 def _wrap_subtitles(segments: list[dict], max_chars: int) -> list[dict]:
@@ -38,6 +39,7 @@ def process_batch(
     log_callback: Optional[Callable[[str], None]] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    task_callback: Optional[Callable[[dict], None]] = None,
 ) -> bool:
     """批量处理主素材文件夹中的所有视频。
 
@@ -187,9 +189,19 @@ def process_batch(
                     if mfiles:
                         mover_files.append(random.choice(mfiles))
 
+            if task_callback:
+                task_callback({
+                    "main": main_video,
+                    "background": background,
+                    "stickers": sticker_files,
+                    "scanlight": scanlight_file,
+                    "kaimu": kaimu_file,
+                    "movers": mover_files,
+                })
+
             # 输出文件名
             suffix = f"_{repeat + 1}" if config.repeat_count > 1 else ""
-            output_path = output_folder / f"{main_video.stem}{suffix}_成品.mp4"
+            output_path = output_folder / output_name(main_video)
 
             # 多阶段后处理管线：
             #   Pass 1: ffmpeg 合成 → compose_output

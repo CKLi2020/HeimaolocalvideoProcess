@@ -1,6 +1,11 @@
 """蝴蝶AB通道的独立工作区。"""
 
-from PySide6.QtCore import Signal
+import subprocess
+import tempfile
+from pathlib import Path
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -118,8 +123,20 @@ class ButterflyABPage(QWidget):
         encoding_grid.addWidget(self.delete_aux, 1, 3)
         encoding_grid.setColumnStretch(4, 1)
         right_layout.addWidget(encoding)
-        right_layout.addStretch()
+
+        preview_group = QGroupBox("当前处理预览")
+        preview_layout = QVBoxLayout(preview_group)
+        self.preview_title = QLabel("等待开始处理")
+        self.preview_title.setObjectName("sectionTitle")
+        preview_layout.addWidget(self.preview_title)
+        self.preview = QLabel("处理时将显示当前主视频 A")
+        self.preview.setObjectName("preview")
+        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setMinimumSize(420, 520)
+        preview_layout.addWidget(self.preview, 1)
+        right_layout.addWidget(preview_group, 1)
         root.addWidget(right, 2)
+        self._preview_pixmap = None
 
     def set_running(self, running):
         self.start_button.setEnabled(not running)
@@ -127,3 +144,33 @@ class ButterflyABPage(QWidget):
         self.progress.setVisible(running)
         if running:
             self.progress.setRange(0, 0)
+
+    def show_task(self, task):
+        video = Path(task["main"])
+        self.preview_title.setText(f"正在处理：{video.name}")
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                image = Path(folder) / "preview.png"
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-ss", "0.5", "-i", str(video),
+                        "-frames:v", "1", str(image),
+                    ],
+                    capture_output=True, timeout=15, check=True,
+                )
+                self._preview_pixmap = QPixmap(str(image))
+                self._scale_preview()
+        except Exception as error:
+            self.preview.setText(f"预览生成失败：{error}")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._scale_preview()
+
+    def _scale_preview(self):
+        if self._preview_pixmap and not self._preview_pixmap.isNull():
+            self.preview.setPixmap(
+                self._preview_pixmap.scaled(
+                    self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+            )

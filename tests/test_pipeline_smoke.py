@@ -67,7 +67,11 @@ def demo() -> None:
             config = _config(root)
             for key, value in options.items():
                 setattr(config, key, value)
-            assert process_batch(config, root), options
+            tasks = []
+            assert process_batch(config, root, task_callback=tasks.append), options
+            assert len(tasks) == 1
+            assert tasks[0]["main"].name == "main.mp4"
+            assert tasks[0]["background"].name == "bg.mp4"
             outputs = list((root / "out").glob("*.mp4"))
             assert outputs and outputs[0].stat().st_size > 1000, options
             for output in outputs:
