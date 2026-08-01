@@ -50,10 +50,11 @@ class MainWindow(QMainWindow):
     work_done = Signal(bool, str)
     task_received = Signal(object)
 
-    def __init__(self, config: AppConfig, root_dir: Path):
+    def __init__(self, config: AppConfig, root_dir: Path, license_client=None):
         super().__init__()
         self.config = config
         self.root_dir = root_dir
+        self._license_client = license_client
         self.setWindowTitle("黑猫苍老师")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
@@ -361,7 +362,10 @@ class MainWindow(QMainWindow):
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
         self._running_channel = "hdh"
-        self._worker.start(self.config, self.root_dir, self._active_channel)
+        self._worker.start(
+            self.config, self.root_dir, self._active_channel,
+            self._license_client,
+        )
 
     def _on_start_butterfly(self) -> None:
         for value, message in (
@@ -384,7 +388,10 @@ class MainWindow(QMainWindow):
         self._butterfly_page.log.clear()
         self._butterfly_page.set_running(True)
         self._set_status("● 蝴蝶AB处理中", "#fbbf24", "#1f1a0e", "#4a3a15")
-        self._worker.start(self.config, self.root_dir, "butterfly_ab")
+        self._worker.start(
+            self.config, self.root_dir, "butterfly_ab",
+            self._license_client,
+        )
 
     def _on_stop(self) -> None:
         """停止处理。"""

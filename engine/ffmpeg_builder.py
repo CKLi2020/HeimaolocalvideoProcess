@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from config import AppConfig
+from app._flowcut_core import authorized_mask_alpha, mask_alpha
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
@@ -52,6 +53,7 @@ def build_ffmpeg_command(
     scanlight_file: Optional[Path] = None,
     kaimu_file: Optional[Path] = None,
     mover_files: Optional[List[Path]] = None,
+    task_scope: Optional[dict] = None,
 ) -> List[str]:
     """构建完整的 ffmpeg 命令行。
 
@@ -134,23 +136,19 @@ def build_ffmpeg_command(
     if config.mask_enabled:
         margin_tb = config.mask_margin_tb / 100.0
         margin_lr = config.mask_margin_lr / 100.0
-        edge = max(1, round(config.mask_feather * min(w, h) / 1080))
-        fades = []
-        if margin_lr > 0:
-            fades.extend((
-                f"clip((X-W*{margin_lr}+{edge / 2})/{edge},0,1)",
-                f"clip((W*(1-{margin_lr})-X+{edge / 2})/{edge},0,1)",
-            ))
-        if margin_tb > 0:
-            fades.extend((
-                f"clip((Y-H*{margin_tb}+{edge / 2})/{edge},0,1)",
-                f"clip((H*(1-{margin_tb})-Y+{edge / 2})/{edge},0,1)",
-            ))
-        if fades:
-            alpha_expr = fades[0]
-            for fade in fades[1:]:
-                alpha_expr = f"min({alpha_expr},{fade})"
-            alpha = f"255*{alpha_expr}"
+        if task_scope:
+            alpha = authorized_mask_alpha(
+                task_scope["token"], task_scope["engine"],
+                task_scope["batch_id"], task_scope["input_count"],
+                task_scope["params_hash"], task_scope["device_code"],
+                task_scope["device_fingerprint"],
+                w, h, config.mask_feather, margin_tb, margin_lr,
+            )
+        else:
+            alpha = mask_alpha(
+                w, h, config.mask_feather, margin_tb, margin_lr
+            )
+        if alpha:
             filters.append(
                 f"[main_raw]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[main]"
             )

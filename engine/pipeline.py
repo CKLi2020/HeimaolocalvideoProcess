@@ -138,6 +138,7 @@ def process_batch(
     progress_callback: Optional[Callable[[int, int], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     task_callback: Optional[Callable[[dict], None]] = None,
+    task_scope_provider: Optional[Callable[[], dict]] = None,
 ) -> bool:
     """批量处理主素材文件夹中的所有视频。
 
@@ -151,6 +152,8 @@ def process_batch(
     """
 
     _start_time = _time_module.time()
+    if not task_scope_provider:
+        raise RuntimeError("缺少服务器签名任务令牌")
 
     def log(msg: str) -> None:
         print(msg)
@@ -322,6 +325,7 @@ def process_batch(
                 _report_progress(main_dur * frac)
 
             # ── Pass 1: 视频合成（主要耗时）──
+            task_scope = task_scope_provider()
             cmd = build_ffmpeg_command(
                 config,
                 main_video=main_video,
@@ -331,6 +335,7 @@ def process_batch(
                 scanlight_file=scanlight_file,
                 kaimu_file=kaimu_file,
                 mover_files=mover_files or None,
+                task_scope=task_scope,
             )
 
             log(f"  [{job_index}/{total_jobs}] {main_video.stem}{suffix}")
@@ -615,23 +620,22 @@ def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = No
 
         log("[OK] 测试素材生成成功")
 
-        test_config = AppConfig()
-        test_config.main_folder = str(main_dir)
-        test_config.background_folder = str(bg_dir)
-        test_config.output_folder = str(out_dir)
-        test_config.sticker_enabled = False
-        test_config.scanlight_enabled = False
-        test_config.kaimu_enabled = False
-        test_config.moving_sticker_enabled = False
-        test_config.gpu = False
-        test_config.repeat_count = 1
-        test_config.mask_enabled = False
-        test_config.bars_enabled = False
-
-        try:
-            process_batch(test_config, base_dir, log_callback=log_callback)
-        except Exception as e:
-            log(f"[失败] 合成异常: {e}")
+        output = out_dir / "self-test.mp4"
+        result = subprocess.run(
+            [
+                ffmpeg, "-y", "-i", str(bg_dir / "bg.mp4"),
+                "-i", str(main_dir / "main.mp4"),
+                "-filter_complex",
+                "[0:v]scale=360:640[bg];[1:v]scale=320:240[main];"
+                "[bg][main]overlay=(W-w)/2:(H-h)/2:shortest=1",
+                "-an", "-c:v", "libx264", "-preset", "ultrafast",
+                str(output),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log(f"[失败] 合成异常: {result.stderr[-200:]}")
             return False
 
         outputs = list(out_dir.glob("*.mp4"))

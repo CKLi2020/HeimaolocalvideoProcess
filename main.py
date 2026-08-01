@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont
 
 from config import AppConfig
+from app.license import LicenseClient, LicenseDialog, LicenseError
 from app.main_window import MainWindow
 
 
@@ -63,8 +64,18 @@ def main() -> None:
         config.ab_output_folder = "蝴蝶AB成品"
     config.to_json(config_path)
 
+    license_client = LicenseClient()
+    try:
+        if not license_client.has_license():
+            raise LicenseError("未保存卡密")
+        license_client.check()
+    except LicenseError:
+        dialog = LicenseDialog(license_client)
+        if dialog.exec() != LicenseDialog.DialogCode.Accepted:
+            return
+
     # 显示窗口
-    window = MainWindow(config, ROOT)
+    window = MainWindow(config, ROOT, license_client)
     window.show()
     _style_native_title_bar(window)
 
