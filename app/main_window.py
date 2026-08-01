@@ -87,14 +87,11 @@ class MainWindow(QMainWindow):
         brand = QLabel("黑猫苍老师")
         brand.setObjectName("brand")
         header_layout.addWidget(brand)
-        brand_sub = QLabel("VIDEO COMPOSER")
+        brand_sub = QLabel("BLACKCAT")
         brand_sub.setObjectName("brandSub")
         header_layout.addWidget(brand_sub)
-        tutorial = QPushButton("更新与教程")
-        tutorial.setFlat(True)
-        header_layout.addWidget(tutorial)
         header_layout.addStretch()
-        self._status_label = QLabel("● 就绪")
+        self._status_label = QLabel("● 蒙版通道")
         self._status_label.setObjectName("status")
         header_layout.addWidget(self._status_label)
         root_layout.addWidget(header)
@@ -118,7 +115,7 @@ class MainWindow(QMainWindow):
         channel_brand.setObjectName("channelBrand")
         channel_brand.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_brand)
-        channel_caption = QLabel("FLOWCUT STUDIO")
+        channel_caption = QLabel("BLACKCAT")
         channel_caption.setObjectName("brandSub")
         channel_caption.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_caption)
@@ -129,8 +126,9 @@ class MainWindow(QMainWindow):
         self._channel_group = QButtonGroup(self)
         self._channel_group.setExclusive(True)
         channels = (
-            ("01", "HDH 蒙版通道", "hdh"),
+            ("01", "蒙版通道", "hdh"),
             ("02", "蝴蝶AB", "butterfly_ab"),
+            ("03", "最新连怼（Coming）", "coming"),
         )
         for number, name, channel in channels:
             button = QPushButton(f"{number}   {name}")
@@ -141,6 +139,7 @@ class MainWindow(QMainWindow):
             )
             self._channel_group.addButton(button)
             channel_layout.addWidget(button)
+            button.setEnabled(channel != "coming")
             if channel == "hdh":
                 button.setChecked(True)
         channel_layout.addStretch()
@@ -159,9 +158,10 @@ class MainWindow(QMainWindow):
         left_panel.setMaximumWidth(350)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(5, 4, 5, 5)
-        left_layout.setSpacing(5)
+        left_layout.setSpacing(8)
         self._files_page = FilesPage(self.config)
-        left_layout.addWidget(self._files_page, 6)
+        self._files_page.setMinimumHeight(300)
+        left_layout.addWidget(self._files_page)
 
         controls = QFrame()
         controls.setObjectName("panel")
@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         )
         batch_row.addWidget(self._delete_aux)
         batch_row.addStretch()
-        batch_row.addWidget(QLabel("每个素材处理次数："))
+        batch_row.addWidget(QLabel("裂变："))
         self._repeat_count = QSpinBox()
         self._repeat_count.setRange(1, 100)
         self._repeat_count.setValue(self.config.repeat_count)
@@ -206,10 +206,9 @@ class MainWindow(QMainWindow):
         self._progress.hide()
         controls_layout.addWidget(self._progress)
         left_layout.addWidget(controls)
-        left_layout.addSpacing(24)
         self._log = LogPanel("处理日志")
         self._log.header_layout.addWidget(clear_log)
-        left_layout.addWidget(self._log, 3)
+        left_layout.addWidget(self._log, 1)
         hdh_workspace.addWidget(left_panel)
 
         # Center: large preview canvas.
@@ -317,8 +316,12 @@ class MainWindow(QMainWindow):
     def _select_channel(self, channel: str) -> None:
         self._active_channel = channel
         self._workspace_stack.setCurrentIndex(1 if channel == "butterfly_ab" else 0)
+        if channel == "butterfly_ab":
+            self._butterfly_page.show_first_video(
+                self._resolve(self.config.ab_main_folder)
+            )
         self._set_status(
-            "● 蝴蝶AB通道" if channel == "butterfly_ab" else "● 就绪",
+            "● 蝴蝶AB通道" if channel == "butterfly_ab" else "● 蒙版通道",
             "#34d399", "#0d2a1f", "#1a5a3e",
         )
 
@@ -442,7 +445,10 @@ class MainWindow(QMainWindow):
             self._btn_start.setEnabled(True)
             self._btn_stop.setEnabled(False)
         if success:
-            self._set_status("● 就绪", "#34d399", "#0d2a1f", "#1a5a3e")
+            self._set_status(
+                "● 蝴蝶AB通道" if butterfly else "● 蒙版通道",
+                "#34d399", "#0d2a1f", "#1a5a3e",
+            )
         else:
             self._set_status("● " + message, "#f87171", "#1f1518", "#3d1f28")
         target_log = self._butterfly_page.log if butterfly else self._log

@@ -110,7 +110,7 @@ class ButterflyABPage(QWidget):
         self.resolution.currentTextChanged.connect(
             lambda value: setattr(config, "ab_resolution", value)
         )
-        self.gpu = QCheckBox("启用 NVIDIA GPU 加速")
+        self.gpu = QCheckBox("启用 GPU 加速")
         self.gpu.setChecked(config.ab_gpu)
         self.gpu.toggled.connect(lambda value: setattr(config, "ab_gpu", value))
         encoding_grid.addWidget(QLabel("输出分辨率"), 0, 0)
@@ -147,7 +147,17 @@ class ButterflyABPage(QWidget):
 
     def show_task(self, task):
         video = Path(task["main"])
-        self.preview_title.setText(f"正在处理：{video.name}")
+        self._show_video(video, f"正在处理：{video.name}")
+
+    def show_first_video(self, folder):
+        from engine.ffmpeg_builder import VIDEO_EXTS, list_media
+
+        videos = list_media(str(folder), VIDEO_EXTS)
+        if videos:
+            self._show_video(videos[0], f"预览：{videos[0].name}")
+
+    def _show_video(self, video, title):
+        self.preview_title.setText(title)
         try:
             with tempfile.TemporaryDirectory() as folder:
                 image = Path(folder) / "preview.png"

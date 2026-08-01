@@ -3,6 +3,7 @@ Phase 2: 真实进度条 —— 解析 ffmpeg time= 输出。
 """
 
 import argparse
+from functools import lru_cache
 import json
 import random
 import re
@@ -18,6 +19,23 @@ from engine.output_naming import output_name
 
 FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE = shutil.which("ffprobe") or "ffprobe"
+
+
+@lru_cache(maxsize=1)
+def gpu_encoder():
+    """选择本机实际可用的 H.264 GPU 编码器。"""
+    for encoder in ("h264_nvenc", "h264_qsv", "h264_amf"):
+        result = subprocess.run(
+            [
+                FFMPEG, "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=s=256x256:d=0.1",
+                "-frames:v", "1", "-an", "-c:v", encoder, "-f", "null", "-",
+            ],
+            capture_output=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return encoder
+    return None
 
 
 def _probe_duration(path) -> float:
@@ -308,7 +326,7 @@ def validate_edit_lists(path, visible_duration, head, hidden):
 
 
 def encode_standard(source, output, duration=None, stop_event=None, width=720, height=1280,
-                    progress_callback=None):
+                    progress_callback=None, video_encoder=None):
     """标准化视频编码，支持真实进度回调。"""
     source_duration, has_audio = video_info(source)
     args = [FFMPEG, "-y", "-nostdin", "-hide_banner", "-loglevel", "info", "-stats"]
@@ -325,8 +343,16 @@ def encode_standard(source, output, duration=None, stop_event=None, width=720, h
     args += [
         "-vf", vf, "-vsync", "cfr", "-r", "30", "-map", "0:v:0",
         "-map", "0:a:0" if has_audio else "1:a:0",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
-        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
+    ]
+    args += (
+        ["-c:v", video_encoder, "-b:v", "2160k", "-maxrate", "2160k",
+         "-bufsize", "4320k", "-pix_fmt", "yuv420p"]
+        if video_encoder else
+        ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+         "-pix_fmt", "yuv420p"]
+    )
+    args += [
+        "-c:a", "aac", "-b:a", "96k",
         "-ac", "2", "-ar", "44100",
     ]
     if duration:
@@ -349,6 +375,9 @@ def butterfly_ab(
     """
     log = log_callback or (lambda _: None)
     progress = progress_callback or (lambda _: None)
+    encoder = gpu_encoder() if use_gpu else None
+    if use_gpu:
+        log(f"  GPU 编码器: {encoder or '不可用，使用 CPU'}")
 
     duration, _ = video_info(main)
     if not 0 < head < duration:
@@ -377,7 +406,7 @@ def butterfly_ab(
         encode_standard(
             main, a_std,
             stop_event=stop_event, width=width, height=height,
-            progress_callback=_stage1,
+            progress_callback=_stage1, video_encoder=encoder,
         )
 
         log("  编码辅助视频...")
@@ -388,7 +417,7 @@ def butterfly_ab(
         encode_standard(
             auxiliary, b_full, 23,
             stop_event=stop_event, width=width, height=height,
-            progress_callback=_stage2,
+            progress_callback=_stage2, video_encoder=encoder,
         )
 
         chunk_durations = [23.0] * int(hidden // 23)
@@ -433,10 +462,10 @@ def butterfly_ab(
         jump_frame = round((head + hidden) * 30)
         main_frames = round(duration * 30)
         enc = (
-            ["-c:v", "h264_nvenc", "-forced-idr", "1", "-bf", "0", "-rc", "cbr",
+            ["-c:v", encoder, "-bf", "0",
              "-b:v", "2160k", "-maxrate", "2160k", "-bufsize", "4320k",
              "-g", str(max(30, main_frames))]
-            if use_gpu else
+            if encoder else
             ["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p"]
         )
 

@@ -16,8 +16,8 @@ class AppConfig:
     background_folder: str = "辅助视频"
     sticker_folder: str = "贴纸"
     moving_sticker_folder: str = "贴纸"
-    scanlight_folder: str = "扫光"
-    kaimu_folder: str = "开幕"
+    scanlight_folder: str = "showlight"
+    kaimu_folder: str = "startmovie"
     output_folder: str = "蒙版成品"
     repeat_count: int = 1
     delete_used_aux: bool = False

@@ -428,6 +428,12 @@ QPushButton#channelButton:hover {
     border-color: #284070;
 }
 
+QPushButton#channelButton:disabled {
+    color: #4a6088;
+    background: #0b1526;
+    border-color: #15243d;
+}
+
 QPushButton#channelButton:checked {
     color: #ffffff;
     background: qlineargradient(

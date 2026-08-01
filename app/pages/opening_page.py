@@ -68,7 +68,7 @@ class OpeningPage(QWidget):
             self._rows[key] = row
 
         root_layout.addWidget(cover_group)
-        cover_group.setVisible(section in ("all", "cover"))
+        cover_group.setVisible(False)
 
         # ── 字幕 ──
         sub_group = QGroupBox("字幕 (faster-whisper)")

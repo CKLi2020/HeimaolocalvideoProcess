@@ -6,7 +6,6 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QGroupBox,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
     QFormLayout,
@@ -26,12 +25,8 @@ class FilesPage(QWidget):
         self.config = config
         self._rows: dict[str, FolderRow | ParamRow] = {}
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-
-        inner = QWidget()
-        root_layout = QVBoxLayout(inner)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(16)
 
         # ── 文件夹 ──
@@ -44,8 +39,6 @@ class FilesPage(QWidget):
             ("辅助视频文件夹", "background_folder"),
             ("贴纸文件夹", "sticker_folder"),
             ("移动贴图文件夹", "moving_sticker_folder"),
-            ("扫光文件夹", "scanlight_folder"),
-            ("开幕素材文件夹", "kaimu_folder"),
             ("输出文件夹", "output_folder"),
         ]
         for label, key in folders:
@@ -55,14 +48,7 @@ class FilesPage(QWidget):
             self._rows[key] = row
 
         root_layout.addWidget(folder_group)
-
         root_layout.addStretch()
-
-        scroll.setWidget(inner)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
 
     def _set_folder(self, key: str, value: str) -> None:
         setattr(self.config, key, value)
