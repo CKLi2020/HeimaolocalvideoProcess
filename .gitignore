@@ -3,3 +3,9 @@ __pycache__/
 config.json
 配置文件/
 .codex_video_frames/
+主视频/
+辅助视频/
+贴纸/
+扫光/
+开幕/
+成品视频/
