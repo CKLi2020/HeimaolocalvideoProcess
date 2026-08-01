@@ -134,17 +134,28 @@ def build_ffmpeg_command(
     if config.mask_enabled:
         margin_tb = config.mask_margin_tb / 100.0
         margin_lr = config.mask_margin_lr / 100.0
-        edge = max(1, int(config.mask_feather * min(w, h) / 500))
-        alpha = (
-            f"255*min("
-            f"min(clip((X-W*{margin_lr})/{edge},0,1),"
-            f"clip((W*(1-{margin_lr})-X)/{edge},0,1)),"
-            f"min(clip((Y-H*{margin_tb})/{edge},0,1),"
-            f"clip((H*(1-{margin_tb})-Y)/{edge},0,1)))"
-        )
-        filters.append(
-            f"[main_raw]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[main]"
-        )
+        edge = max(1, round(config.mask_feather * min(w, h) / 1080))
+        fades = []
+        if margin_lr > 0:
+            fades.extend((
+                f"clip((X-W*{margin_lr}+{edge / 2})/{edge},0,1)",
+                f"clip((W*(1-{margin_lr})-X+{edge / 2})/{edge},0,1)",
+            ))
+        if margin_tb > 0:
+            fades.extend((
+                f"clip((Y-H*{margin_tb}+{edge / 2})/{edge},0,1)",
+                f"clip((H*(1-{margin_tb})-Y+{edge / 2})/{edge},0,1)",
+            ))
+        if fades:
+            alpha_expr = fades[0]
+            for fade in fades[1:]:
+                alpha_expr = f"min({alpha_expr},{fade})"
+            alpha = f"255*{alpha_expr}"
+            filters.append(
+                f"[main_raw]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[main]"
+            )
+        else:
+            filters.append("[main_raw]null[main]")
 
     # ── Overlay main on background (centered) ──
     filters.append(

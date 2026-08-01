@@ -26,14 +26,14 @@ class AppConfig:
     ab_main_folder: str = "主视频"
     ab_auxiliary_folder: str = "辅助视频"
     ab_output_folder: str = "蝴蝶AB成品"
-    ab_resolution: str = "720x1280"
+    ab_resolution: str = "1080x1920"
     ab_gpu: bool = False
     ab_repeat_count: int = 1
     ab_delete_used_aux: bool = False
 
     # ── 画布与编码 ──
-    resolution: str = "1080x1920"
-    fps: int = 30
+    resolution: str = "1080x2338"
+    fps: int = 24
     main_scale: int = 105
     main_fit: bool = True
     aux_scale: int = 100
@@ -45,19 +45,19 @@ class AppConfig:
     compose_threads: int = 4
 
     # ── 蒙版与横条 ──
-    mask_enabled: bool = True
-    mask_margin_tb: int = 1
-    mask_margin_lr: int = 2
-    mask_feather: int = 15
+    mask_enabled: bool = False
+    mask_margin_tb: int = 5
+    mask_margin_lr: int = 0
+    mask_feather: int = 20
     top_step_enabled: bool = True
-    top_scale: int = 60
-    top_opacity: int = 3
+    top_scale: int = 10
+    top_opacity: int = 6
     top_feather: int = 20
     bars_enabled: bool = True
     bar_height: int = 300
     bar_opacity: int = 40
     top_bar_height: int = 300
-    top_bar_opacity: int = 43
+    top_bar_opacity: int = 100
     top_bar_feather_down: int = 45
     bottom_bar_height: int = 300
     bottom_bar_opacity: int = 38
@@ -102,11 +102,11 @@ class AppConfig:
     # 多层贴纸 JSON 数组: [{"scale":20,"opacity":60,"x":80,"y":8}, ...]
     # 如果非空则覆盖上面的单层参数
     sticker_layers_json: str = ""
-    moving_sticker_enabled: bool = False
+    moving_sticker_enabled: bool = True
     moving_sticker_period: int = 8
     # 移动贴纸层 JSON 数组
     mover_layers_json: str = ""
-    scanlight_enabled: bool = True
+    scanlight_enabled: bool = False
     scanlight_opacity: int = 45
     scanlight_speed: int = 100
 
@@ -183,7 +183,7 @@ class AppConfig:
             "repeat_count": options.get("repeat_count", 1),
             "delete_used_aux": options.get("delete_used_aux", False),
             "main_fit": options.get("main_fit", True),
-            "mask_enabled": options.get("mask_step_enabled", True),
+            "mask_enabled": options.get("mask_step_enabled", False),
             "top_step_enabled": options.get("top_step_enabled", True),
             "bars_enabled": options.get("bars_step_enabled", True),
             "pip_enabled": options.get("pip_step_enabled", False),
@@ -194,7 +194,7 @@ class AppConfig:
                 options.get("tb_split_enabled", False)
                 or options.get("bb_split_enabled", False)
             ),
-            "moving_sticker_enabled": options.get("mover_enabled", False),
+            "moving_sticker_enabled": options.get("mover_enabled", True),
             "sticker_enabled": options.get("watermark_enabled", False),
             "scanlight_enabled": options.get("scanlight_enabled", False),
             "kaimu_enabled": options.get("kaimu_enabled", False),
