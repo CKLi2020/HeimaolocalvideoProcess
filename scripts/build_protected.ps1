@@ -9,13 +9,24 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Build = Join-Path $Root "build\protected"
 $Dist = Join-Path $Root "dist-protected"
 $RawExe = Join-Path $Build "BlackCatFlowCut.nuitka.exe"
-$FinalExe = Join-Path $Dist "黑猫苍老师.exe"
+$Version = (& $Python -c "import runpy; print(runpy.run_path(r'$Root\version.py')['APP_VERSION'])").Trim()
+if ($LASTEXITCODE -ne 0 -or $Version -notmatch '^\d+(\.\d+){2,3}$') {
+    throw "Invalid APP_VERSION in version.py: $Version"
+}
+function ConvertFrom-CodePoints([int[]]$Codes) {
+    return -join ($Codes | ForEach-Object { [char]$_ })
+}
+$ProductName = ConvertFrom-CodePoints @(0x9ED1, 0x732B, 0x82CD, 0x8001, 0x5E08)
+$FinalExe = Join-Path $Dist "${ProductName}_V$Version.exe"
 $Icon = Join-Path $Root "ico\feng_logo.ico"
 $VmProtect = Join-Path $VmProtectDir "VMProtect_Con.exe"
 $Project = Join-Path $Build "flowcut.vmp"
 $NativeBuild = Join-Path $PSScriptRoot "build_native.ps1"
+$Ffmpeg = (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue).Source
+$Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 
 if (-not (Test-Path -LiteralPath $Icon)) { throw "Icon not found: $Icon" }
+if (-not $Ffmpeg -or -not $Ffprobe) { throw "ffmpeg.exe and ffprobe.exe are required" }
 if (-not $SkipVmProtect -and -not (Test-Path -LiteralPath $VmProtect)) {
     throw "VMProtect not found: $VmProtect"
 }
@@ -37,6 +48,7 @@ try {
         --windows-icon-from-ico="$Icon" `
         --product-name="BlackCat FlowCut" `
         --file-description="BlackCat FlowCut" `
+        --file-version="$Version" --product-version="$Version" `
         --output-dir="$Build" --output-filename="BlackCatFlowCut.nuitka.exe" `
         main.py
     if ($LASTEXITCODE -ne 0) { throw "Nuitka build failed" }
@@ -69,4 +81,26 @@ else {
     }
 }
 
+$ReleaseAssets = @(
+    "ico", "resources", "showlight", "startmovie",
+    (ConvertFrom-CodePoints @(0x8D34, 0x7EB8)),
+    (ConvertFrom-CodePoints @(0x914D, 0x7F6E, 0x6587, 0x4EF6))
+)
+foreach ($name in $ReleaseAssets) {
+    $source = Join-Path $Root $name
+    if (-not (Test-Path -LiteralPath $source)) { throw "Release directory not found: $source" }
+    Copy-Item -LiteralPath $source -Destination $Dist -Recurse -Force
+}
+$WorkingDirectories = @(
+    (ConvertFrom-CodePoints @(0x4E3B, 0x89C6, 0x9891)),
+    (ConvertFrom-CodePoints @(0x8F85, 0x52A9, 0x89C6, 0x9891)),
+    (ConvertFrom-CodePoints @(0x8499, 0x7248, 0x6210, 0x54C1)),
+    ((ConvertFrom-CodePoints @(0x8774, 0x8776)) + "AB" + (ConvertFrom-CodePoints @(0x6210, 0x54C1)))
+)
+foreach ($name in $WorkingDirectories) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dist $name) | Out-Null
+}
+Copy-Item -LiteralPath $Ffmpeg, $Ffprobe -Destination $Dist -Force
+
 Write-Host "Protected executable: $FinalExe" -ForegroundColor Green
+Write-Host "Release directory: $Dist" -ForegroundColor Green

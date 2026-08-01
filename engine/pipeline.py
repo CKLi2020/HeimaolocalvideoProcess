@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from config import AppConfig
+from engine import HIDDEN_SUBPROCESS
 from engine.ffmpeg_builder import (
     VIDEO_EXTS,
     IMAGE_EXTS,
@@ -45,6 +46,7 @@ def _probe_duration(path: Path) -> float:
             ["ffprobe", "-v", "error", "-show_format", "-of", "json", str(path)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=20,
+            **HIDDEN_SUBPROCESS,
         )
         if result.returncode == 0:
             info = _json.loads(result.stdout)
@@ -76,6 +78,7 @@ def _run_ffmpeg(
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace",
+        **HIDDEN_SUBPROCESS,
     )
 
     time_re = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
@@ -516,6 +519,7 @@ def process_batch(
                                 "-preset", config.preset, "-c:a", "copy", str(encoded),
                             ],
                             capture_output=True, text=True,
+                            **HIDDEN_SUBPROCESS,
                         )
                         if reencode.returncode == 0:
                             encoded.replace(output_path)
@@ -613,6 +617,7 @@ def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = No
                     "-pix_fmt", "yuv420p", str(folder / f"{name}.mp4"),
                 ],
                 capture_output=True, text=True,
+                **HIDDEN_SUBPROCESS,
             )
             if r.returncode != 0:
                 log(f"[失败] 无法生成测试素材 {name}: {r.stderr[-200:]}")
@@ -633,6 +638,7 @@ def self_test(base_dir: Path, log_callback: Optional[Callable[[str], None]] = No
             ],
             capture_output=True,
             text=True,
+            **HIDDEN_SUBPROCESS,
         )
         if result.returncode != 0:
             log(f"[失败] 合成异常: {result.stderr[-200:]}")

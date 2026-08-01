@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -26,10 +27,10 @@ from PySide6.QtWidgets import (
 )
 
 from app._flowcut_core import sign_request, verify_response
+from version import APP_VERSION
 
 
 APP_ID = "blackcat-flowcut"
-APP_VERSION = "1.0.0"
 DEFAULT_API_BASE = "https://yizhixiangsi.cn"
 REQUEST_SECRET = "fc-client-request-v1-8c7f67c5e4fa49c3888e21135d72976a"
 SERVER_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
@@ -103,22 +104,37 @@ class LicenseClient:
     def license_code(self) -> str:
         return self.config.get("licenseCode", "")
 
+    @property
+    def auto_login(self) -> bool:
+        return bool(self.config.get("autoLogin", False))
+
     def has_license(self) -> bool:
         return bool(self.license_code)
 
-    def activate(self, api_base: str, license_code: str) -> dict:
+    def activate(
+        self,
+        api_base: str,
+        license_code: str,
+        remember: bool = True,
+        auto_login: bool = False,
+    ) -> dict:
         previous = self.config
         self.config = {
             "apiBase": api_base.rstrip("/"),
             "licenseCode": license_code.strip().upper(),
+            "rememberLicense": remember,
+            "autoLogin": bool(remember and auto_login),
         }
         try:
             data = self._request("activate")
         except Exception:
             self.config = previous
             raise
+        saved = dict(self.config)
+        if not remember:
+            saved.pop("licenseCode", None)
         _config_path().write_text(
-            json.dumps(self.config, ensure_ascii=False, indent=2),
+            json.dumps(saved, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         return data
@@ -201,23 +217,90 @@ class LicenseDialog(QDialog):
     def __init__(self, client: LicenseClient):
         super().__init__()
         self.client = client
-        self.setWindowTitle("黑猫苍老师 - 卡密授权")
+        self.setWindowTitle(f"黑猫苍老师 V{APP_VERSION} - 卡密登录")
         self.setModal(True)
-        self.setFixedSize(460, 190)
+        self.setFixedSize(552, 360)
+        icon = Path(__file__).resolve().parents[1] / "ico" / "feng_logo.ico"
+        if icon.exists():
+            from PySide6.QtGui import QIcon
+
+            self.setWindowIcon(QIcon(str(icon)))
+        self.setStyleSheet("""
+            QDialog { background: #0b1325; color: #f4f7ff; }
+            QLabel { color: #f4f7ff; font-size: 13px; }
+            QLabel#notice {
+                background: #1d2948;
+                color: #ff4057;
+                border: 1px solid #7185bd;
+                padding: 12px;
+            }
+            QLineEdit {
+                background: #172442;
+                color: #ffffff;
+                border: 1px solid #00b7f0;
+                border-radius: 7px;
+                padding: 0 12px;
+                min-height: 34px;
+                font-size: 13px;
+            }
+            QCheckBox { color: #dce7ff; spacing: 7px; }
+            QPushButton {
+                background: #34477f;
+                color: white;
+                border: 0;
+                border-radius: 7px;
+                min-height: 48px;
+                font-weight: 700;
+            }
+            QPushButton:hover { background: #425b9c; }
+        """)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("请输入服务器后台生成的黑猫苍老师卡密"))
+        layout.setContentsMargins(12, 12, 12, 11)
+        layout.setSpacing(7)
+        layout.addWidget(QLabel("公告"))
+        notice = QLabel(
+            "本软件仅限学习使用，若利用本软件实施违法行为，"
+            "一经查实将直接报警处理。"
+        )
+        notice.setObjectName("notice")
+        notice.setWordWrap(True)
+        notice.setFixedHeight(140)
+        layout.addWidget(notice)
+
         self.api = QLineEdit(client.api_base)
         self.api.hide()
         row = QHBoxLayout()
-        row.addWidget(QLabel("卡密"))
+        row.setSpacing(6)
+        row.addWidget(QLabel("卡密:"))
         self.code = QLineEdit(client.license_code)
         self.code.setPlaceholderText("请输入卡密")
+        self.code.returnPressed.connect(self._activate)
         row.addWidget(self.code)
         layout.addLayout(row)
+
+        options = QHBoxLayout()
+        options.addStretch()
+        self.remember = QCheckBox("记住卡密")
+        self.remember.setChecked(
+            bool(client.config.get("rememberLicense", True))
+        )
+        self.auto = QCheckBox("自动登录")
+        self.auto.setChecked(client.auto_login)
+        self.auto.setEnabled(self.remember.isChecked())
+        self.remember.toggled.connect(self.auto.setEnabled)
+        self.remember.toggled.connect(
+            lambda checked: self.auto.setChecked(False) if not checked else None
+        )
+        options.addWidget(self.remember)
+        options.addStretch()
+        options.addWidget(self.auto)
+        options.addStretch()
+        layout.addLayout(options)
+
         buttons = QHBoxLayout()
+        buttons.setSpacing(6)
         login = QPushButton("登录")
-        login.setObjectName("accent")
         login.clicked.connect(self._activate)
         buttons.addWidget(login)
         cancel = QPushButton("退出")
@@ -227,7 +310,12 @@ class LicenseDialog(QDialog):
 
     def _activate(self) -> None:
         try:
-            self.client.activate(self.api.text().strip(), self.code.text().strip())
+            self.client.activate(
+                self.api.text().strip(),
+                self.code.text().strip(),
+                self.remember.isChecked(),
+                self.auto.isChecked(),
+            )
         except LicenseError as error:
             QMessageBox.warning(self, "授权失败", str(error))
             return

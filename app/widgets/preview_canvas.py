@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QFont
 from PySide6.QtCore import Qt, QTimer, QPoint, QRect
 from config import AppConfig
+from engine import HIDDEN_SUBPROCESS
 
 
 class PreviewCanvas(QWidget):
@@ -165,7 +166,10 @@ class PreviewCanvas(QWidget):
                     "-map", "[next_v]", "-ss", "0.5",
                     "-frames:v", "1", str(image),
                 ]
-                subprocess.run(cmd, capture_output=True, timeout=30, check=True)
+                subprocess.run(
+                    cmd, capture_output=True, timeout=30, check=True,
+                    **HIDDEN_SUBPROCESS,
+                )
                 if image.stat().st_size > 100:
                     self._apply_face_blur(image)
                     self._show_pixmap(QPixmap(str(image)))
@@ -183,6 +187,7 @@ class PreviewCanvas(QWidget):
                         "-frames:v", "1", str(image),
                     ],
                     capture_output=True, timeout=10, check=True,
+                    **HIDDEN_SUBPROCESS,
                 )
                 if image.stat().st_size > 100:
                     self._apply_face_blur(image)

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.widgets.folder_row import FolderRow
+from engine import HIDDEN_SUBPROCESS
 from app.widgets.log_panel import LogPanel
 
 
@@ -167,6 +168,7 @@ class ButterflyABPage(QWidget):
                         "-frames:v", "1", str(image),
                     ],
                     capture_output=True, timeout=15, check=True,
+                    **HIDDEN_SUBPROCESS,
                 )
                 self._preview_pixmap = QPixmap(str(image))
                 self._scale_preview()

@@ -17,6 +17,7 @@ from typing import Callable, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from engine import HIDDEN_SUBPROCESS
 
 
 class FaceBlurEngine:
@@ -386,7 +387,9 @@ def apply_face_blur_ffmpeg(
         "-movflags", "+faststart",
         str(output_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, **HIDDEN_SUBPROCESS
+    )
     if result.returncode != 0:
         log(f"[人脸] 重编码失败: {result.stderr[-200:]}")
         shutil.move(str(temp_raw), str(output_path))

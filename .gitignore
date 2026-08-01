@@ -14,3 +14,5 @@ config.json
 build/
 dist-protected/
 app/_flowcut_core.pyd
+showlight/
+startmovie/

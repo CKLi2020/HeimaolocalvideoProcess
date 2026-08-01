@@ -16,6 +16,7 @@ import time as _time_module
 from pathlib import Path
 
 from engine.output_naming import output_name
+from engine import HIDDEN_SUBPROCESS
 from app._flowcut_core import authorized_butterfly_plan
 
 FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
@@ -33,6 +34,7 @@ def gpu_encoder():
                 "-frames:v", "1", "-an", "-c:v", encoder, "-f", "null", "-",
             ],
             capture_output=True, timeout=10,
+            **HIDDEN_SUBPROCESS,
         )
         if result.returncode == 0:
             return encoder
@@ -46,6 +48,7 @@ def _probe_duration(path) -> float:
             [str(FFPROBE), "-v", "error", "-show_format", "-of", "json", str(path)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=20,
+            **HIDDEN_SUBPROCESS,
         )
         if result.returncode == 0:
             info = json.loads(result.stdout)
@@ -76,6 +79,7 @@ def _run_ffmpeg(
         [str(x) for x in cmd],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace",
+        **HIDDEN_SUBPROCESS,
     )
 
     time_re = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
@@ -130,7 +134,7 @@ def _run_ffmpeg(
 
 def run(cmd, stop_event=None):
     """向后兼容：无进度的快速 ffmpeg 调用。"""
-    process = subprocess.Popen([str(x) for x in cmd])
+    process = subprocess.Popen([str(x) for x in cmd], **HIDDEN_SUBPROCESS)
     while process.poll() is None:
         if stop_event and stop_event.wait(0.2):
             process.terminate()
@@ -147,6 +151,7 @@ def probe(path):
         [str(FFPROBE), "-v", "error", "-show_streams", "-show_format",
          "-of", "json", str(path)],
         check=True, capture_output=True, text=True, encoding="utf-8",
+        **HIDDEN_SUBPROCESS,
     )
     return json.loads(result.stdout)
 
@@ -642,7 +647,9 @@ def self_test(use_gpu=False):
                 "-ss", str(second), "-i", str(path), "-frames:v", "1",
                 "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
             ]
-            return tuple(subprocess.run(cmd, check=True, capture_output=True).stdout[:3])
+            return tuple(subprocess.run(
+                cmd, check=True, capture_output=True, **HIDDEN_SUBPROCESS
+            ).stdout[:3])
 
         visible = pixel(out)
         physical = pixel(out, True)

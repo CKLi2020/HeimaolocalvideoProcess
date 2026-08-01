@@ -42,6 +42,7 @@ from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
 from app.widgets.param_row import ParamRow
 from engine.worker import BatchWorker
+from version import APP_VERSION
 
 
 class MainWindow(QMainWindow):
@@ -55,7 +56,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.root_dir = root_dir
         self._license_client = license_client
-        self.setWindowTitle("黑猫苍老师")
+        self.setWindowTitle(f"黑猫苍老师 V{APP_VERSION}")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
         self.setStyleSheet(MIDNIGHT_QSS)

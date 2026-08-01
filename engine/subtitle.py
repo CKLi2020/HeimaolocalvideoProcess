@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
+from engine import HIDDEN_SUBPROCESS
 
 # ── 运行时检测 ──
 _FASTER_WHISPER_OK = False
@@ -288,7 +289,9 @@ def extract_audio(
         str(wav_path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, **HIDDEN_SUBPROCESS
+        )
         if result.returncode != 0:
             log(f"[字幕] 音频提取失败: {result.stderr[-300:]}")
             return None
@@ -433,7 +436,9 @@ def burn_subtitles(
         str(output_path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, **HIDDEN_SUBPROCESS
+        )
         if result.returncode != 0:
             log(f"[字幕] 烧录失败: {result.stderr[-300:]}")
             return False
