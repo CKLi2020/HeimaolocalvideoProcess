@@ -35,14 +35,14 @@ class BatchWorker:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self, config: AppConfig, base_dir: Path) -> None:
+    def start(self, config: AppConfig, base_dir: Path, channel: str = "hdh") -> None:
         """启动批量处理。"""
         if self.is_running:
             return
         self._cancel.clear()
         self._thread = threading.Thread(
             target=self._run_batch,
-            args=(config, base_dir),
+            args=(config, base_dir, channel),
             daemon=True,
         )
         self._thread.start()
@@ -63,15 +63,21 @@ class BatchWorker:
         """请求取消当前任务。"""
         self._cancel.set()
 
-    def _run_batch(self, config: AppConfig, base_dir: Path) -> None:
+    def _run_batch(self, config: AppConfig, base_dir: Path, channel: str) -> None:
         try:
-            ok = process_batch(
-                config,
-                base_dir,
-                log_callback=self._log,
-                progress_callback=self._progress,
-                cancel_check=lambda: self._cancel.is_set(),
-            )
+            if channel == "butterfly_ab":
+                from engine.butterfly_ab import process_batch as process_butterfly_ab
+                ok = process_butterfly_ab(
+                    config, base_dir, self._log, self._progress, self._cancel
+                )
+            else:
+                ok = process_batch(
+                    config,
+                    base_dir,
+                    log_callback=self._log,
+                    progress_callback=self._progress,
+                    cancel_check=lambda: self._cancel.is_set(),
+                )
             if self._cancel.is_set():
                 self._done and self._done(False, "任务已取消")
             elif ok:

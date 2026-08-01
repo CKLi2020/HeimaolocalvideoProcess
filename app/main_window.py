@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QIcon
 
 from config import AppConfig
 from app.theme import MIDNIGHT_QSS
@@ -35,6 +37,7 @@ from app.pages.pip_page import PipPage
 from app.pages.sticker_page import StickerPage
 from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
+from app.pages.butterfly_ab_page import ButterflyABPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
 from app.widgets.param_row import ParamRow
@@ -104,36 +107,47 @@ class MainWindow(QMainWindow):
         channel_layout = QVBoxLayout(channel_panel)
         channel_layout.setContentsMargins(12, 18, 12, 12)
         channel_layout.setSpacing(9)
+        channel_logo = QLabel()
+        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "feng_logo.ico")).pixmap(120, 120))
+        channel_logo.setAlignment(Qt.AlignCenter)
+        channel_layout.addWidget(channel_logo)
         channel_brand = QLabel("黑猫苍老师")
         channel_brand.setObjectName("channelBrand")
+        channel_brand.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_brand)
         channel_caption = QLabel("FLOWCUT STUDIO")
         channel_caption.setObjectName("brandSub")
+        channel_caption.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_caption)
         channel_layout.addSpacing(18)
         channel_layout.addWidget(QLabel("选择通道"))
 
+        self._active_channel = "hdh"
         self._channel_group = QButtonGroup(self)
         self._channel_group.setExclusive(True)
         channels = (
-            ("01", "HDH 蒙版通道", 0),
+            ("01", "HDH 蒙版通道", "hdh"),
+            ("02", "蝴蝶AB", "butterfly_ab"),
         )
-        for number, name, tab_index in channels:
+        for number, name, channel in channels:
             button = QPushButton(f"{number}   {name}")
             button.setObjectName("channelButton")
             button.setCheckable(True)
             button.clicked.connect(
-                lambda checked=False, index=tab_index: self._select_channel(index)
+                lambda checked=False, value=channel: self._select_channel(value)
             )
             self._channel_group.addButton(button)
             channel_layout.addWidget(button)
-            if tab_index == 0:
+            if channel == "hdh":
                 button.setChecked(True)
         channel_layout.addStretch()
         channel_footer = QLabel("BLACK CAT VIDEO")
         channel_footer.setObjectName("brandSub")
         channel_layout.addWidget(channel_footer)
         splitter.addWidget(channel_panel)
+
+        hdh_workspace = QSplitter(Qt.Horizontal)
+        hdh_workspace.setHandleWidth(20)
 
         # Left: folders, controls, presets and log.
         left_panel = QFrame()
@@ -192,7 +206,7 @@ class MainWindow(QMainWindow):
         self._log = LogPanel("处理日志")
         self._log.header_layout.addWidget(clear_log)
         left_layout.addWidget(self._log, 3)
-        splitter.addWidget(left_panel)
+        hdh_workspace.addWidget(left_panel)
 
         # Center: large preview canvas.
         center_panel = QFrame()
@@ -218,7 +232,7 @@ class MainWindow(QMainWindow):
         hint.setAlignment(Qt.AlignCenter)
         hint.setObjectName("previewHint")
         center_layout.addWidget(hint)
-        splitter.addWidget(center_panel)
+        hdh_workspace.addWidget(center_panel)
 
         # Right: reference-style compact parameter tabs.
         right_panel = QFrame()
@@ -265,12 +279,22 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._tabs, stretch=1)
         # ── Wire every parameter row across all pages to live preview ──
         self._wire_params_to_preview()
-        splitter.addWidget(right_panel)
+        hdh_workspace.addWidget(right_panel)
+        hdh_workspace.setStretchFactor(0, 0)
+        hdh_workspace.setStretchFactor(1, 1)
+        hdh_workspace.setStretchFactor(2, 0)
+        hdh_workspace.setSizes([390, 720, 400])
+
+        self._butterfly_page = ButterflyABPage(self.config)
+        self._butterfly_page.start_requested.connect(self._on_start)
+        self._butterfly_page.stop_requested.connect(self._on_stop)
+        self._workspace_stack = QStackedWidget()
+        self._workspace_stack.addWidget(hdh_workspace)
+        self._workspace_stack.addWidget(self._butterfly_page)
+        splitter.addWidget(self._workspace_stack)
         splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 0)
-        splitter.setStretchFactor(2, 1)
-        splitter.setStretchFactor(3, 0)
-        splitter.setSizes([180, 390, 720, 400])
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([180, 1510])
         root_layout.addWidget(splitter, stretch=1)
 
     def _preview_refresh(self) -> None:
@@ -285,8 +309,13 @@ class MainWindow(QMainWindow):
                 if hasattr(row, "path_changed"):
                     row.path_changed.connect(self._preview.schedule_refresh)
 
-    def _select_channel(self, tab_index: int) -> None:
-        self._tabs.setCurrentIndex(tab_index)
+    def _select_channel(self, channel: str) -> None:
+        self._active_channel = channel
+        self._workspace_stack.setCurrentIndex(1 if channel == "butterfly_ab" else 0)
+        self._set_status(
+            "● 蝴蝶AB通道" if channel == "butterfly_ab" else "● 就绪",
+            "#34d399", "#0d2a1f", "#1a5a3e",
+        )
 
     def _log_clear(self) -> None:
         if hasattr(self, "_log"):
@@ -298,6 +327,10 @@ class MainWindow(QMainWindow):
 
     def _on_start(self) -> None:
         """开始批量处理。"""
+        if self._active_channel == "butterfly_ab":
+            self._on_start_butterfly()
+            return
+
         # 基本校验
         if not self.config.main_folder or not self.config.background_folder or not self.config.output_folder:
             QMessageBox.warning(self, "提示", "请先设置主素材、辅助视频和输出文件夹。")
@@ -319,12 +352,39 @@ class MainWindow(QMainWindow):
         self._progress.show()
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(True)
-        self._worker.start(self.config, self.root_dir)
+        self._running_channel = "hdh"
+        self._worker.start(self.config, self.root_dir, self._active_channel)
+
+    def _on_start_butterfly(self) -> None:
+        for value, message in (
+            (self.config.ab_main_folder, "请设置主视频 A 文件夹。"),
+            (self.config.ab_auxiliary_folder, "请设置辅助视频 B 文件夹。"),
+            (self.config.ab_output_folder, "请设置输出文件夹。"),
+        ):
+            if not value:
+                QMessageBox.warning(self, "提示", message)
+                return
+        if not self._resolve(self.config.ab_main_folder).is_dir():
+            QMessageBox.warning(self, "提示", "主视频 A 文件夹不存在。")
+            return
+        if not self._resolve(self.config.ab_auxiliary_folder).is_dir():
+            QMessageBox.warning(self, "提示", "辅助视频 B 文件夹不存在。")
+            return
+
+        self._save_config()
+        self._running_channel = "butterfly_ab"
+        self._butterfly_page.log.clear()
+        self._butterfly_page.set_running(True)
+        self._set_status("● 蝴蝶AB处理中", "#fbbf24", "#1f1a0e", "#4a3a15")
+        self._worker.start(self.config, self.root_dir, "butterfly_ab")
 
     def _on_stop(self) -> None:
         """停止处理。"""
         self._worker.cancel()
-        self._btn_stop.setEnabled(False)
+        if getattr(self, "_running_channel", "hdh") == "butterfly_ab":
+            self._butterfly_page.stop_button.setEnabled(False)
+        else:
+            self._btn_stop.setEnabled(False)
 
     def _on_self_test(self) -> None:
         """环境自检。"""
@@ -347,21 +407,34 @@ class MainWindow(QMainWindow):
     # ═══════════════════════════════════════
 
     def _on_log(self, text: str) -> None:
-        self._log.append(text)
+        if getattr(self, "_running_channel", "hdh") == "butterfly_ab":
+            self._butterfly_page.log.append(text)
+        else:
+            self._log.append(text)
 
     def _on_progress(self, current: int, total: int) -> None:
-        self._progress.setRange(0, total)
-        self._progress.setValue(current)
+        progress = (
+            self._butterfly_page.progress
+            if getattr(self, "_running_channel", "hdh") == "butterfly_ab"
+            else self._progress
+        )
+        progress.setRange(0, total)
+        progress.setValue(current)
 
     def _on_done(self, success: bool, message: str) -> None:
-        self._progress.hide()
-        self._btn_start.setEnabled(True)
-        self._btn_stop.setEnabled(False)
+        butterfly = getattr(self, "_running_channel", "hdh") == "butterfly_ab"
+        if butterfly:
+            self._butterfly_page.set_running(False)
+        else:
+            self._progress.hide()
+            self._btn_start.setEnabled(True)
+            self._btn_stop.setEnabled(False)
         if success:
             self._set_status("● 就绪", "#34d399", "#0d2a1f", "#1a5a3e")
         else:
             self._set_status("● " + message, "#f87171", "#1f1518", "#3d1f28")
-        self._log.append("--- " + message + " ---", "#5a7aa5")
+        target_log = self._butterfly_page.log if butterfly else self._log
+        target_log.append("--- " + message + " ---", "#5a7aa5")
 
     # ═══════════════════════════════════════
     # 辅助方法

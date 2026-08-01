@@ -22,6 +22,15 @@ class AppConfig:
     repeat_count: int = 1
     delete_used_aux: bool = False
 
+    # ── 蝴蝶AB通道（与 HDH 独立）──
+    ab_main_folder: str = "主视频"
+    ab_auxiliary_folder: str = "辅助视频"
+    ab_output_folder: str = "成品视频"
+    ab_resolution: str = "720x1280"
+    ab_gpu: bool = False
+    ab_repeat_count: int = 1
+    ab_delete_used_aux: bool = False
+
     # ── 画布与编码 ──
     resolution: str = "1080x1920"
     fps: int = 30
