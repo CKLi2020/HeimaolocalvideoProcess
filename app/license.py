@@ -87,6 +87,7 @@ class LicenseClient:
         self.session_id = uuid.uuid4().hex
         self.fingerprint = _fingerprint()
         self.device_code = self.fingerprint[:32]
+        self.data: dict = {}
         try:
             self.config = json.loads(_config_path().read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -210,6 +211,7 @@ class LicenseClient:
             raise LicenseError("授权服务器响应校验失败")
         if not data.get("canUse"):
             raise LicenseError(data.get("message") or data.get("reason") or "授权失败")
+        self.data = data
         return data
 
 

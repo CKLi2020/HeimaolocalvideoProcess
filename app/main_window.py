@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -45,6 +46,15 @@ from engine.worker import BatchWorker
 from version import APP_NAME, APP_VERSION
 
 
+def _format_expire_at(value: str) -> str:
+    if not value:
+        return "永久"
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return value
+
+
 class MainWindow(QMainWindow):
     log_received = Signal(str)
     progress_received = Signal(int, int)
@@ -56,7 +66,8 @@ class MainWindow(QMainWindow):
         self.config = config
         self.root_dir = root_dir
         self._license_client = license_client
-        self.setWindowTitle(f"{APP_NAME} V{APP_VERSION}")
+        expire_at = _format_expire_at(license_client.data.get("expireAt", "")) if license_client else ""
+        self.setWindowTitle(f"{APP_NAME} V{APP_VERSION}" + (f"　到期：{expire_at}" if expire_at else ""))
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
         self.setStyleSheet(MIDNIGHT_QSS)
