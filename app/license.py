@@ -147,6 +147,7 @@ class LicenseClient:
         self,
         engine: str,
         batch_id: str,
+        job_id: str,
         input_count: int,
         params_hash: str,
     ) -> str:
@@ -155,6 +156,7 @@ class LicenseClient:
             {
                 "engine": engine,
                 "batchId": batch_id,
+                "jobId": job_id,
                 "inputCount": input_count,
                 "paramsHash": params_hash,
             },

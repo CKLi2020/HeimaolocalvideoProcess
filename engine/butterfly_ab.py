@@ -392,7 +392,7 @@ def butterfly_ab(
         raise RuntimeError("缺少服务器签名任务令牌")
     plan = authorized_butterfly_plan(
         task_scope["token"], task_scope["engine"],
-        task_scope["batch_id"], task_scope["input_count"],
+        task_scope["batch_id"], task_scope["job_id"], task_scope["input_count"],
         task_scope["params_hash"], task_scope["device_code"],
         task_scope["device_fingerprint"],
         duration, head, hidden, 30,
@@ -519,6 +519,13 @@ def process_batch(
     stop_event=None, task_callback=None, task_scope_provider=None,
 ):
     """使用 App 的文件夹和批量设置执行蝴蝶 AB 批量处理（含真实进度）。"""
+    selected = getattr(config, "ab_channel", "blackcat01")
+    if selected == "blackcat02":
+        from engine.sph_channels import process_batch as process_sph_batch
+        return process_sph_batch(
+            config, base_dir, log_callback, progress_callback, stop_event,
+            task_callback, task_scope_provider,
+        )
     from engine.ffmpeg_builder import VIDEO_EXTS, list_media
 
     _start_time = _time_module.time()

@@ -43,6 +43,18 @@ class ButterflyABPage(QWidget):
         left.setMinimumWidth(440)
         left_layout = QVBoxLayout(left)
 
+        channel_box = QGroupBox("通道选择")
+        channel_layout = QHBoxLayout(channel_box)
+        self.channel = QComboBox()
+        self.channel.addItem("黑猫01（蝴蝶AB）", "blackcat01")
+        self.channel.addItem("黑猫02（蝴蝶AB）", "blackcat02")
+        selected = self.channel.findData(getattr(config, "ab_channel", "blackcat01"))
+        self.channel.setCurrentIndex(max(0, selected))
+        self.channel.currentIndexChanged.connect(self._channel_changed)
+        channel_layout.addWidget(QLabel("处理规则"))
+        channel_layout.addWidget(self.channel, 1)
+        left_layout.addWidget(channel_box)
+
         files = QGroupBox("蝴蝶AB · 文件设置")
         form = QFormLayout(files)
         for label, key in (
@@ -58,7 +70,7 @@ class ButterflyABPage(QWidget):
         actions = QGroupBox("批量处理")
         actions_layout = QVBoxLayout(actions)
         buttons = QHBoxLayout()
-        self.start_button = QPushButton("▶ 开始蝴蝶AB处理")
+        self.start_button = QPushButton("▶ 开始黑猫01处理")
         self.start_button.setObjectName("accent")
         self.start_button.clicked.connect(self.start_requested)
         buttons.addWidget(self.start_button)
@@ -86,7 +98,7 @@ class ButterflyABPage(QWidget):
         actions_layout.addWidget(self.progress)
         left_layout.addWidget(actions)
 
-        self.log = LogPanel("蝴蝶AB处理日志")
+        self.log = LogPanel("通道处理日志")
         clear = QPushButton("清空日志")
         clear.clicked.connect(self.log.clear)
         self.log.header_layout.addWidget(clear)
@@ -96,9 +108,9 @@ class ButterflyABPage(QWidget):
         right = QFrame()
         right.setObjectName("rightPanel")
         right_layout = QVBoxLayout(right)
-        title = QLabel("蝴蝶AB 专用参数")
-        title.setObjectName("brand")
-        right_layout.addWidget(title)
+        self.title = QLabel("黑猫01 · 蝴蝶AB 专用参数")
+        self.title.setObjectName("brand")
+        right_layout.addWidget(self.title)
 
         encoding = QGroupBox("输出与批量设置")
         encoding_grid = QGridLayout(encoding)
@@ -138,6 +150,18 @@ class ButterflyABPage(QWidget):
         right_layout.addWidget(preview_group, 1)
         root.addWidget(right, 2)
         self._preview_pixmap = None
+        self._channel_changed()
+
+    def _channel_changed(self) -> None:
+        channel = self.channel.currentData()
+        self.config.ab_channel = channel
+        names = {
+            "blackcat01": ("黑猫01", "蝴蝶AB"),
+            "blackcat02": ("黑猫02", "蝴蝶AB"),
+        }
+        name, algorithm = names[channel]
+        self.start_button.setText(f"▶ 开始{name}处理")
+        self.title.setText(f"{name} · {algorithm} 专用参数")
 
     def set_running(self, running):
         self.start_button.setEnabled(not running)

@@ -139,7 +139,8 @@ def build_ffmpeg_command(
         if task_scope:
             alpha = authorized_mask_alpha(
                 task_scope["token"], task_scope["engine"],
-                task_scope["batch_id"], task_scope["input_count"],
+                task_scope["batch_id"], task_scope["job_id"],
+                task_scope["input_count"],
                 task_scope["params_hash"], task_scope["device_code"],
                 task_scope["device_fingerprint"],
                 w, h, config.mask_feather, margin_tb, margin_lr,

@@ -111,12 +111,16 @@ class BatchWorker:
                     separators=(",", ":"),
                 ).encode("utf-8")
             ).hexdigest()
+            job_sequence = 0
             def issue_task_scope():
+                nonlocal job_sequence
+                job_sequence += 1
+                job_id = f"{batch_id}-{job_sequence}"
                 token = license_client.task_token(
-                    engine, batch_id, input_count, params_hash
+                    engine, batch_id, job_id, input_count, params_hash
                 )
                 task_claims(
-                    token, engine, batch_id,
+                    token, engine, batch_id, job_id,
                     input_count, params_hash, license_client.device_code,
                     license_client.fingerprint,
                 )
@@ -124,6 +128,7 @@ class BatchWorker:
                     "token": token,
                     "engine": engine,
                     "batch_id": batch_id,
+                    "job_id": job_id,
                     "input_count": input_count,
                     "params_hash": params_hash,
                     "device_code": license_client.device_code,

@@ -28,6 +28,7 @@ cdef dict _verify_task(
     str token,
     str engine,
     str batch_id,
+    str job_id,
     int input_count,
     str params_hash,
     str device_code,
@@ -46,6 +47,7 @@ cdef dict _verify_task(
         "appId": APP_ID,
         "engine": engine,
         "batchId": batch_id,
+        "jobId": job_id,
         "inputCount": input_count,
         "paramsHash": params_hash,
         "deviceCode": device_code,
@@ -122,12 +124,12 @@ cpdef str mask_alpha(int width, int height, int feather, double margin_tb, doubl
 
 
 cpdef dict task_claims(
-    str token, str engine, str batch_id,
+    str token, str engine, str batch_id, str job_id,
     int input_count, str params_hash, str device_code, str device_fingerprint,
 ):
     VMProtectBeginUltra(b"FCNATIVE:task.verify")
     result = _verify_task(
-        token, engine, batch_id, input_count,
+        token, engine, batch_id, job_id, input_count,
         params_hash, device_code, device_fingerprint,
     )
     VMProtectEnd()
@@ -135,13 +137,13 @@ cpdef dict task_claims(
 
 
 cpdef str authorized_mask_alpha(
-    str token, str engine, str batch_id,
+    str token, str engine, str batch_id, str job_id,
     int input_count, str params_hash, str device_code, str device_fingerprint,
     int width, int height, int feather, double margin_tb, double margin_lr,
 ):
     VMProtectBeginUltra(b"FCNATIVE:mask.authorized")
     _verify_task(
-        token, engine, batch_id, input_count,
+        token, engine, batch_id, job_id, input_count,
         params_hash, device_code, device_fingerprint,
     )
     result = _mask_alpha(width, height, feather, margin_tb, margin_lr)
@@ -150,13 +152,13 @@ cpdef str authorized_mask_alpha(
 
 
 cpdef dict authorized_butterfly_plan(
-    str token, str engine, str batch_id,
+    str token, str engine, str batch_id, str job_id,
     int input_count, str params_hash, str device_code, str device_fingerprint,
     double duration, double head, object hidden, int fps=30,
 ):
     VMProtectBeginUltra(b"FCNATIVE:butterfly.authorized")
     _verify_task(
-        token, engine, batch_id, input_count,
+        token, engine, batch_id, job_id, input_count,
         params_hash, device_code, device_fingerprint,
     )
     result = _butterfly_plan(duration, head, hidden, fps)
