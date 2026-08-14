@@ -9,6 +9,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -48,7 +49,8 @@ class ButterflyABPage(QWidget):
         self.channel = QComboBox()
         self.channel.addItem("黑猫01（蝴蝶AB）", "blackcat01")
         self.channel.addItem("黑猫02（蝴蝶AB）", "blackcat02")
-        selected = self.channel.findData(getattr(config, "ab_channel", "blackcat01"))
+        self.channel.addItem("黑猫03（蝴蝶AB）", "blackcat03")
+        selected = self.channel.findData(getattr(config, "ab_channel", "blackcat03"))
         self.channel.setCurrentIndex(max(0, selected))
         self.channel.currentIndexChanged.connect(self._channel_changed)
         channel_layout.addWidget(QLabel("处理规则"))
@@ -70,7 +72,7 @@ class ButterflyABPage(QWidget):
         actions = QGroupBox("批量处理")
         actions_layout = QVBoxLayout(actions)
         buttons = QHBoxLayout()
-        self.start_button = QPushButton("▶ 开始黑猫01处理")
+        self.start_button = QPushButton("▶ 开始处理")
         self.start_button.setObjectName("accent")
         self.start_button.clicked.connect(self.start_requested)
         buttons.addWidget(self.start_button)
@@ -108,7 +110,7 @@ class ButterflyABPage(QWidget):
         right = QFrame()
         right.setObjectName("rightPanel")
         right_layout = QVBoxLayout(right)
-        self.title = QLabel("黑猫01 · 蝴蝶AB 专用参数")
+        self.title = QLabel("蝴蝶AB 专用参数")
         self.title.setObjectName("brand")
         right_layout.addWidget(self.title)
 
@@ -126,15 +128,29 @@ class ButterflyABPage(QWidget):
         self.gpu = QCheckBox("启用 GPU 加速")
         self.gpu.setChecked(config.ab_gpu)
         self.gpu.toggled.connect(lambda value: setattr(config, "ab_gpu", value))
+        self.insert_duration = QDoubleSpinBox()
+        self.insert_duration.setRange(0.0, 5.0)
+        self.insert_duration.setDecimals(1)
+        self.insert_duration.setSingleStep(0.1)
+        self.insert_duration.setSuffix(" 秒")
+        self.insert_duration.setFixedWidth(120)
+        self.insert_duration.setValue(getattr(config, "ab_insert_duration", 0.1))
+        self.insert_duration.setToolTip("仅黑猫03生效；设为0时不在稀疏区插入B画面")
+        self.insert_duration.valueChanged.connect(
+            lambda value: setattr(config, "ab_insert_duration", value)
+        )
         encoding_grid.addWidget(QLabel("输出分辨率"), 0, 0)
         encoding_grid.addWidget(self.resolution, 0, 1)
         encoding_grid.addWidget(QLabel("编码器"), 0, 2)
         encoding_grid.addWidget(self.gpu, 0, 3)
+        self.insert_duration_label = QLabel("B插帧时长")
+        encoding_grid.addWidget(self.insert_duration_label, 0, 4)
+        encoding_grid.addWidget(self.insert_duration, 0, 5)
         encoding_grid.addWidget(QLabel("每个 A 处理次数"), 1, 0)
         encoding_grid.addWidget(self.repeat_count, 1, 1)
         encoding_grid.addWidget(QLabel("素材清理"), 1, 2)
         encoding_grid.addWidget(self.delete_aux, 1, 3)
-        encoding_grid.setColumnStretch(4, 1)
+        encoding_grid.setColumnStretch(6, 1)
         right_layout.addWidget(encoding)
 
         preview_group = QGroupBox("当前处理预览")
@@ -156,12 +172,16 @@ class ButterflyABPage(QWidget):
         channel = self.channel.currentData()
         self.config.ab_channel = channel
         names = {
-            "blackcat01": ("黑猫01", "蝴蝶AB"),
-            "blackcat02": ("黑猫02", "蝴蝶AB"),
+            "blackcat01": "黑猫01",
+            "blackcat02": "黑猫02",
+            "blackcat03": "黑猫03",
         }
-        name, algorithm = names[channel]
+        name = names[channel]
         self.start_button.setText(f"▶ 开始{name}处理")
-        self.title.setText(f"{name} · {algorithm} 专用参数")
+        self.title.setText(f"{name} · 蝴蝶AB 专用参数")
+        is_blackcat03 = channel == "blackcat03"
+        self.insert_duration_label.setEnabled(is_blackcat03)
+        self.insert_duration.setEnabled(is_blackcat03)
 
     def set_running(self, running):
         self.start_button.setEnabled(not running)

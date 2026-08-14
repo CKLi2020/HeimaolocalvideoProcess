@@ -526,6 +526,12 @@ def process_batch(
             config, base_dir, log_callback, progress_callback, stop_event,
             task_callback, task_scope_provider,
         )
+    if selected == "blackcat03":
+        from engine.sph34_sparse import process_batch as process_sph34_sparse_batch
+        return process_sph34_sparse_batch(
+            config, base_dir, log_callback, progress_callback, stop_event,
+            task_callback, task_scope_provider,
+        )
     from engine.ffmpeg_builder import VIDEO_EXTS, list_media
 
     _start_time = _time_module.time()

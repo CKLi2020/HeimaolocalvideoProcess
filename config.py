@@ -30,7 +30,8 @@ class AppConfig:
     ab_gpu: bool = False
     ab_repeat_count: int = 1
     ab_delete_used_aux: bool = False
-    ab_channel: str = "blackcat01"
+    ab_channel: str = "blackcat03"
+    ab_insert_duration: float = 0.1
 
     # ── 画布与编码 ──
     resolution: str = "1080x2338"
