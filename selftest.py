@@ -10,7 +10,7 @@
   1  无卡密直达主界面 / 平台与模式加载 / ffmpeg 定位
   2  三通道(默认通道 · 默认混剪 · 高清修复) CPU 端到端
   3  三通道 GPU 端到端(无显卡则跳过)
-  4  产物断言:恰好 1 视频 + 1 音频、时长为正、分辨率达标(原版坏 MP4 的回归测试)
+  4  产物断言:恰好 1 视频 + 1 音频、时长为正、分辨率达标
   5  批量 + 辅视频少于主视频时的循环复用
   6  GPU 回退:无 gpu_command / gpu_command 坏掉,两种都要转 CPU 且不中断
   7  模式扩展:往 mode_defs/ 丢一个 json,下拉框自动多一项
@@ -152,7 +152,7 @@ def write_def(platform_dir, chan, data):
 
 PROBE_BASE = {
     "id": "douyin/_selftest", "name": "自检探针", "platform": "douyin",
-    "platform_label": "抖音处理", "needs_aux": False, "gpu_supported": False,
+    "platform_label": "抖音处理", "needs_aux": False, "gpu_supported": True,
     "output_suffix": "_st", "ext": "mp4", "size": "720x1280", "fps": 30,
     "help_text": "自检", "desc": "自检",
     "command": ('ffmpeg -y -hide_banner -i "{input}" -vf "scale={width}:{height}" '
@@ -177,6 +177,7 @@ def main():
         check("无登录/卡密环节,直接进主界面", True, app.title())
         check("平台数 = 8", len(app.mode_groups) == 8, str(list(app.mode_groups)))
         check("ffmpeg 已定位", bool(app.ffmpeg_path), app.ffmpeg_path)
+        check("ffprobe 已定位", bool(app.ffprobe_path), app.ffprobe_path)
         total_modes = sum(len(v) for v in app.mode_groups.values())
         check("模式总数 >= 24", total_modes >= 24, "共 %d 个" % total_modes)
         check("无模式加载错误", not getattr(app_mod.load_modes, "errors", []),
@@ -184,9 +185,16 @@ def main():
         gpu = app.gpu_profile
         print("      GPU: %s | 默认处理方式: %s" % (app_mod.gpu_summary(gpu), app.var_processor.get()))
 
-        if not app.ffmpeg_path:
-            FAILURES.append("ffmpeg 未找到,后续检查无法进行")
+        if not app.ffmpeg_path or not app.ffprobe_path:
+            FAILURES.append("ffmpeg/ffprobe 未找到,后续检查无法进行")
             return
+
+        from modes.base_mode import BaseMode
+        bad_mode = BaseMode()
+        bad_mode.command = 'ffmpeg -i "{input}" "{output}.{ext}"'
+        bad_mode.fps = "not-a-number"
+        _, _, bad_error = bad_mode.render({"main_video": "x.mp4", "output_dir": root})
+        check("坏模式参数返回错误而非杀死工作线程", "模式参数无效" in bad_error, bad_error)
 
         # ---------------------------------------------------------------- 2
         print("\n[2] 生成测试素材")

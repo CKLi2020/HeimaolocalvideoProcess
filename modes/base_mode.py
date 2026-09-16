@@ -206,7 +206,10 @@ class BaseMode:
         #  ffmpeg 直接 Unrecognized hwaccel)。build_params 的签名保持取证原样。
         effective = dict(state)
         effective["use_gpu"] = bool(use_gpu)
-        params = self.build_params(effective, main_video, aux_video)
+        try:
+            params = self.build_params(effective, main_video, aux_video)
+        except Exception as exc:
+            return "", is_gpu, "模式参数无效: %s: %s" % (type(exc).__name__, exc)
 
         if out_base is not None:
             params["output"] = str(out_base)

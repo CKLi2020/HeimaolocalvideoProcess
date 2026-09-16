@@ -58,7 +58,8 @@ _BUILTIN = [
 
 # mode_defs 的 json 里允许覆盖的字段
 _DEF_FIELDS = (
-    "name", "platform", "needs_aux", "gpu_supported", "help_text", "desc",
+    "name", "platform", "needs_aux", "gpu_supported", "help_text", "help", "heip",
+    "notice", "announcement", "gonggao", "desc", "description",
     "output_suffix", "ext", "size", "fps", "bitrate", "hwaccel",
     "mix_seconds", "pip_scale", "margin",
     "command", "gpu_command",

@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.build_config import BASE_DIR, CONFIG_PATH, load_config, resolve_path
 from core.hardware import detect_gpu_profile, gpu_summary
-from core.runner import FFmpegRunner, find_ffmpeg, probe_duration, verify_output
+from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, probe_duration, verify_output
 from modes import load_modes
 from modes.base_mode import VIDEO_EXTS
 
@@ -87,6 +87,7 @@ class App(ctk.CTk):
         self._center_window(1160, 880)
 
         self.ffmpeg_path = find_ffmpeg(self.cfg)
+        self.ffprobe_path = find_ffprobe(self.cfg)
         self.gpu_profile = detect_gpu_profile(self.ffmpeg_path)
         self.runner = FFmpegRunner(self.cfg)
 
@@ -118,6 +119,8 @@ class App(ctk.CTk):
         self.log("本机 GPU: %s" % gpu_summary(self.gpu_profile))
         if not self.ffmpeg_path:
             self.log("✘ 未找到 ffmpeg,请把 ffmpeg.exe 放入 bin/ 目录")
+        if not self.ffprobe_path:
+            self.log("✘ 未找到 ffprobe,产物无法校验,请把 ffprobe.exe 放入 bin/ 目录")
         self.log("配置: %s" % CONFIG_PATH)
         self.log("就绪。选择主视频后点「▶  开始处理」。")
 
@@ -583,6 +586,9 @@ class App(ctk.CTk):
         if not self.ffmpeg_path:
             messagebox.showerror("提示", "未找到 ffmpeg,请把 ffmpeg.exe 放入 bin/ 目录")
             return
+        if not self.ffprobe_path:
+            messagebox.showerror("提示", "未找到 ffprobe,请把 ffprobe.exe 放入 bin/ 目录")
+            return
 
         main_path = state["main_video"]
         if os.path.isdir(main_path):
@@ -658,7 +664,7 @@ class App(ctk.CTk):
 
             aux_path = aux_list[idx % len(aux_list)] if aux_list else ""
             final_base = self._output_base(mode, fpath, out_dir, state)
-            # 先写临时文件,校验通过再原子改名 —— 原版是多轨坏产物的成因之一
+            # 先写临时文件,校验通过再原子改名,避免中断留下半成品
             tmp_base = final_base + ".part"
 
             base_progress = 100.0 * idx / total
@@ -670,8 +676,11 @@ class App(ctk.CTk):
             duration = probe_duration(self.cfg, fpath)
             attempts = []
 
-            want_gpu = bool(state.get("use_gpu")) and not gpu_disabled_batch
-            if want_gpu and not mode.has_gpu_command():
+            gpu_requested = bool(state.get("use_gpu")) and not gpu_disabled_batch
+            want_gpu = gpu_requested and bool(mode.gpu_supported)
+            if gpu_requested and not mode.gpu_supported:
+                attempts.append((False, "当前模式仅支持CPU处理，已使用CPU原命令处理"))
+            elif want_gpu and not mode.has_gpu_command():
                 attempts.append((False, "当前模式未提供GPU编码命令，已使用CPU原命令处理"))
             elif want_gpu:
                 attempts.append((True, None))
@@ -728,8 +737,6 @@ class App(ctk.CTk):
 
             final_file = "%s.%s" % (final_base, mode.ext)
             try:
-                if os.path.exists(final_file):
-                    os.remove(final_file)
                 os.replace(tmp_file, final_file)
             except Exception as exc:
                 self.log("  ✘ 产物改名失败: %s" % exc)
