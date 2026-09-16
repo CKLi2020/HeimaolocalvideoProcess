@@ -1,0 +1,6 @@
+# 直接依赖只有一个。
+# 原版还有 yt-dlp + Pillow(通用解析下载区用),本轮不做那一区,所以没装。
+# 要加回解析下载:把下面两行取消注释,并参考 main.py._build_sidebar 里留的扩展点。
+customtkinter>=5.2
+# yt-dlp>=2024.1.1
+# Pillow>=10.0.0

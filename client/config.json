@@ -1,0 +1,25 @@
+{
+  "app_title": "小花猫视频处理 V1.0",
+
+  "ffmpeg_path": "bin/ffmpeg.exe",
+  "ffprobe_path": "bin/ffprobe.exe",
+
+  "default_output_dir": "output",
+  "default_threads": 6,
+  "default_bitrate": "6000k",
+  "default_gpu": true,
+  "default_cpu": false,
+  "default_nvenc": true,
+  "gpu_hwaccel": true,
+  "force_gpu_h264": false,
+
+  "output_naming": "hash",
+
+  "_comment": [
+    "output_naming: hash(默认) = 产物名用源文件路径的 md5,与原版一致；",
+    "               source = 直接用源文件名。",
+    "default_output_dir 支持相对 rebuild/ 的路径,也支持绝对路径。",
+    "ffmpeg_path / ffprobe_path 留空或路径不存在时,会自动去找 rebuild/bin/、",
+    "原程序目录的 bin/、以及系统 PATH。"
+  ]
+}

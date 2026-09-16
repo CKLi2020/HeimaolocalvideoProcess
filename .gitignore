@@ -1,0 +1,21 @@
+# Local Python environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated media and interrupted transcodes
+output/
+*.part.*
+
+# The local FFmpeg junction points outside this repository
+bin/
+
+# Test/config recovery leftovers
+*.selftest_backup
+*.log
+
+# Editor/OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
