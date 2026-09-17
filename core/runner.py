@@ -17,7 +17,8 @@
   本地版 GPU/CPU 是 mode_defs 里的两份独立模板(command / gpu_command),
   GPU 失败时重新渲染 CPU 模板即可 —— 这也正是原版日志
   「GPU处理失败，重新获取CPU原命令重试」描述的行为,比改 argv 干净。
-- 新增 verify_output():收尾断言产物是干净的 1 视频 + 最多 1 音频。
+- 新增 verify_output():收尾断言产物流结构正常；默认 1 视频 + 最多 1 音频，
+  已取证的特殊通道可声明精确音轨数。
   这是本地重写自身的完整性保障；此前据 output/ 样片推断原版会生成多轨坏文件，
   后续已证实样片来自另一个本地脚本，与原版无关。
 """
@@ -147,8 +148,8 @@ def probe_duration(cfg, media_path):
         return None
 
 
-def verify_output(cfg, media_path):
-    """收尾校验:产物必须是干净的单一视频轨(+ 最多一条音轨),时长为正。
+def verify_output(cfg, media_path, expected_audio_tracks=None):
+    """收尾校验:一条视频轨、音轨数符合通道声明、时长为正。
 
     这是本地重写自身的完整性保障，不代表原版曾生成过多轨坏文件。
     返回 (ok: bool, message: str)。ok=False 时调用方应删掉产物并记为失败 ——
@@ -172,8 +173,11 @@ def verify_output(cfg, media_path):
 
     if len(videos) != 1:
         return False, "视频轨数量异常: %d 条(应为 1 条)" % len(videos)
-    if len(audios) > 1:
+    if expected_audio_tracks is None and len(audios) > 1:
         return False, "音频轨数量异常: %d 条(应不超过 1 条)" % len(audios)
+    if expected_audio_tracks is not None and len(audios) != int(expected_audio_tracks):
+        return False, "音频轨数量异常: %d 条(应为 %d 条)" % (
+            len(audios), int(expected_audio_tracks))
 
     raw_duration = (info.get("format") or {}).get("duration")
     try:

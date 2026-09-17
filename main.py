@@ -727,7 +727,10 @@ class App(ctk.CTk):
                 continue
 
             tmp_file = "%s.%s" % (tmp_base, mode.ext)
-            good, message = verify_output(self.cfg, tmp_file)
+            good, message = verify_output(
+                self.cfg, tmp_file,
+                expected_audio_tracks=getattr(mode, "expected_audio_tracks", None),
+            )
             if not good:
                 self.log("  ✘ 产物校验未通过: %s" % message)
                 self.log("    已丢弃该产物 —— 宁可少一个,也不交付播不动的文件")
@@ -757,7 +760,8 @@ class App(ctk.CTk):
     def _output_base(self, mode, src, out_dir, state):
         """产物路径(不带扩展名)。命名规则与 base_mode.build_params 保持一致。"""
         from modes.base_mode import source_basename, source_stem
-        if str(state.get("output_naming") or "hash").lower() == "source":
+        naming = getattr(mode, "output_naming", None) or state.get("output_naming") or "hash"
+        if str(naming).lower() == "source":
             prefix = source_basename(src)
         else:
             prefix = source_stem(src)

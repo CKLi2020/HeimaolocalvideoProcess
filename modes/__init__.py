@@ -62,7 +62,7 @@ _DEF_FIELDS = (
     "notice", "announcement", "gonggao", "desc", "description",
     "output_suffix", "ext", "size", "fps", "bitrate", "hwaccel",
     "mix_seconds", "pip_scale", "margin",
-    "command", "gpu_command",
+    "command", "gpu_command", "expected_audio_tracks", "output_naming",
 )
 
 
