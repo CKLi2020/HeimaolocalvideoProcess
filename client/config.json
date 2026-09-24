@@ -1,5 +1,5 @@
 {
-  "app_title": "小花猫视频处理 V1.0",
+  "app_title": "黑猫视频处理软件",
 
   "ffmpeg_path": "bin/ffmpeg.exe",
   "ffprobe_path": "bin/ffprobe.exe",

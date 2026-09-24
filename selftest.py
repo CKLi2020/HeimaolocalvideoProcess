@@ -164,7 +164,7 @@ PROBE_BASE = {
 
 def main():
     print("=" * 74)
-    print("小花猫视频处理本地版 · 自检")
+    print("黑猫视频处理软件本地版 · 自检")
     print("=" * 74)
 
     root = tempfile.mkdtemp(prefix="xhm_selftest_")

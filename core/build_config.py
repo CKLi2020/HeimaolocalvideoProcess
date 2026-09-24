@@ -17,7 +17,7 @@ CONFIG_PATH = os.path.join(CLIENT_DIR, "config.json")
 
 # 内嵌默认值。取自原二进制 core/build_config.py 的字符串常量。
 EMBEDDED = {
-    "app_title": "小花猫视频处理 V1.0",
+    "app_title": "黑猫视频处理软件",
 
     # 可执行文件。支持绝对路径,或相对 rebuild/ 的路径;
     # 找不到时会依次回退到 rebuild/bin/、原程序 bin/、系统 PATH(见 core.runner._resolve)。

@@ -67,7 +67,7 @@ C_ACTIVE = "#2f6f8f"
 
 DISCLAIMER = (
     "软件使用法律免责声明\n"
-    "欢迎使用小花猫多平台视频处理软件。请在使用前确认:你拥有所处理素材的合法权利,"
+    "欢迎使用黑猫多平台视频处理软件。请在使用前确认:你拥有所处理素材的合法权利,"
     "处理与发布行为符合平台规则与当地法律法规。因使用本软件产生的任何法律责任由使用者承担。\n"
 )
 
@@ -80,7 +80,7 @@ class App(ctk.CTk):
         self.cfg = load_config()
         warnings.extend(load_config.warnings)
 
-        self.title("%s %s" % (self.cfg.get("app_title") or "小花猫视频处理", APP_VERSION))
+        self.title("%s %s" % (self.cfg.get("app_title") or "黑猫视频处理软件", APP_VERSION))
         self.geometry("1160x880")
         self.minsize(1000, 800)
         self.configure(fg_color=C_BG)
@@ -220,7 +220,7 @@ class App(ctk.CTk):
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
-        ctk.CTkLabel(sidebar, text="小花猫视频处理", font=self._font(14, True),
+        ctk.CTkLabel(sidebar, text="黑猫视频处理软件", font=self._font(14, True),
                      text_color=C_ACCENT).pack(pady=(16, 2))
         ctk.CTkLabel(sidebar, text=APP_VERSION, font=self._font(11),
                      text_color=C_TEXT_DIM).pack(pady=(0, 14))
@@ -330,7 +330,7 @@ class App(ctk.CTk):
         bar = ctk.CTkFrame(parent, fg_color=C_PANEL_ALT, corner_radius=6, height=30)
         bar.pack(fill="x", pady=(0, 8))
         ctk.CTkLabel(
-            bar, text="公告：欢迎使用小花猫多平台软件，请遵守法律法规，合理合法使用本软件。",
+            bar, text="公告：欢迎使用黑猫多平台软件，请遵守法律法规，合理合法使用本软件。",
             font=self._font(11), text_color=C_TEXT_DIM).pack(padx=12, pady=5)
 
     def _build_log_panel(self, parent):
