@@ -128,7 +128,7 @@ def build_sph34_sparse_command(
 
 
 def process_batch(config, base_dir, log_callback=None, progress_callback=None,
-                  stop_event=None, task_callback=None, task_scope_provider=None):
+                  stop_event=None, task_callback=None):
     """批量执行不含前置跳秒的 SPH34 稀疏时间轴通道。"""
     log = log_callback or print
     resolve = lambda value: Path(value) if Path(value).is_absolute() else base_dir / value
@@ -162,9 +162,6 @@ def process_batch(config, base_dir, log_callback=None, progress_callback=None,
             })
             log(f"\n━━━ 黑猫03·SPH34 [{job}/{total}]: {main.name} + {auxiliary.name} ━━━")
             try:
-                if not task_scope_provider:
-                    raise RuntimeError("缺少服务器签名任务令牌")
-                task_scope_provider()
                 main_duration = _probe_duration(main)
                 auxiliary_duration = _probe_duration(auxiliary)
                 command = build_sph34_sparse_command(

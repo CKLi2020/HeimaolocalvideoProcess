@@ -16,7 +16,6 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont
 
 from config import AppConfig
-from app.license import LicenseClient, LicenseDialog, LicenseError
 from app.main_window import MainWindow
 from version import APP_NAME, APP_VERSION
 
@@ -67,18 +66,8 @@ def main() -> None:
         config.ab_output_folder = "蝴蝶AB成品"
     config.to_json(config_path)
 
-    license_client = LicenseClient()
-    try:
-        if not license_client.has_license() or not license_client.auto_login:
-            raise LicenseError("需要卡密登录")
-        license_client.check()
-    except LicenseError:
-        dialog = LicenseDialog(license_client)
-        if dialog.exec() != LicenseDialog.DialogCode.Accepted:
-            return
-
-    # 显示窗口
-    window = MainWindow(config, ROOT, license_client)
+    # 显示窗口（本地运行，不再依赖授权服务器）
+    window = MainWindow(config, ROOT)
     window.show()
     _style_native_title_bar(window)
 

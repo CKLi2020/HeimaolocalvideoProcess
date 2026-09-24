@@ -23,7 +23,6 @@ $FinalExe = Join-Path $Release "${ProductName}_V$Version.exe"
 $Icon = Join-Path $Root "ico\feng_logo.ico"
 $VmProtect = Join-Path $VmProtectDir "VMProtect_Con.exe"
 $Project = Join-Path $Build "flowcut.vmp"
-$NativeBuild = Join-Path $PSScriptRoot "build_native.ps1"
 $Ffmpeg = (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue).Source
 $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 
@@ -34,8 +33,10 @@ if (-not $SkipVmProtect -and -not (Test-Path -LiteralPath $VmProtect)) {
 }
 
 New-Item -ItemType Directory -Force -Path $Build, $Release | Out-Null
-& powershell -NoProfile -ExecutionPolicy Bypass -File $NativeBuild -Python $Python -VmProtectDir $VmProtectDir
-if ($LASTEXITCODE -ne 0) { throw "Native protection failed" }
+# 注意：不再编译/打包 app\_flowcut_core.pyd（原授权服务器时代码）。
+# 引擎已改用 engine\auth.py 的本地实现，cryptography 也随之不再需要。
+# 将来接入新授权服务器时，按新服务的形态重新引入所需扩展模块；
+# 旧的 scripts\build_native.ps1 仍保留在仓库中，需要时可单独运行。
 & $Python -m nuitka --version
 if ($LASTEXITCODE -ne 0) { throw "Nuitka is required: python -m pip install nuitka" }
 
@@ -44,8 +45,6 @@ try {
     & $Python -m nuitka `
         --standalone --onefile --assume-yes-for-downloads `
         --enable-plugin=pyside6 --windows-console-mode=disable `
-        --include-module=app._flowcut_core `
-        --include-package=cryptography `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
         --windows-icon-from-ico="$Icon" `
         --product-name="$ProductName" `
@@ -97,7 +96,8 @@ $WorkingDirectories = @(
     (ConvertFrom-CodePoints @(0x4E3B, 0x89C6, 0x9891)),
     (ConvertFrom-CodePoints @(0x8F85, 0x52A9, 0x89C6, 0x9891)),
     (ConvertFrom-CodePoints @(0x8499, 0x7248, 0x6210, 0x54C1)),
-    ((ConvertFrom-CodePoints @(0x8774, 0x8776)) + "AB" + (ConvertFrom-CodePoints @(0x6210, 0x54C1)))
+    ((ConvertFrom-CodePoints @(0x8774, 0x8776)) + "AB" + (ConvertFrom-CodePoints @(0x6210, 0x54C1))),
+    (ConvertFrom-CodePoints @(0x6A21, 0x677F))
 )
 foreach ($name in $WorkingDirectories) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Release $name) | Out-Null

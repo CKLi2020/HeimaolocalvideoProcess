@@ -95,10 +95,14 @@ class PreviewCanvas(QWidget):
             [Path(task["main"])] if task else
             list_media(str(self._resolve(self._config.main_folder)), VIDEO_EXTS)
         )
-        bg_files = (
-            [Path(task["background"])] if task else
-            list_media(str(self._resolve(self._config.background_folder)), VIDEO_EXTS)
-        )
+        if task:
+            # 没有辅助视频时 task["background"] 是 None（引擎会用纯色画布兜底），
+            # 直接 Path(None) 会抛 TypeError，所以先判空。
+            bg_files = [Path(task["background"])] if task["background"] else []
+        else:
+            bg_files = list_media(
+                str(self._resolve(self._config.background_folder)), VIDEO_EXTS
+            )
 
         if not main_files and not bg_files:
             self.show_placeholder()
@@ -106,8 +110,36 @@ class PreviewCanvas(QWidget):
 
         main_v = main_files[0] if main_files else None
         bg_v = bg_files[0] if bg_files else None
-        if not main_v or not bg_v:
-            self._show_video_frame(main_v or bg_v)
+
+        # 模板模式下模板即背景，需在下面的空背景判断之前替换，
+        # 否则背景目录为空时预览会退回单帧、看不到模板效果。
+        # 选哪一张：选了「固定」就必须预览那一张（成品每次都用它，预览用别的就
+        # 说的是两回事）；「随机」时固定取列表第一个，不调 pick() —— 每次刷新
+        # 换一张的话预览会闪，调窗口几何时失去稳定参照。
+        template_window = None
+        if self._config.tpl_enabled:
+            from engine.template_lib import load_library
+
+            library = load_library(
+                self._resolve(self._config.tpl_folder),
+                self._config.tpl_manifest,
+            )
+            # 用 has() 而不是直接 pick()：pick 在没命中时会随机挑一张，预览就会
+            # 每次刷新换一张、看着像坏了。没命中就走下面的 specs[0]，稳定。
+            spec = None
+            if self._config.tpl_pick == "固定" and library.has(self._config.tpl_fixed):
+                spec = library.pick("固定", self._config.tpl_fixed)
+            if spec is None and library.specs:
+                spec = library.specs[0]
+            if spec is not None:
+                bg_v = spec.path
+                template_window = library.resolve(spec, self._config)
+
+        # 没有背景不再是「退回单帧」的理由：引擎本来就会用纯色画布出片，
+        # 预览也照着渲染（build_ffmpeg_command 接受 background_video=None），
+        # 否则预览显示的画面和成品对不上。只有连主视频都没有才退化成静帧。
+        if not main_v:
+            self._show_video_frame(bg_v)
             return
 
         try:
@@ -116,6 +148,9 @@ class PreviewCanvas(QWidget):
                     Path(path) for path in task["stickers"][:len(self._get_layers())]
                 ]
                 movers = [Path(path) for path in task["movers"]]
+                # 轨道跟着任务走：这批片子的走位是出片时掷好的，预览照抄才对得上。
+                # 关掉随机时任务里是 None，交给构建器回落到配置里的显式图层。
+                mover_layers_for_cmd = task.get("mover_layers")
                 scanlight = task["scanlight"]
                 opening = task["kaimu"]
             else:
@@ -135,10 +170,10 @@ class PreviewCanvas(QWidget):
                     )),
                     VIDEO_EXTS | IMAGE_EXTS,
                 )
-                mover_layers = self._get_mover_layers()
+                mover_layers_for_cmd = self._get_mover_layers()
                 movers = [
                     mover_pool[i % len(mover_pool)]
-                    for i in range(len(mover_layers))
+                    for i in range(len(mover_layers_for_cmd))
                 ] if self._config.moving_sticker_enabled and mover_pool else []
                 scanlights = list_media(
                     str(self._resolve(self._config.scanlight_folder)), VIDEO_EXTS
@@ -161,6 +196,8 @@ class PreviewCanvas(QWidget):
                     scanlight_file=scanlight,
                     kaimu_file=opening,
                     mover_files=movers or None,
+                    template_window=template_window,
+                    mover_layers=mover_layers_for_cmd,
                 )
                 cmd[cmd.index("-map"):] = [
                     "-map", "[next_v]", "-ss", "0.5",
@@ -326,12 +363,47 @@ class PreviewCanvas(QWidget):
         }]
 
     def _get_mover_layers(self) -> list[dict]:
+        """预览用的移动贴纸轨道。
+
+        和出片走的是同一个 build_mover_layers，只是「随机位置」这次掷出的结果
+        预览没法预知成品那一条；这里也掷一份，但**缓存起来**，只在相关配置变了
+        才重掷。否则调任何一个无关参数都会让预览里的贴纸跳位置，看着像坏了
+        （同理见 _refresh_preview 里模板固定取第一个的注释）。
+        """
+        from engine.ffmpeg_builder import build_mover_layers
+
         try:
-            if self._config.mover_layers_json:
-                return json.loads(self._config.mover_layers_json)
+            explicit = (
+                json.loads(self._config.mover_layers_json)
+                if self._config.mover_layers_json else []
+            )
+            if not isinstance(explicit, list):
+                explicit = []
         except (json.JSONDecodeError, TypeError):
-            pass
-        return [{}]
+            explicit = []
+
+        # 键里要带上所有会改变轨道的输入，否则改了不重掷、预览和成品对不上：
+        # 默认值来源是 mover_scale/mover_opacity（不是贴纸那套 sticker_*），
+        # 数量与周期同理。
+        key = (
+            self._config.mover_random,
+            self._config.mover_count,
+            self._config.moving_sticker_period,
+            self._config.mover_scale,
+            self._config.mover_opacity,
+            json.dumps(explicit, sort_keys=True),
+        )
+        if getattr(self, "_mover_key", None) != key:
+            self._mover_layers = build_mover_layers(
+                max(1, self._config.mover_count, len(explicit)),
+                explicit,
+                self._config.mover_scale,
+                self._config.mover_opacity,
+                self._config.moving_sticker_period,
+                roll_positions=self._config.mover_random,
+            )
+            self._mover_key = key
+        return self._mover_layers
 
     def _update_layer(self, idx: int, **kwargs) -> None:
         layers = self._get_layers()

@@ -26,6 +26,7 @@ from engine.ffmpeg_builder import (
     list_media,
     pick_random,
     build_ffmpeg_command,
+    build_mover_layers,
 )
 from engine.output_naming import output_name
 
@@ -141,7 +142,6 @@ def process_batch(
     progress_callback: Optional[Callable[[int, int], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     task_callback: Optional[Callable[[dict], None]] = None,
-    task_scope_provider: Optional[Callable[[], dict]] = None,
 ) -> bool:
     """批量处理主素材文件夹中的所有视频。
 
@@ -155,8 +155,6 @@ def process_batch(
     """
 
     _start_time = _time_module.time()
-    if not task_scope_provider:
-        raise RuntimeError("缺少服务器签名任务令牌")
 
     def log(msg: str) -> None:
         print(msg)
@@ -183,12 +181,30 @@ def process_batch(
     mains = list_media(str(main_folder), VIDEO_EXTS)
     backgrounds = list_media(str(background_folder), VIDEO_EXTS)
 
+    # 模板模式：模板占用背景槽，所以不要求背景目录有素材。
+    templates = None
+    if config.tpl_enabled:
+        from engine.template_lib import load_library
+
+        templates = load_library(resolve(config.tpl_folder), config.tpl_manifest)
+        if not templates:
+            log(f"[错误] 模板目录中没有可用视频: {resolve(config.tpl_folder)}")
+            return False
+        log(f"模板: {len(templates.specs)} 个，选自 {config.tpl_folder}")
+        # 固定模板没命中只提示一次，别每条任务刷一行。
+        if (
+            config.tpl_pick == "固定"
+            and config.tpl_fixed
+            and not templates.has(config.tpl_fixed)
+        ):
+            log(f"[警告] 固定模板「{config.tpl_fixed}」不在模板库里，改为随机选择")
+
     if not mains:
         log("[错误] 主素材文件夹中没有视频文件")
         return False
-    if not backgrounds:
-        log("[错误] 背景视频文件夹中没有视频文件")
-        return False
+    # 这里原先是「没有背景视频就整批失败」的硬校验。界面上已经没有
+    # 「辅助视频文件夹」入口，留着它就成了谁也解不开的死结，所以改成放行，
+    # 由下面的取背景处用纯色画布兜底（消息也在那里报，这里再报一次是重复的）。
 
     log(f"主素材: {len(mains)} 个, 背景视频: {len(backgrounds)} 个")
 
@@ -223,6 +239,7 @@ def process_batch(
     job_index = 0
     elapsed_duration = 0.0
     failed_jobs = 0
+    exhausted_logged = False
 
     # 进度上报：把累计秒数映射到 0~total_duration
     def _report_progress(job_duration_fraction: float = 0.0) -> None:
@@ -252,11 +269,23 @@ def process_batch(
 
             # 随机选择素材
             backgrounds = [p for p in backgrounds if p.exists()]
-            if not backgrounds:
-                log("  [错误] 可用辅助视频已耗尽")
-                failed_jobs += total_jobs - job_index + 1
-                return False
-            background = random.choice(backgrounds)
+            template_window = None
+            if templates is not None:
+                # 模板即背景：替换掉普通背景槽，并按窗口几何落位主视频
+                spec = templates.pick(config.tpl_pick, config.tpl_fixed)
+                template_window = templates.resolve(spec, config)
+                background = spec.path
+            else:
+                # 辅助视频是可选的：没配、目录不存在、或已被「删除已用辅助
+                # 视频」消耗完，都不再把整批判失败，余下的条目走纯色画布。
+                # 只在第一次报，免得每条都刷一行。
+                if not backgrounds:
+                    if not exhausted_logged:
+                        log("  [提示] 没有可用的辅助视频，以纯色画布出片")
+                        exhausted_logged = True
+                    background = None
+                else:
+                    background = random.choice(backgrounds)
 
             sticker_files: list[Path] = []
             if config.sticker_enabled:
@@ -284,13 +313,27 @@ def process_batch(
                     log("  [警告] 开幕素材为空，跳过开幕效果")
 
             mover_files: list[Path] = []
+            mover_layers: Optional[list[dict]] = None
             if config.moving_sticker_enabled:
                 mfiles = list_media(str(moving_sticker_folder), VIDEO_EXTS | IMAGE_EXTS)
                 try:
                     mlayers = _json.loads(config.mover_layers_json) if config.mover_layers_json else []
                 except Exception:
                     mlayers = []
-                num_movers = len(mlayers) if mlayers else 1
+                if not isinstance(mlayers, list):
+                    mlayers = []
+                # 「移动贴纸」页的数量滑条会把 mover_layers_json 同步成同样多条，
+                # 正常情况两者相等；这里再取一次大者，是为了配置文件被手改过
+                # （滑条说 5 个、JSON 里只有 2 条）时也照样出 5 个，不静默少出。
+                num_movers = max(1, config.mover_count, len(mlayers))
+                mover_layers = build_mover_layers(
+                    num_movers,
+                    mlayers,
+                    config.mover_scale,
+                    config.mover_opacity,
+                    config.moving_sticker_period,
+                    roll_positions=config.mover_random,
+                )
                 for _ in range(num_movers):
                     if mfiles:
                         mover_files.append(random.choice(mfiles))
@@ -303,6 +346,8 @@ def process_batch(
                     "scanlight": scanlight_file,
                     "kaimu": kaimu_file,
                     "movers": mover_files,
+                    "mover_layers": mover_layers,
+                    "template_window": template_window,
                 })
 
             suffix = f"_{repeat + 1}" if config.repeat_count > 1 else ""
@@ -328,7 +373,6 @@ def process_batch(
                 _report_progress(main_dur * frac)
 
             # ── Pass 1: 视频合成（主要耗时）──
-            task_scope = task_scope_provider()
             cmd = build_ffmpeg_command(
                 config,
                 main_video=main_video,
@@ -338,13 +382,22 @@ def process_batch(
                 scanlight_file=scanlight_file,
                 kaimu_file=kaimu_file,
                 mover_files=mover_files or None,
-                task_scope=task_scope,
+                template_window=template_window,
+                mover_layers=mover_layers,
             )
 
             log(f"  [{job_index}/{total_jobs}] {main_video.stem}{suffix}")
-            log(f"    背景: {background.name}")
+            if background is None:
+                log("    背景: 纯色画布")
+            else:
+                log(f"    背景: {background.name}" + ("  [模板]" if template_window else ""))
             if sticker_files:
                 log(f"    贴纸: {len(sticker_files)} 层")
+            if mover_files:
+                # 数量与「本次位置是否重掷」都打出来：随机位置是每条片子各掷一次，
+                # 不看日志的话没法确认这条片子走的是随机还是界面上那套固定走位。
+                log(f"    移动贴纸: {len(mover_files)} 个"
+                    + ("  [位置本次随机]" if config.mover_random else "  [位置按界面]"))
             if scanlight_file:
                 log(f"    扫光: {scanlight_file.name}")
 
@@ -552,7 +605,14 @@ def process_batch(
                         except OSError:
                             pass
 
-                if config.delete_used_aux:
+                # 模板模式下 background 就是模板文件，但模板是可复用的库而非
+                # 一次性辅助素材 —— 「用完即删」在这里会删光用户的模板库，
+                # 所以模板通道一律跳过该开关。
+                if (
+                    config.delete_used_aux
+                    and template_window is None
+                    and background is not None
+                ):
                     try:
                         background.unlink()
                         backgrounds.remove(background)

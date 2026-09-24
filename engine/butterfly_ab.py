@@ -17,7 +17,7 @@ from pathlib import Path
 
 from engine.output_naming import output_name
 from engine import HIDDEN_SUBPROCESS
-from app._flowcut_core import authorized_butterfly_plan
+from engine.auth import butterfly_plan
 
 FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE = shutil.which("ffprobe") or "ffprobe"
@@ -373,7 +373,7 @@ def encode_standard(source, output, duration=None, stop_event=None, width=720, h
 def butterfly_ab(
     main, auxiliary, output, head=0.3, hidden=None, use_gpu=False,
     log_callback=None, progress_callback=None, stop_event=None,
-    width=720, height=1280, task_scope=None,
+    width=720, height=1280,
 ):
     """蝴蝶AB：A头+B段+A尾，通过编辑列表让平台跳过B。
 
@@ -388,15 +388,7 @@ def butterfly_ab(
     duration, _ = video_info(main)
     if not 0 < head < duration:
         raise ValueError("head 必须大于 0 且小于主视频时长")
-    if not task_scope:
-        raise RuntimeError("缺少服务器签名任务令牌")
-    plan = authorized_butterfly_plan(
-        task_scope["token"], task_scope["engine"],
-        task_scope["batch_id"], task_scope["job_id"], task_scope["input_count"],
-        task_scope["params_hash"], task_scope["device_code"],
-        task_scope["device_fingerprint"],
-        duration, head, hidden, 30,
-    )
+    plan = butterfly_plan(duration, head, hidden, 30)
     hidden = plan["hidden"]
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -516,7 +508,7 @@ def butterfly_ab(
 
 def process_batch(
     config, base_dir, log_callback=None, progress_callback=None,
-    stop_event=None, task_callback=None, task_scope_provider=None,
+    stop_event=None, task_callback=None,
 ):
     """使用 App 的文件夹和批量设置执行蝴蝶 AB 批量处理（含真实进度）。"""
     selected = getattr(config, "ab_channel", "blackcat01")
@@ -524,19 +516,17 @@ def process_batch(
         from engine.sph_channels import process_batch as process_sph_batch
         return process_sph_batch(
             config, base_dir, log_callback, progress_callback, stop_event,
-            task_callback, task_scope_provider,
+            task_callback,
         )
     if selected == "blackcat03":
         from engine.sph34_sparse import process_batch as process_sph34_sparse_batch
         return process_sph34_sparse_batch(
             config, base_dir, log_callback, progress_callback, stop_event,
-            task_callback, task_scope_provider,
+            task_callback,
         )
     from engine.ffmpeg_builder import VIDEO_EXTS, list_media
 
     _start_time = _time_module.time()
-    if not task_scope_provider:
-        raise RuntimeError("缺少服务器签名任务令牌")
 
     resolve = lambda value: Path(value) if Path(value).is_absolute() else base_dir / value
     mains = list_media(str(resolve(config.ab_main_folder)), VIDEO_EXTS)
@@ -603,13 +593,11 @@ def process_batch(
             job_progress = _make_progress(cumulative_work, job_work)
 
             try:
-                task_scope = task_scope_provider()
                 butterfly_ab(
                     main, auxiliary, output, use_gpu=config.ab_gpu,
                     log_callback=log_callback,
                     progress_callback=job_progress,
                     stop_event=stop_event, width=width, height=height,
-                    task_scope=task_scope,
                 )
                 if config.ab_delete_used_aux:
                     auxiliary.unlink()

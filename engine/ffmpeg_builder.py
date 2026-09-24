@@ -17,13 +17,22 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from config import AppConfig
-from app._flowcut_core import authorized_mask_alpha, mask_alpha
+from engine.auth import mask_alpha
+
+if TYPE_CHECKING:  # 仅用于类型标注，避免与 template_lib 形成运行时循环导入
+    from engine.template_lib import Window
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+# 移动贴纸在没有任何显式参数时的默认位置（界面新增一行也用它）。
+# 用负值是为了走 (x+100)/200 那套换算，-50 正好是半个画幅的振幅，
+# 换算细节见 build_mover_layers 的注释。
+DEFAULT_MOVER_X = -50.0
+DEFAULT_MOVER_Y = -50.0
 
 
 def list_media(folder: str, exts: set) -> List[Path]:
@@ -47,25 +56,35 @@ def pick_random(folder: str, exts: set) -> Optional[Path]:
 def build_ffmpeg_command(
     config: AppConfig,
     main_video: Path,
-    background_video: Path,
+    background_video: Optional[Path],
     output_path: Path,
     sticker_files: Optional[List[Path]] = None,
     scanlight_file: Optional[Path] = None,
     kaimu_file: Optional[Path] = None,
     mover_files: Optional[List[Path]] = None,
-    task_scope: Optional[dict] = None,
+    template_window: Optional["Window"] = None,
+    mover_layers: Optional[List[dict]] = None,
 ) -> List[str]:
     """构建完整的 ffmpeg 命令行。
 
     Args:
         config: 应用配置
         main_video: 主视频路径
-        background_video: 背景视频路径
+        background_video: 背景视频路径。None 表示没有背景素材（也没开模板），
+            此时用纯色画布兜底，仍然出片。
         output_path: 输出路径
         sticker_file: 贴纸文件（图片或视频）
         scanlight_file: 扫光视频文件
         kaimu_file: 开幕素材文件
         mover_file: 移动贴纸文件
+        mover_layers: 本次要用的移动贴纸轨道（每项含 scale/opacity/x/y/period），
+            由 build_mover_layers 产出。给出时覆盖 config.mover_layers_json ——
+            「每次随机轨道」掷出的位置是**每次出片**各掷一次的，掷出来的结果必须
+            随任务一起传进来，否则预览和成品会对不上（预览若自己重掷，调一个
+            无关参数都会看到贴纸跳位置）。
+        template_window: 模板窗口几何；给出时背景槽应传入模板视频，模板盖在
+            主视频之上，只有窗口区域（边缘羽化）露出主视频。主视频的尺寸与
+            位置不受模板影响。None 表示无模板，行为与历史版本逐字节一致。
 
     Returns:
         ffmpeg 命令行参数列表
@@ -92,7 +111,16 @@ def build_ffmpeg_command(
     aux_speed = config.aux_speed / 100.0
     aux_scale_val = config.aux_scale / 100.0
 
-    cmd += bg_loop + ["-i", str(background_video)]
+    if background_video is None:
+        # 没有背景素材（也没开模板）时用纯色画布兜底。界面上已经没有
+        # 「辅助视频文件夹」入口，这条保证任何开关组合都出得了片。
+        # 用 lavfi 的 color 源：它本身就是无限长的，不需要也不能带
+        # -stream_loop（那是给文件解复用器的输入选项）。
+        # 后面的 bg_filter_parts 照常作用在它上面——缩放/裁切对一块纯色
+        # 是空操作，aux_scale/aux_speed 不会因此失效或报错。
+        cmd += ["-f", "lavfi", "-i", f"color=c=black:s={w}x{h}:r={fps}"]
+    else:
+        cmd += bg_loop + ["-i", str(background_video)]
     input_idx = 1
 
     bg_filter_parts = [f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"]
@@ -114,7 +142,9 @@ def build_ffmpeg_command(
     cmd += ["-i", str(main_video)]
     input_idx = 2
 
-    main_tag = "main_raw" if config.mask_enabled else "main"
+    # 模板不改主视频的尺寸：模板只是盖在画布上的一层，窗口几何写在 alpha 里
+    # （见下方 window_matte）。所以这里的缩放永远只按画布来，与无模板时一致。
+    main_tag = "main_raw" if (config.mask_enabled or template_window is not None) else "main"
     if config.main_fit:
         # 参考软件逻辑：先按用户比例缩放，再缩小适配画布（不超出）
         # 主视频始终在画布内，背景视频在上下方可见
@@ -124,7 +154,7 @@ def build_ffmpeg_command(
             f"fps={fps},format=rgba[{main_tag}]"
         )
     else:
-        # 强制填满：increase+crop 确保画布无黑边
+        # 强制填满：increase+crop 确保无黑边
         main_filter = (
             f"[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
             f"crop={w}:{h},"
@@ -133,30 +163,46 @@ def build_ffmpeg_command(
         )
     filters.append(main_filter)
 
+    # ── 主视频 alpha ──
+    # 三条路：只开蒙版（历史路径，逐字节不变）、只开模板（几何蒙版，快）、
+    # 两个都开（几何蒙版打底，再用 geq 把用户蒙版乘上去）。
+    user_mask = ""
     if config.mask_enabled:
-        margin_tb = config.mask_margin_tb / 100.0
-        margin_lr = config.mask_margin_lr / 100.0
-        if task_scope:
-            alpha = authorized_mask_alpha(
-                task_scope["token"], task_scope["engine"],
-                task_scope["batch_id"], task_scope["job_id"],
-                task_scope["input_count"],
-                task_scope["params_hash"], task_scope["device_code"],
-                task_scope["device_fingerprint"],
-                w, h, config.mask_feather, margin_tb, margin_lr,
-            )
-        else:
-            alpha = mask_alpha(
-                w, h, config.mask_feather, margin_tb, margin_lr
-            )
-        if alpha:
-            filters.append(
-                f"[main_raw]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{alpha}'[main]"
-            )
-        else:
-            filters.append("[main_raw]null[main]")
+        user_mask = mask_alpha(w, h, config.mask_feather,
+                               config.mask_margin_tb / 100.0,
+                               config.mask_margin_lr / 100.0)
 
-    # ── Overlay main on background (centered) ──
+    if template_window is not None:
+        # 延迟导入：template_lib 只在函数内导入本模块，顶层导入会形成环
+        from engine.template_lib import window_matte
+
+        matte = window_matte(template_window, (w, h))
+        # 窗口蒙版是**几何**做法：drawbox 画出窗口、boxblur 抹出羽化带。
+        # 这里刻意不用 geq —— 全屏 geq 实测把渲染拖慢到 4.4 倍，而这条约 1.4 倍。
+        filters.append("[main_raw]split=2[tpl_src][tpl_geo]")
+        filters.append(f"[tpl_geo]{matte.chain}[tpl_matte]")
+        filters.append(
+            f"[tpl_src][tpl_matte]alphamerge[{'tpl_win' if user_mask else 'main'}]"
+        )
+        if user_mask:
+            # 用户蒙版要与窗口取交集，而这次 geq 会整块覆写 alpha，
+            # 必须把进来的 alpha 乘回去：alpha(X,Y) 读的就是输入 alpha。
+            # 只在这条组合路径上用 geq，单纯模板模式下没有这笔开销。
+            filters.append(
+                f"[tpl_win]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+                f"a='{user_mask}*alpha(X,Y)/255'[main]"
+            )
+    elif user_mask:
+        filters.append(
+            f"[main_raw]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{user_mask}'[main]"
+        )
+    elif config.mask_enabled:
+        filters.append("[main_raw]null[main]")
+
+    # ── Overlay main on background ──
+    # 主视频始终居中铺在背景/模板上；模板模式下的窗口几何已经写进主视频的
+    # alpha，不再影响定位，所以两种情况共用一条表达式（也保证了无模板时
+    # 与历史版本逐字节相同）。
     filters.append(
         f"[bg][main]overlay=(W-w)/2:(H-h)/2:shortest=1{next_tag('base')}"
     )
@@ -309,9 +355,11 @@ def build_ffmpeg_command(
         pip_x = config.pip_x / 100.0
         pip_y = config.pip_y / 100.0
 
-        # PIP 使用背景视频作为源
+        # PIP 取主视频（[1:v]）作源。原先取 [0:v]（背景），而背景本就铺满画布，
+        # 把背景缩小后按半透明盖回背景自身，在纯色区域数学上恒等于无变化 ——
+        # 该功能等于失效，test_effect_matrix 的 pip1 用例因此测不出像素差异。
         pip_filter = (
-            f"[0:v]scale=iw*{pip_scale}:ih*{pip_scale},"
+            f"[1:v]scale=iw*{pip_scale}:ih*{pip_scale},"
             f"format=rgba,colorchannelmixer=aa={pip_opacity}"
             f"{next_tag('pip1')}"
         )
@@ -343,8 +391,9 @@ def build_ffmpeg_command(
         pip2_x = config.pip2_x / 100.0
         pip2_y = config.pip2_y / 100.0
 
+        # 同 PIP 1：取主视频作源，而非背景
         filters.append(
-            f"[0:v]scale=iw*{pip2_scale}:ih*{pip2_scale},"
+            f"[1:v]scale=iw*{pip2_scale}:ih*{pip2_scale},"
             f"format=rgba,colorchannelmixer=aa={pip2_opacity}"
             f"{next_tag('pip2')}"
         )
@@ -432,14 +481,14 @@ def build_ffmpeg_command(
     # ═══════════════════════════════════════════════════════════
     # MOVING STICKER: 多层移动贴纸
     # ═══════════════════════════════════════════════════════════
-    mover_layer_configs = _parse_layers(config.mover_layers_json)
+    mover_layer_configs = mover_layers or _parse_layers(config.mover_layers_json)
     if not mover_layer_configs:
-        mover_layer_configs = [{
-            "scale": config.sticker_scale,
-            "opacity": config.sticker_opacity,
-            "x": 50, "y": 50,
-            "period": config.moving_sticker_period,
-        }]
+        # 直接调这个函数时没给轨道（出片管线和预览都会给），退回配置里的数量与
+        # 默认观感。位置不掷：静态调用两次应该得到同一条命令。
+        mover_layer_configs = build_mover_layers(
+            1, [], config.mover_scale, config.mover_opacity,
+            config.moving_sticker_period,
+        )
 
     if config.moving_sticker_enabled and mover_files:
         _mover_use_ref = any(
@@ -665,3 +714,49 @@ def _parse_layers(json_str: str) -> List[dict]:
     except (json.JSONDecodeError, TypeError):
         pass
     return []
+
+
+def build_mover_layers(
+    count: int,
+    base_layers: List[dict],
+    default_scale: int,
+    default_opacity: int,
+    default_period: int,
+    roll_positions: bool = False,
+) -> List[dict]:
+    """本次要用的 count 条移动贴纸轨道。
+
+    这是移动贴纸**唯一**的轨道来源：出片管线、预览、界面上的数量滑条都调它，
+    所以「界面上看到几行」和「片子里出几个」不会各说各话。
+
+    把 base_layers 补齐/裁剪成 count 条：base_layers 是界面上那几行（存在
+    config.mover_layers_json 里），短了按 i % len 循环取参数补足，长了截掉。
+    补出来的行沿用被复制那一行的缩放/不透明度/周期，位置用 DEFAULT_MOVER_X/Y。
+
+    roll_positions=True 时**只重掷水平/垂直位置**（每次出片各掷一次，所以同一
+    批素材连跑两次走位不一样），缩放/不透明度/周期一律按传进来的值走 ——
+    界面上填什么就是什么，不被悄悄改掉。
+
+    x/y 为什么掷成负值
+    -----------------
+    mover 段里只要有任意一层的 x 或 y 小于 0，整体就切到 (x+100)/200 这套
+    换算（`_mover_use_ref`）。而 overlay 的位置是 (W-w)*m*(1±sin)，即贴纸在
+    「(W-w)*m*(1-1)=0」到「(W-w)*m*2」之间来回。m∈(0,0.5] 正好能把整幅画面
+    铺开：m 接近 0.5 振幅拉满，接近 0 就几乎不动。所以 x 取 (-95,-5) →
+    m∈(0.025,0.475)，几个贴纸不会挤在一处，也不会甩出画面。
+    """
+    layers: List[dict] = []
+    for i in range(max(1, count)):
+        base = base_layers[i % len(base_layers)] if base_layers else {}
+        layer = {
+            "scale": int(base.get("scale", default_scale)),
+            "opacity": int(base.get("opacity", default_opacity)),
+            "period": max(1, int(base.get("period", default_period))),
+            "x": float(base.get("x", DEFAULT_MOVER_X)),
+            "y": float(base.get("y", DEFAULT_MOVER_Y)),
+        }
+        if roll_positions:
+            layer["x"] = round(random.uniform(-95.0, -5.0), 1)
+            layer["y"] = round(random.uniform(-95.0, -5.0), 1)
+        layers.append(layer)
+    return layers

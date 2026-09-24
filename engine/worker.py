@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import threading
-import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -45,7 +42,6 @@ class BatchWorker:
         config: AppConfig,
         base_dir: Path,
         channel: str = "hdh",
-        license_client=None,
     ) -> None:
         """启动批量处理。"""
         if self.is_running:
@@ -53,7 +49,7 @@ class BatchWorker:
         self._cancel.clear()
         self._thread = threading.Thread(
             target=self._run_batch,
-            args=(config, base_dir, channel, license_client),
+            args=(config, base_dir, channel),
             daemon=True,
         )
         self._thread.start()
@@ -79,12 +75,9 @@ class BatchWorker:
         config: AppConfig,
         base_dir: Path,
         channel: str,
-        license_client,
     ) -> None:
         try:
-            if license_client is None:
-                raise RuntimeError("缺少服务器任务授权")
-            from app._flowcut_core import task_claims
+            from engine.auth import check
             from engine.ffmpeg_builder import VIDEO_EXTS, list_media
 
             folder_value = (
@@ -98,47 +91,19 @@ class BatchWorker:
                 config.ab_repeat_count if channel == "butterfly_ab"
                 else config.repeat_count
             )
-            input_count = len(list_media(str(folder), VIDEO_EXTS)) * repeat
-            if input_count <= 0:
-                raise RuntimeError("没有可授权的主视频任务")
-            engine = "flowcut-ab" if channel == "butterfly_ab" else "flowcut-hdh"
-            batch_id = uuid.uuid4().hex
-            params_hash = hashlib.sha256(
-                json.dumps(
-                    config.to_dict(),
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
-            job_sequence = 0
-            def issue_task_scope():
-                nonlocal job_sequence
-                job_sequence += 1
-                job_id = f"{batch_id}-{job_sequence}"
-                token = license_client.task_token(
-                    engine, batch_id, job_id, input_count, params_hash
-                )
-                task_claims(
-                    token, engine, batch_id, job_id,
-                    input_count, params_hash, license_client.device_code,
-                    license_client.fingerprint,
-                )
-                return {
-                    "token": token,
-                    "engine": engine,
-                    "batch_id": batch_id,
-                    "job_id": job_id,
-                    "input_count": input_count,
-                    "params_hash": params_hash,
-                    "device_code": license_client.device_code,
-                    "device_fingerprint": license_client.fingerprint,
-                }
+
+            # 全引擎唯一的授权门禁点。本地模式（engine.auth.local_gate）一律放行；
+            # 接入新服务器时在程序入口 set_gate() 一次即可，此处及以下无需改动。
+            check(channel, {"main_folder": str(folder), "repeat": repeat})
+
+            if len(list_media(str(folder), VIDEO_EXTS)) * repeat <= 0:
+                raise RuntimeError("没有可处理的主视频任务")
+
             if channel == "butterfly_ab":
                 from engine.butterfly_ab import process_batch as process_butterfly_ab
                 ok = process_butterfly_ab(
                     config, base_dir, self._log, self._progress, self._cancel,
-                    self._task, issue_task_scope,
+                    self._task,
                 )
             else:
                 ok = process_batch(
@@ -148,7 +113,6 @@ class BatchWorker:
                     progress_callback=self._progress,
                     cancel_check=lambda: self._cancel.is_set(),
                     task_callback=self._task,
-                    task_scope_provider=issue_task_scope,
                 )
             if self._cancel.is_set():
                 self._done and self._done(False, "任务已取消")

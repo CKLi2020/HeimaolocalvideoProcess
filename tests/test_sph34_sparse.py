@@ -4,15 +4,8 @@ import json
 import random
 import subprocess
 import sys
-import types
 from pathlib import Path
 from tempfile import TemporaryDirectory
-
-
-# 本地开发环境可能没有与当前 Python ABI 匹配的保护模块；命令构造不依赖它。
-flowcut_core = types.ModuleType("app._flowcut_core")
-flowcut_core.__getattr__ = lambda _name: (lambda *args, **kwargs: None)
-sys.modules.setdefault("app._flowcut_core", flowcut_core)
 
 from engine.sph34_sparse import build_sph34_sparse_command
 

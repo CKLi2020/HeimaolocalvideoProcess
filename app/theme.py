@@ -162,6 +162,15 @@ QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
     border: 1px solid #3b82f6;
 }
 
+/* 只读 QLineEdit（模板页「固定模板」的显示框）：只作展示，值由右边的按钮改。
+   画成输入框的话用户会点进去打字、发现打不动。这条要放在 :focus 之后，
+   否则点中它还会亮一道蓝框，更像能编辑。 */
+QLineEdit:read-only {
+    background: #0e1729;
+    color: #a9c4ea;
+    border: 1px solid #1a2a45;
+}
+
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
@@ -633,6 +642,84 @@ QMenu::separator {
 
 QScrollArea QWidget {
     background: transparent;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DISABLED STATE — 统一的置灰
+
+   这段必须放在最后：上面每一条规则都写死了颜色，而 Qt 只要在样式表里
+   给了颜色就不再用调色板的 disabled 色 —— 不补这一段，setEnabled(False)
+   在界面上**完全看不出来**（功能是禁用的，样子一点没变）。
+   按钮的 #id 变体也要单独写：id 选择器比伪类优先，否则 #browse 这类
+   按钮置灰后照旧亮着。
+   ══════════════════════════════════════════════════════════════ */
+
+QLabel:disabled {
+    color: #55647d;
+}
+
+QGroupBox:disabled {
+    color: #6b7c96;
+    border-color: #22334f;
+}
+
+QGroupBox::title:disabled {
+    color: #55647d;
+    border-color: #22334f;
+}
+
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {
+    color: #55647d;
+    background: #0a1020;
+    border-color: #16233c;
+}
+
+QSlider::groove:horizontal:disabled {
+    background: #0a1020;
+}
+
+/* 有值的滑条是蓝色渐变（=「生效中」），禁用时退成灰，一眼能看出没在生效 */
+QSlider::sub-page:horizontal:disabled {
+    background: #2a3a55;
+}
+
+QSlider::handle:horizontal:disabled {
+    background: #46587a;
+    border-color: #2a3a55;
+}
+
+QCheckBox:disabled {
+    color: #55647d;
+}
+
+QCheckBox::indicator:disabled {
+    background: #0a1020;
+    border-color: #1b2a44;
+}
+
+/* 勾选图案不会从 :checked 继承，这里要重写一次，否则禁用后勾没了 */
+QCheckBox::indicator:checked:disabled {
+    background: #2a3a55;
+    border-color: #2a3a55;
+    image: url(resources/check.svg);
+}
+
+QPushButton#browse:disabled {
+    color: #4a6088;
+    background: #0b1526;
+    border-color: #16233c;
+}
+
+QPushButton#danger:disabled {
+    color: #6b5560;
+    background: #1a1018;
+    border-color: #3a2430;
+}
+
+QPushButton#accent:disabled {
+    color: #4a6088;
+    background: #0b1526;
+    border-color: #16233c;
 }
 """
 

@@ -13,6 +13,9 @@ class AppConfig:
 
     # ── 文件与批量 ──
     main_folder: str = "主视频"
+    # 辅助视频已从界面收起，且不再是必填：目录为空/不存在时引擎用纯色画布兜底
+    # （engine/ffmpeg_builder.py 的 background_video is None 分支）。字段保留
+    # 是为了老配置和预设能继续往返，不用手改 config.json。
     background_folder: str = "辅助视频"
     sticker_folder: str = "贴纸"
     moving_sticker_folder: str = "贴纸"
@@ -105,12 +108,51 @@ class AppConfig:
     # 如果非空则覆盖上面的单层参数
     sticker_layers_json: str = ""
     moving_sticker_enabled: bool = True
+    # 移动贴纸默认周期（秒）。界面上「默认周期」那一行就是它：只是新增贴纸行时
+    # 的初始值，每条轨道真正的周期存在 mover_layers_json 里。
     moving_sticker_period: int = 8
-    # 移动贴纸层 JSON 数组
+    # 移动贴纸数量 = 界面上「移动贴纸 1..N」的行数。数量滑条增减时会同步改写
+    # mover_layers_json，两者始终一致（出片与预览都按这个数出）。
+    mover_count: int = 5
+    # 每次出片重掷每个移动贴纸的位置，同一批素材连跑两次走位不一样。
+    # 只掷位置：缩放/不透明度/周期一律按界面上填的走。关掉则完全按界面走位。
+    mover_random: bool = True
+    # 新增移动贴纸行的初始缩放/不透明度（%）。只在 mover_layers_json 里没有
+    # 对应行时起作用，一旦某行存在就以那一行为准。
+    mover_scale: int = 45
+    mover_opacity: int = 100
+    # 每个移动贴纸的轨道 JSON 数组，由「移动贴纸」页写入，一般不用手改：
+    # [{"scale":45,"opacity":100,"x":-46,"y":-36,"period":8}, ...]
+    # x/y 用负值：-100 表示振幅 0（几乎不动），0 表示振幅拉满，落到
+    # (x+100)/200 的换算上，细节见 engine/ffmpeg_builder.py 的 build_mover_layers。
     mover_layers_json: str = ""
     scanlight_enabled: bool = False
     scanlight_opacity: int = 45
     scanlight_speed: int = 100
+
+    # ── 模板通道 ──
+    # 模型来自参考软件「穿山甲」的 视觉层→中央集成：蒙版区域 + 羽化宽度 + 填充方式。
+    # 模板铺满画布盖在主视频之上，中央挖出一个窗口让主视频透出来。
+    # 主视频**不缩小**（= 填充方式「全屏」），仍是整块画布、位置尺寸都不变；
+    # 窗口外的模板不透明地遮住主视频，边缘羽化做融合。所以下面这几个窗口字段
+    # 只影响主视频的 alpha，不影响主视频的大小 —— 见 engine/template_lib.py。
+    # 模板即背景（占用背景槽），不需要 alpha 通道 —— 与参考产品的模板一样是
+    # 明文整屏 mp4。「适配 / 全屏」沿用上面的 main_fit 开关，不另设参数。
+    tpl_enabled: bool = False
+    tpl_folder: str = "模板"          # 模板库目录
+    # 可选清单：全局默认窗口 + 每模板覆盖。界面上已经没有这一行了（用户不用它），
+    # 保留是因为它不碍事：目录里没有这个文件就走「扫描模板目录 + 全局字段」，
+    # 但也因此改窗口几何要整批一起改，不能逐张覆盖。
+    tpl_manifest: str = "模板.json"
+    tpl_pick: str = "随机"            # combo: 随机,固定
+    # 「固定」时用哪一张（文件名，相对 tpl_folder）。空白/名字对不上就退回随机，
+    # 文件被删或改名不该让整批出不了片。
+    tpl_fixed: str = ""
+    tpl_window_center_x: int = 50     # 窗口中心 X（画布百分比）
+    tpl_window_center_y: int = 50     # 窗口中心 Y（画布百分比）
+    tpl_window_w: int = 80            # 窗口宽（画布百分比）
+    tpl_window_h: int = 55            # 窗口高（画布百分比）
+    tpl_window_feather: int = 60      # 边缘羽化宽度（以 1080 短边为基准的像素数）
 
     # ── 开幕、封面与字幕 ──
     kaimu_enabled: bool = False
@@ -173,6 +215,10 @@ class AppConfig:
         encoding = data.get("encoding", {})
         color = data.get("color", {})
         mp4 = data.get("mp4tool", {})
+        # 预设里的移动贴纸轨道。先规整成 list：后面既要序列化它，也要按它的
+        # 条数定 mover_count，非 list 的脏数据不能直接 len()。
+        _raw_movers = data.get("mover_layers", [])
+        mover_layers = _raw_movers if isinstance(_raw_movers, list) else []
 
         values: Dict[str, Any] = {
             "main_folder": folders.get("main_folder", ""),
@@ -238,9 +284,12 @@ class AppConfig:
             "sticker_layers_json": json.dumps(
                 data.get("watermark_layers", []), ensure_ascii=False
             ),
-            "mover_layers_json": json.dumps(
-                data.get("mover_layers", []), ensure_ascii=False
-            ),
+            "mover_layers_json": json.dumps(mover_layers, ensure_ascii=False),
+            # 数量跟预设走，别用 mover_count 的默认值（5）把预设里写死的层数顶掉：
+            # 参考格式用 mover_layers 的条数表达「几个移动贴纸」，导入 1 条的预设
+            # 却出来 5 个，观感就不是预设那套了。轨道随机与否不在这里改——用户
+            # 要的默认就是每次随机的走位，只是数量按预设给的来。
+            "mover_count": max(1, len(mover_layers)),
         }
         aliases = {
             "main_scale": "main_scale", "aux_scale": "aux_scale",

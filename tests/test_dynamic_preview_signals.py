@@ -21,9 +21,23 @@ window = MainWindow(AppConfig(), Path(__file__).resolve().parent.parent)
 window.show()
 app.processEvents()
 
+# 走 window._pages 而不是 findChildren(ParamRow)：右栏有几个页已经从标签栏
+# 收起（「贴图」「人脸遮挡」），页对象仍在 _pages 里、参数行照样参与联动，
+# 但它们不再是标签栏的子控件，findChildren 找不到——用 findChildren 会漏掉
+# 一整页的参数，还会随着标签页增减时红时绿。_preview 的联动就是按 _pages
+# 遍历的（见 _wire_params_to_preview），所以这里按同一份来源枚举才对齐。
+all_rows = [
+    (name, key, row)
+    for name, page in window._pages.items()
+    for key, row in getattr(page, "_rows", {}).items()
+    # 文件夹行（FolderRow）不用 _widget，也不走 value_changed，跳过。
+    if isinstance(row, ParamRow)
+]
+assert all_rows, "no ParamRow found via window._pages"
+
 changed = 0
 failed = []
-for index, row in enumerate(window.findChildren(ParamRow)):
+for name, key, row in all_rows:
     widget = row._widget
     new_value = None
     if isinstance(widget, QSpinBox):
@@ -45,7 +59,7 @@ for index, row in enumerate(window.findChildren(ParamRow)):
     app.processEvents()
     changed += 1
     if not window._preview._debounce.isActive():
-        failed.append(index)
+        failed.append(f"{name}.{key}")
 
 window.close()
 assert changed > 100, changed

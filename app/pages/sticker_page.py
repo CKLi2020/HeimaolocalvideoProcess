@@ -49,20 +49,9 @@ class StickerPage(QWidget):
         add_button.clicked.connect(self._add_layer)
         self._layout.addWidget(add_button)
 
-        mover_group = QGroupBox("移动贴纸")
-        mover_form = QFormLayout(mover_group)
-        for label, key, ptype in (
-            ("启用移动贴纸", "moving_sticker_enabled", "bool"),
-            ("移动周期（秒）", "moving_sticker_period", "slider:1-60"),
-        ):
-            row = ParamRow(label, ptype, getattr(config, key))
-            row.value_changed.connect(
-                lambda value, name=key: self._set_config(name, value)
-            )
-            mover_form.addRow(row)
-            self._rows[key] = row
-        self._layout.addWidget(mover_group)
-
+        # 移动贴纸那一组已整体挪到右侧独立的「移动贴纸」页（app/pages/mover_page.py）：
+        # 它现在有文件夹选择、数量滑条和每个贴纸的轨道参数，塞在这个隐藏页里
+        # 反而会让同一个配置键出现两处控件，改一处另一处不跟着变。
         scan_group = QGroupBox("扫光效果")
         scan_form = QFormLayout(scan_group)
         for label, key, ptype in (

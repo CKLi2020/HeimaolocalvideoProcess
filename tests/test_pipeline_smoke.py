@@ -44,6 +44,10 @@ def _config(root: Path) -> AppConfig:
         main_scale=90,
         mask_enabled=False,
         sticker_enabled=False,
+        # 显式关掉移动贴纸。默认是 True，不写的话基线里本来就有移动贴纸，
+        # test_effect_matrix 的「打开移动贴纸」用例就成了空操作（基线已是开的），
+        # 于是断言「画面有可见变化」必然失败——它不是产品 bug，是基线没配干净。
+        moving_sticker_enabled=False,
         scanlight_enabled=False,
     )
 

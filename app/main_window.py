@@ -11,7 +11,6 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -36,6 +35,8 @@ from app.pages.canvas_page import CanvasPage
 from app.pages.mask_page import MaskPage
 from app.pages.pip_page import PipPage
 from app.pages.sticker_page import StickerPage
+from app.pages.mover_page import MoverPage
+from app.pages.template_page import TemplatePage
 from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.pages.butterfly_ab_page import ButterflyABPage
@@ -47,6 +48,11 @@ from version import APP_NAME, APP_VERSION
 
 
 def _format_expire_at(value: str) -> str:
+    """把 ISO-8601 到期时间格式化为本地时间。
+
+    当前本地运行模式不再有服务器到期时间，此函数保留给将来接入的授权模块
+    （见 engine/auth.py），并由 tests/test_license_expiry_title.py 覆盖。
+    """
     if not value:
         return "永久"
     try:
@@ -61,13 +67,11 @@ class MainWindow(QMainWindow):
     work_done = Signal(bool, str)
     task_received = Signal(object)
 
-    def __init__(self, config: AppConfig, root_dir: Path, license_client=None):
+    def __init__(self, config: AppConfig, root_dir: Path):
         super().__init__()
         self.config = config
         self.root_dir = root_dir
-        self._license_client = license_client
-        expire_at = _format_expire_at(license_client.data.get("expireAt", "")) if license_client else ""
-        self.setWindowTitle(f"{APP_NAME} V{APP_VERSION}" + (f"　到期：{expire_at}" if expire_at else ""))
+        self.setWindowTitle(f"{APP_NAME} V{APP_VERSION}")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
         self.setStyleSheet(MIDNIGHT_QSS)
@@ -141,8 +145,12 @@ class MainWindow(QMainWindow):
         channels = (
             ("01", "蒙版通道", "hdh"),
             ("02", "蝴蝶AB", "butterfly_ab"),
-            ("03", "最新连怼（Coming）", "coming"),
         )
+        # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
+        # _workspace_stack 里的蝴蝶页、_on_start 的蝴蝶分支都还在原位，只是界面
+        # 上没有入口能切过去（_active_channel 会一直是 hdh）。要把按钮放回来，
+        # 只需把 "butterfly_ab" 从这个集合里删掉。
+        hidden_channels = {"butterfly_ab"}
         for number, name, channel in channels:
             button = QPushButton(f"{number}   {name}")
             button.setObjectName("channelButton")
@@ -152,7 +160,8 @@ class MainWindow(QMainWindow):
             )
             self._channel_group.addButton(button)
             channel_layout.addWidget(button)
-            button.setEnabled(channel != "coming")
+            if channel in hidden_channels:
+                button.setVisible(False)
             if channel == "hdh":
                 button.setChecked(True)
         channel_layout.addStretch()
@@ -173,7 +182,9 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(5, 4, 5, 5)
         left_layout.setSpacing(8)
         self._files_page = FilesPage(self.config)
-        self._files_page.setMinimumHeight(300)
+        # 「文件夹设置」块要占得比原来大：这 300 就是它的实际高度（左栏的富余
+        # 高度归下面的日志面板，它才是该变长的那一块）。
+        self._files_page.setMinimumHeight(340)
         left_layout.addWidget(self._files_page)
 
         controls = QFrame()
@@ -196,12 +207,11 @@ class MainWindow(QMainWindow):
         controls_layout.addLayout(row)
 
         batch_row = QHBoxLayout()
-        self._delete_aux = QCheckBox("删除已用辅助视频")
-        self._delete_aux.setChecked(self.config.delete_used_aux)
-        self._delete_aux.toggled.connect(
-            lambda value: setattr(self.config, "delete_used_aux", value)
-        )
-        batch_row.addWidget(self._delete_aux)
+        # 「删除已用辅助视频」整项去掉（用户要求）：这个开关会把整批用完的输入
+        # 文件直接 unlink，撤不回来 —— 模板模式下更危险，背景槽被模板占着，
+        # 一开就删光模板库（engine/pipeline.py 里那段守卫就是为它加的）。
+        # 能力仍在 engine/pipeline.py，靠 config.delete_used_aux 读；界面上不再
+        # 留入口，config.json 与预设里的值继续原样往返。
         batch_row.addStretch()
         batch_row.addWidget(QLabel("裂变："))
         self._repeat_count = QSpinBox()
@@ -263,6 +273,8 @@ class MainWindow(QMainWindow):
         pip_page = PipPage(self.config)
         sticker_page = StickerPage(self.config)
         sticker_page.preview_changed.connect(self._preview_refresh)
+        mover_page = MoverPage(self.config)
+        mover_page.preview_changed.connect(self._preview_refresh)
         picture_page = QWidget()
         picture_layout = QVBoxLayout(picture_page)
         picture_layout.setContentsMargins(0, 0, 0, 0)
@@ -277,19 +289,30 @@ class MainWindow(QMainWindow):
             "蒙版": MaskPage(self.config),
             "画中画": pip_page,
             "贴纸": sticker_page,
+            "移动贴纸": mover_page,
             "封面": OpeningPage(self.config, "cover"),
             "字幕设置": OpeningPage(self.config, "subtitle"),
             "画面滤镜": FaceColorPage(self.config, "color"),
             "人脸遮挡": FaceColorPage(self.config, "face"),
             "卡秒": FaceColorPage(self.config, "mp4"),
+            "模板": TemplatePage(self.config, self.root_dir),
         }
+        # 「贴图」页整页收起（贴纸/扫光 与 画中画 都不再露出）。
+        # 必须留住这个引用：里面的子页仍挂在 self._pages 上参与参数联动与
+        # 配置读写，picture_page 一旦被回收，Qt 会连子控件一起销毁。
+        self._hidden_picture_page = picture_page
+
+        # 「人脸遮挡」页也收起：它仍留在 self._pages 里（不建标签页即可），
+        # 所以人脸那几行参数继续参与联动与配置回写，config.json 与预设里的
+        # face_blur_* 不会因为页面消失而被静默丢掉。要重新露出只需把下面这行
+        # 加回 tabs 元组。
         tabs = (
             ("基础参数", self._pages["基础参数"]),
-            ("蒙版", self._pages["蒙版"]),
-            ("贴图", picture_page),
             ("封面", self._pages["封面"]),
+            ("模板", self._pages["模板"]),
+            ("移动贴纸", self._pages["移动贴纸"]),
             ("画面滤镜", self._pages["画面滤镜"]),
-            ("人脸遮挡", self._pages["人脸遮挡"]),
+            ("蒙版", self._pages["蒙版"]),
         )
         for name, page in tabs:
             self._tabs.addTab(page, name)
@@ -352,18 +375,16 @@ class MainWindow(QMainWindow):
             self._on_start_butterfly()
             return
 
-        # 基本校验
-        if not self.config.main_folder or not self.config.background_folder or not self.config.output_folder:
-            QMessageBox.warning(self, "提示", "请先设置主素材、辅助视频和输出文件夹。")
+        # 基本校验。辅助视频不再是必填项：界面上已经没有它的入口，
+        # 缺素材时引擎用纯色画布兜底（见 engine/ffmpeg_builder.py 的
+        # background_video is None 分支），这里再拦就没人解得开了。
+        if not self.config.main_folder or not self.config.output_folder:
+            QMessageBox.warning(self, "提示", "请先设置主素材和输出文件夹。")
             return
 
         main_dir = self._resolve(self.config.main_folder)
-        bg_dir = self._resolve(self.config.background_folder)
         if not main_dir.is_dir():
             QMessageBox.warning(self, "提示", "主素材文件夹不存在。")
-            return
-        if not bg_dir.is_dir():
-            QMessageBox.warning(self, "提示", "辅助视频文件夹不存在。")
             return
 
         self._save_config()
@@ -376,7 +397,6 @@ class MainWindow(QMainWindow):
         self._running_channel = "hdh"
         self._worker.start(
             self.config, self.root_dir, self._active_channel,
-            self._license_client,
         )
 
     def _on_start_butterfly(self) -> None:
@@ -402,7 +422,6 @@ class MainWindow(QMainWindow):
         self._set_status("● 蝴蝶AB处理中", "#fbbf24", "#1f1a0e", "#4a3a15")
         self._worker.start(
             self.config, self.root_dir, "butterfly_ab",
-            self._license_client,
         )
 
     def _on_stop(self) -> None:
@@ -491,14 +510,19 @@ class MainWindow(QMainWindow):
 
     def _switch_mode(self, mode: str) -> None:
         """切换编辑模式标签页。"""
+        # 按标签名找，不写索引：右栏的页会增减（「贴图」「人脸遮挡」已收起），
+        # 写死索引会静默指到别的页上。
+        # 表里只留右栏真有标签页的模式；对不上的模式走 .get 的兜底（基础参数），
+        # 不会像以前那样指到一个已经不在标签栏里的名字上、找一圈什么都不做。
         mode_to_tab = {
-            "鹤漫剪辑": 0,
-            "语音识别": 4,
-            "人脸处理": 5,
-            "MP4工具": 5,
+            "鹤漫剪辑": "基础参数",
+            "语音识别": "画面滤镜",
         }
-        idx = mode_to_tab.get(mode, 0)
-        self._tabs.setCurrentIndex(idx)
+        name = mode_to_tab.get(mode, "基础参数")
+        for idx in range(self._tabs.count()):
+            if self._tabs.tabText(idx) == name:
+                self._tabs.setCurrentIndex(idx)
+                return
 
     def _save_config(self) -> None:
         """回写配置到 config.json。"""

@@ -1,16 +1,25 @@
 # 黑猫@苍狼：构建、加壳与授权保护流程
 
+> **状态（YanJingwenhua 分支起）：本文部分章节已失效。**
+> 服务器授权（卡密登录、短期任务令牌、编译模块内的算法门禁）已从程序中移除，
+> 详见 `SECURITY.md`。下列章节**仅作历史存档**，不要照此理解当前构建：
+> **§4 原生核心编译、§5 原生核心保护范围、§8 运行时服务器授权、
+> §9 短期任务令牌**，以及 §1 中与之相关的条目、§6 的打包清单、§11 的检查项。
+> 仍然成立的是：§2 版本号、§3 构建入口、§6 的 Nuitka 主程序编译、
+> §7 最终 EXE 加壳、§10 本地数据与成品视频、§12 安全边界（结论部分）。
+
 ## 1. 当前结论
 
-默认运行 `build_protected.bat` 构建时，成品会经过以下保护：
+当前（YanJingwenhua 分支起）默认运行 `build_protected.bat` 构建时，成品会经过以下保护：
 
-1. 关键授权与处理逻辑由 Cython 编译为原生 `.pyd`。
-2. 原生核心中的关键函数使用 VMProtect Ultra 虚拟化保护。
-3. Python 主程序使用 Nuitka 编译为 Windows onefile EXE。
-4. 最终 EXE 的入口点再次使用 VMProtect 保护。
-5. 每次批量处理前必须向服务器申请短期 Ed25519 签名任务令牌。
+1. Python 主程序使用 Nuitka 编译为 Windows onefile EXE。
+2. 最终 EXE 的入口点再次使用 VMProtect 保护。
 
-这套方案是“原生编译 + VMProtect 加壳/虚拟化 + 服务器签名授权”，不能理解为源码和运行数据绝对不可逆的整体加密。
+原方案还包含「Cython 编译原生 `.pyd` + 该模块内的 VMProtect Ultra 虚拟化 +
+每次批量处理前向服务器申请短期 Ed25519 签名任务令牌」三层，已随服务器授权一并
+移除（见 §1 之后的存档章节）。
+
+当前方案是“Nuitka 编译 + VMProtect 加壳”，不能理解为源码和运行数据绝对不可逆的整体加密。
 
 ## 2. 唯一版本配置
 
@@ -23,8 +32,7 @@ APP_VERSION = "1.0.0"
 
 构建脚本会将该版本同步用于：
 
-- 登录窗口和主窗口标题；
-- 客户端授权请求中的 `appVersion`；
+- 主窗口标题；
 - Windows EXE 的文件版本和产品版本；
 - 成品文件名，例如 `黑猫@苍狼_V1.0.0.exe`。
 
@@ -46,7 +54,7 @@ scripts\build_protected.ps1
 
 `scripts\build_protected.ps1` 提供了开发用的 `-SkipVmProtect` 参数。手动使用该参数时，最终 EXE 不会执行最后一层 VMProtect 入口保护，因此不能作为正式发布包。
 
-## 4. 第一层：原生核心编译
+## 4. 第一层：原生核心编译（历史存档，当前构建不再执行）
 
 `scripts\build_native.ps1` 执行以下流程：
 
@@ -64,7 +72,14 @@ app\_flowcut_core.pyd
 
 原生核心没有 Python 回退实现。缺少或破坏 `app\_flowcut_core.pyd` 时，授权模块和受保护处理流程无法正常运行。
 
-## 5. 原生核心保护范围
+> **已失效（YanJingwenhua 分支起）**：`build_protected.ps1` 不再调用
+> `build_native.ps1`，也不再打包 `app\_flowcut_core.pyd`。上面的「没有 Python
+> 回退」不再成立——引擎改用 `engine/auth.py` 的纯 Python 实现
+> （`mask_alpha` / `butterfly_plan`），**不存在** `.pyd` 缺失即无法运行的情况。
+> `native_src\flowcut_core.pyx` 与 `scripts\build_native.ps1` 保留在仓库中，
+> 前者仍是算法的权威规格，需要时可单独运行后者。
+
+## 5. 原生核心保护范围（历史存档，当前构建不再执行）
 
 以下关键区域使用 `VMProtectBeginUltra` / `VMProtectEnd` 标记，并由构建脚本配置为 VMProtect Ultra 虚拟化：
 
@@ -84,7 +99,7 @@ app\_flowcut_core.pyd
 原生核心生成后，`scripts\build_protected.ps1` 使用 Nuitka：
 
 - `--standalone --onefile` 编译并封装 Python 主程序；
-- 打包 PySide6、Cryptography 和 `app._flowcut_core`；
+- 打包 PySide6（**原先还打包 Cryptography 与 `app._flowcut_core`，已移除**）；
 - 打包图标和运行资源；
 - 关闭 Windows 控制台窗口；
 - 写入产品名称、描述和版本信息。
@@ -111,9 +126,11 @@ dist-protected\黑猫@苍狼_V<版本号>.exe
 
 脚本会检查 VMProtect 返回码和最终文件是否存在。保护失败时构建终止。
 
-当前最终 EXE 层保护的是入口点；关键业务函数的更强虚拟化保护位于前面的原生 `.pyd` 层。
+当前最终 EXE 层保护的是入口点。（原方案在这里还有一句「关键业务函数的更强虚拟化
+保护位于前面的原生 `.pyd` 层」——该层已移除，所以**当前成品只有 EXE 入口点这一层
+VMProtect 保护**。）
 
-## 8. 运行时服务器授权
+## 8. 运行时服务器授权（历史存档，当前版本无网络授权）
 
 应用 ID 为：
 
@@ -146,7 +163,7 @@ blackcat-flowcut
 
 服务器的 Ed25519 私钥只保存在服务器环境中，不进入客户端构建包。客户端只包含公钥。
 
-## 9. 短期任务令牌
+## 9. 短期任务令牌（历史存档，当前版本不再申请令牌）
 
 软件登录成功不代表可以无限期直接处理。每次启动一个批量处理任务时，客户端会向服务器申请短期签名任务令牌。
 
@@ -191,17 +208,17 @@ FlowCut 任务令牌最长有效期为 5 分钟。处理线程收到令牌后，
 
 1. 修改 `version.py` 中的版本号。
 2. 使用 `build_protected.bat`，不要传入 `-SkipVmProtect`。
-3. 构建日志出现 `Protected native core`。
+3. ~~构建日志出现 `Protected native core`~~ —— 该行不再出现，日志中不再有原生核心层。
 4. 构建日志出现 `Protected executable`。
 5. 只发布 `dist-protected` 中带版本号的最终 EXE。
 6. 不发布 `build\protected` 中的 Nuitka 中间 EXE。
 7. 不发布 `.flowcut_private_key.pem`、服务器环境配置或数据库备份。
-8. 在干净电脑上验证登录、HDH 蒙版、蝴蝶 AB 和任务令牌过期后的拒绝行为。
+8. 在干净电脑上验证**无需卡密即可启动**、HDH 蒙版、蝴蝶 AB 与模板通道。
 
 每次构建会生成独立的 `dist-protected\黑猫@苍狼_V<版本号>` 发布文件夹。
 构建脚本会把 EXE、`ico`、`resources`、`showlight`、`startmovie`、`贴纸`
 和 `配置文件` 放入该文件夹，并复制 `ffmpeg.exe`、`ffprobe.exe`。脚本只创建空的
-`主视频`、`辅助视频`、`蒙版成品`、`蝴蝶AB成品` 目录，不会复制开发机
+`主视频`、`辅助视频`、`蒙版成品`、`蝴蝶AB成品`、`模板` 目录，不会复制开发机
 中的测试视频或历史成品。包含开发机绝对路径的 `config.json` 也不会进入
 发布目录，软件首次启动时会在 EXE 旁生成新的相对路径配置。
 
@@ -209,4 +226,9 @@ FlowCut 任务令牌最长有效期为 5 分钟。处理线程收到令牌后，
 
 客户端保护只能提高逆向、篡改和绕过成本，无法承诺绝对不可破解。真正不能下发到客户端的机密必须保留在服务器。
 
-当前最重要的服务端信任根是 FlowCut Ed25519 私钥。客户端内的公钥、请求签名逻辑和 VMProtect 保护用于验证服务器与提高篡改成本，但不替代服务器侧卡密校验、任务令牌签发、频率限制、日志和密钥轮换。
+> **已失效（YanJingwenhua 分支起）**：当前版本没有任何服务器信任根，也不含卡密
+> 校验或任务令牌。**整个引擎是纯 Python 且无授权门禁**（默认门禁一律放行），
+> 所以本节以及 §8/§9 描述的「验证服务器」「提高篡改成本」在当前成品上都不成立，
+> 唯一的保护层是 §7 的 EXE 入口点 VMProtect。
+> 将来接入新的授权服务器时，把信任根（公钥/密钥）保留在服务端、客户端只放公钥
+> 这条原则仍然适用；接入点是 `engine/auth.py` 的 `set_gate()`。

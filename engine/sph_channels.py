@@ -105,7 +105,7 @@ def build_sph34_command(main: Path, auxiliary: Path, output: Path,
 
 
 def process_batch(config, base_dir, log_callback=None, progress_callback=None,
-                  stop_event=None, task_callback=None, task_scope_provider=None):
+                  stop_event=None, task_callback=None):
     log = log_callback or print
     resolve = lambda value: Path(value) if Path(value).is_absolute() else base_dir / value
     mains = list_media(str(resolve(config.ab_main_folder)), VIDEO_EXTS)
@@ -134,9 +134,6 @@ def process_batch(config, base_dir, log_callback=None, progress_callback=None,
             })
             log(f"\n━━━ 黑猫02·蝴蝶AB [{job}/{total}]: {main.name} + {auxiliary.name} ━━━")
             try:
-                if not task_scope_provider:
-                    raise RuntimeError("缺少服务器签名任务令牌")
-                task_scope_provider()
                 encoder = gpu_encoder() if config.ab_gpu else None
                 duration = _probe_duration(main)
                 command = build_sph34_command(
