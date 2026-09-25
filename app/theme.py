@@ -111,6 +111,18 @@ QLabel#previewHint {
     font-size: 11px;
 }
 
+QLabel#machineTitle {
+    color: #d4dff0;
+    font-size: 10px;
+    font-weight: 700;
+    margin-top: 6px;
+}
+
+QLabel#machineInfo {
+    color: #7f9bc7;
+    font-size: 10px;
+}
+
 /* ══════════════════════════════════════════════════════════════
    GROUP BOX — Section containers with refined headers
    ══════════════════════════════════════════════════════════════ */

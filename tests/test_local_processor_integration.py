@@ -15,6 +15,7 @@ local_engine.detect_gpu_profile = lambda _path: {
     "available": False,
     "vendor": None,
     "vendor_label": "",
+    "gpu_name": "NVIDIA GeForce RTX TEST",
     "warning": "",
 }
 
@@ -29,6 +30,8 @@ page = window._local_processor_page
 assert window._workspace_stack.count() == 4
 assert window._active_channel == "local_processor"
 assert window._workspace_stack.currentWidget() is page
+assert "NVIDIA GeForce RTX TEST" in window._machine_gpu.text()
+assert window._machine_output.text() == "output"
 assert [button.text() for button in window._channel_group.buttons()][:3] == [
     "01   视频处理", "02   蒙版模式", "03   素材拼接",
 ]
