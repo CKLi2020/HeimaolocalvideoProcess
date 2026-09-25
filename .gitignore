@@ -12,6 +12,8 @@ config.json
 成品视频/
 蒙版成品/
 蝴蝶AB成品/
+模板/
+拼接成品/
 build/
 dist-protected/
 app/_flowcut_core.pyd

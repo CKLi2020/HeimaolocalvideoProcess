@@ -164,7 +164,7 @@ class AppConfig:
     tpl_window_feather: int = 200     # 边缘羽化宽度（以 1080 短边为基准的像素数）
 
     # ── 开幕、封面与字幕 ──
-    kaimu_enabled: bool = False
+    kaimu_enabled: bool = True
     kaimu_mode: str = "素材-随机"
     kaimu_speed: int = 100
     cover_enabled: bool = False
@@ -262,7 +262,7 @@ class AppConfig:
             "moving_sticker_enabled": options.get("mover_enabled", True),
             "sticker_enabled": options.get("watermark_enabled", False),
             "scanlight_enabled": options.get("scanlight_enabled", False),
-            "kaimu_enabled": options.get("kaimu_enabled", False),
+            "kaimu_enabled": options.get("kaimu_enabled", True),
             "kaimu_mode": options.get("kaimu_choice", "素材-随机"),
             "line_enabled": options.get("line_enabled", False),
             "line_style_choice": options.get("line_style_choice", "十字-点线"),
