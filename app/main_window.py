@@ -145,18 +145,18 @@ class MainWindow(QMainWindow):
         self._channel_group = QButtonGroup(self)
         self._channel_group.setExclusive(True)
         channels = (
-            ("01", "视频处理", "local_processor"),
-            ("02", "蒙版模式", "hdh"),
-            ("03", "素材拼接", "concat"),
-            ("04", "蝴蝶AB", "butterfly_ab"),
+            ("视频处理", "local_processor"),
+            ("蒙版模式", "hdh"),
+            ("素材拼接", "concat"),
+            ("蝴蝶AB", "butterfly_ab"),
         )
         # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
         # _workspace_stack 里的蝴蝶页、_on_start 的蝴蝶分支都还在原位，只是界面
         # 上没有入口能切过去。要把按钮放回来，
         # 只需把 "butterfly_ab" 从这个集合里删掉。
         hidden_channels = {"butterfly_ab"}
-        for number, name, channel in channels:
-            button = QPushButton(f"{number}   {name}")
+        for name, channel in channels:
+            button = QPushButton(name)
             button.setObjectName("channelButton")
             button.setCheckable(True)
             button.clicked.connect(

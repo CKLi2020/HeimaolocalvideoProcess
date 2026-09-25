@@ -33,7 +33,7 @@ assert window._workspace_stack.currentWidget() is page
 assert "NVIDIA GeForce RTX TEST" in window._machine_gpu.text()
 assert "不支持 GPU 加速" in window._machine_gpu.text()
 assert [button.text() for button in window._channel_group.buttons()][:3] == [
-    "01   视频处理", "02   蒙版模式", "03   素材拼接",
+    "视频处理", "蒙版模式", "素材拼接",
 ]
 assert len(page.service.mode_groups) == 8
 assert page.current_mode is not None
