@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         brand_sub.setObjectName("brandSub")
         header_layout.addWidget(brand_sub)
         header_layout.addStretch()
-        self._status_label = QLabel("● 蒙版通道")
+        self._status_label = QLabel("● 视频处理")
         self._status_label.setObjectName("status")
         header_layout.addWidget(self._status_label)
         root_layout.addWidget(header)
@@ -141,18 +141,18 @@ class MainWindow(QMainWindow):
         channel_layout.addSpacing(18)
         channel_layout.addWidget(QLabel("选择通道"))
 
-        self._active_channel = "hdh"
+        self._active_channel = "local_processor"
         self._channel_group = QButtonGroup(self)
         self._channel_group.setExclusive(True)
         channels = (
-            ("01", "蒙版通道", "hdh"),
-            ("02", "素材拼接", "concat"),
-            ("03", "本地视频处理", "local_processor"),
+            ("01", "视频处理", "local_processor"),
+            ("02", "蒙版模式", "hdh"),
+            ("03", "素材拼接", "concat"),
             ("04", "蝴蝶AB", "butterfly_ab"),
         )
         # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
         # _workspace_stack 里的蝴蝶页、_on_start 的蝴蝶分支都还在原位，只是界面
-        # 上没有入口能切过去（_active_channel 会一直是 hdh）。要把按钮放回来，
+        # 上没有入口能切过去。要把按钮放回来，
         # 只需把 "butterfly_ab" 从这个集合里删掉。
         hidden_channels = {"butterfly_ab"}
         for number, name, channel in channels:
@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
             channel_layout.addWidget(button)
             if channel in hidden_channels:
                 button.setVisible(False)
-            if channel == "hdh":
+            if channel == "local_processor":
                 button.setChecked(True)
         channel_layout.addStretch()
         channel_footer = QLabel("BLACK CAT VIDEO")
@@ -343,6 +343,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([180, 1510])
         root_layout.addWidget(splitter, stretch=1)
+        self._select_channel("local_processor")
 
     def _preview_refresh(self) -> None:
         self._preview.schedule_refresh()
@@ -366,10 +367,10 @@ class MainWindow(QMainWindow):
                 self._resolve(self.config.ab_main_folder)
             )
         status = {
-            "hdh": "● 蒙版通道",
+            "hdh": "● 蒙版模式",
             "butterfly_ab": "● 蝴蝶AB通道",
             "concat": "● 素材拼接",
-            "local_processor": "● 本地视频处理",
+            "local_processor": "● 视频处理",
         }[channel]
         self._set_status(
             status,
@@ -550,7 +551,7 @@ class MainWindow(QMainWindow):
             self._btn_stop.setEnabled(False)
         if success:
             status = "● 素材拼接" if concat else (
-                "● 蝴蝶AB通道" if butterfly else "● 蒙版通道"
+                "● 蝴蝶AB通道" if butterfly else "● 蒙版模式"
             )
             self._set_status(
                 status,
