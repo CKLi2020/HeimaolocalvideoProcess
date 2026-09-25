@@ -1,4 +1,4 @@
-"""授权缝：本地算法实现，替代编译模块 app._flowcut_core 的服务器门禁版本。
+"""授权缝与受保护核心的稳定 Python 调用接口。
 
 背景
 ----
@@ -8,7 +8,9 @@
   - authorized_butterfly_plan  无授权版本，需服务器令牌
   - task_claims           编译期门禁
 
-本模块把它们替换为等价的本地实现，使程序无网络、无卡密也能运行。
+当前版本去掉服务器门禁，但正式发布仍从受 VMProtect 保护的
+``app._flowcut_core`` 执行核心计算。源码调试时由 ``engine.dev_core`` 提供
+等价实现；Nuitka 发布构建明确排除该调试模块。
 
 换新授权服务器时怎么接
 ----------------------
@@ -29,20 +31,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-# 羽化基准画布短边：编译版按 min(w,h)/1080 缩放 feather
-_FEATHER_BASE = 1080.0
-
-# B 素材编码长度（engine/butterfly_ab.py 的 encode_standard(..., 23, ...)），
-# 也是 chunks 的切片上限
-B_CHUNK_MAX = 23.0
-
-# hidden 未指定时的额外长度。源码是硬编码字面量，不是 2/fps —— 虽然 2/30 约
-# 等于它，但非 30fps 时会分叉，故照抄字面量。
-_HIDDEN_EXTRA = 0.0667
-
-# chunks 余量的追加阈值（源码字面量）
-_CHUNK_REMAINDER_MIN = 0.02
-
+from engine.native_core import core as _native_core
 
 def mask_alpha(
     w: int,
@@ -60,26 +49,7 @@ def mask_alpha(
 
     两个 margin 都为 0 时返回空字符串 —— 调用方据此走 null 分支。
     """
-    # 注意：int(feather*scale + 0.5) 是错的 —— 编译版用的是 Python 内置
-    # round() 的银行家舍入，如 540x960 f=5 时 5*540/1080 = 2.5 -> 2（而非 3）。
-    d = max(1, round(feather * min(w, h) / _FEATHER_BASE))
-    off = d / 2
-
-    parts: list[str] = []
-    if margin_lr > 0:
-        parts.append(f"clip((X-W*{margin_lr}+{off})/{d},0,1)")
-        parts.append(f"clip((W*(1-{margin_lr})-X+{off})/{d},0,1)")
-    if margin_tb > 0:
-        parts.append(f"clip((Y-H*{margin_tb}+{off})/{d},0,1)")
-        parts.append(f"clip((H*(1-{margin_tb})-Y+{off})/{d},0,1)")
-
-    if not parts:
-        return ""
-
-    inner = parts[0]
-    for part in parts[1:]:
-        inner = f"min({inner},{part})"
-    return f"255*{inner}"
+    return _native_core.mask_alpha(w, h, feather, margin_tb, margin_lr)
 
 
 def butterfly_plan(
@@ -103,25 +73,7 @@ def butterfly_plan(
         {"hidden": float, "chunks": [float, ...],
          "jump_frame": int, "main_frames": int}
     """
-    if hidden is None:
-        hidden = duration + _HIDDEN_EXTRA
-    else:
-        hidden = float(hidden)
-
-    # 与源码 _butterfly_plan 逐行对应：先放整除个满块，余量超过阈值才追加。
-    # 注意余量恰好落在 0.02 以内时会被丢弃（块总长略短于 hidden），这是
-    # 源码的既有行为，不要「修正」它。
-    chunks = [B_CHUNK_MAX] * int(hidden // B_CHUNK_MAX)
-    remainder = hidden - sum(chunks)
-    if remainder > _CHUNK_REMAINDER_MIN:
-        chunks.append(remainder)
-
-    return {
-        "hidden": hidden,
-        "chunks": chunks,
-        "jump_frame": round((head + hidden) * fps),
-        "main_frames": round(duration * fps),
-    }
+    return _native_core.butterfly_plan(duration, head, hidden, fps)
 
 
 def get_task_scope() -> Optional[dict]:

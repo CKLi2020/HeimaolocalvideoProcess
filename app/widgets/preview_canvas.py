@@ -103,6 +103,13 @@ class PreviewCanvas(QWidget):
             bg_files = list_media(
                 str(self._resolve(self._config.background_folder)), VIDEO_EXTS
             )
+            if self._config.tpl_pick == "固定" and self._config.tpl_fixed:
+                fixed = next(
+                    (path for path in bg_files if path.name == self._config.tpl_fixed),
+                    None,
+                )
+                if fixed is not None:
+                    bg_files = [fixed]
 
         if not main_files and not bg_files:
             self.show_placeholder()

@@ -287,6 +287,36 @@ QCheckBox::indicator:checked {
     image: url(resources/check.svg);
 }
 
+/* ── 单选来源：高对比卡片 + 明显的圆点 ── */
+QRadioButton {
+    color: #c5d2e8;
+    background: #172640;
+    border: 1px solid #345080;
+    border-radius: 7px;
+    padding: 6px 8px;
+    spacing: 6px;
+}
+
+QRadioButton:checked {
+    color: #ffffff;
+    background: #1e3a6e;
+    border-color: #60a5fa;
+    font-weight: 700;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    background: #081225;
+    border: 2px solid #6f8fbd;
+    border-radius: 9px;
+}
+
+QRadioButton::indicator:checked {
+    background: #60a5fa;
+    border: 3px solid #dbeafe;
+}
+
 /* ══════════════════════════════════════════════════════════════
    BUTTON SYSTEM — 5-tier hierarchy
    ══════════════════════════════════════════════════════════════ */
@@ -399,8 +429,8 @@ QPushButton[flat="true"]:pressed {
 
 /* ── Tier 4: Browse / compact button ── */
 QPushButton#browse {
-    min-width: 54px;
-    padding: 5px 12px;
+    min-width: 0;
+    padding: 5px 8px;
     font-size: 11px;
     border-radius: 6px;
     background: #192844;

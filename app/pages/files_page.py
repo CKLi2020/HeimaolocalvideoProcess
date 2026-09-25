@@ -31,10 +31,7 @@ class FilesPage(QWidget):
         root_layout.setSpacing(16)
 
         # ── 文件夹 ──
-        # 这一栏只剩两行（主素材、输出），全是整批跑之前必填的路径，所以按用户的
-        # 要求刻意撑开：整块占满左栏上方给它的高度，两行之间距离拉大。
-        # 拉开**不用写死间距**，而是两行之间插一个可伸缩的空档，框的富余高度全灌
-        # 进这里 —— 以后改框高或换分辨率，「更远一点」自己会跟着变，不会又挤回去。
+        # 只有两行可见路径，分组框保持紧凑，把纵向空间留给处理日志。
         folder_group = QGroupBox("文件夹设置")
         folder_form = QFormLayout(folder_group)
         folder_form.setHorizontalSpacing(10)
@@ -44,8 +41,8 @@ class FilesPage(QWidget):
         spreader = QWidget()
         spreader.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         spreader.setMinimumHeight(28)
-        folder_group.setMinimumHeight(300)
-        folder_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        folder_group.setFixedHeight(230)
+        folder_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         # 框底也留一点，别让最后一行贴着下边缘。给了上限：富余高度优先灌进中间
         # 那个空档（用户要的是「两行离得更远」），框底只留到看着不挤为止。
         bottom_pad = QWidget()
@@ -80,9 +77,7 @@ class FilesPage(QWidget):
             if key in hidden_rows:
                 folder_form.setRowVisible(row, False)
 
-        # 整块占满左栏留给它的高度（不给 root_layout 加弹簧：加了富余高度就全被
-        # 弹簧吃掉，这一块又缩回顶上一条，空档白设了）。
-        root_layout.addWidget(folder_group, 1)
+        root_layout.addWidget(folder_group)
 
     def _set_folder(self, key: str, value: str) -> None:
         setattr(self.config, key, value)

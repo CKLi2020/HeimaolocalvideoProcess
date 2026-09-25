@@ -17,6 +17,7 @@ from typing import Callable, Optional
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -55,8 +57,8 @@ class TemplatePage(QWidget):
         root_layout = QVBoxLayout(inner)
         root_layout.setSpacing(16)
 
-        # ── 模板库 ──
-        lib_group = QGroupBox("模板库")
+        # ── 背景素材库 ──
+        lib_group = QGroupBox("背景素材")
         lib_form = QFormLayout(lib_group)
         lib_form.setSpacing(10)
 
@@ -70,15 +72,29 @@ class TemplatePage(QWidget):
         lib_form.addRow("模板文件夹", self._folder_row)
         self._rows["tpl_folder"] = self._folder_row
 
+        self._aux_folder_row = FolderRow(
+            placeholder="选择辅助视频文件夹...",
+            initial=str(getattr(config, "background_folder", "")),
+        )
+        self._aux_folder_row.path_changed.connect(
+            lambda v: self._on_aux_folder_changed(v)
+        )
+        lib_form.addRow("辅助视频文件夹", self._aux_folder_row)
+        self._rows["background_folder"] = self._aux_folder_row
+
+        self._source_row = SourceChoiceRow(
+            template_enabled=bool(getattr(config, "tpl_enabled", False))
+        )
+        self._source_row.value_changed.connect(self._on_source_changed)
+        lib_form.addRow("启用来源", self._source_row)
+        self._rows["tpl_enabled"] = self._source_row
+
         # 两种选法：随机（每条片子换一张）/ 固定（整批都用同一张，自己挑）。
         # 老的「顺序」已去掉；配置里若还留着这个值，下面 _normalize_pick 会把它
         # 归成「随机」，免得下拉显示的和引擎实际做的不是一回事。
         self._normalize_pick()
 
-        lib_params = [
-            ("启用模板", "tpl_enabled", "bool"),
-            ("选择方式", "tpl_pick", "combo:随机,固定"),
-        ]
+        lib_params = [("选择方式", "tpl_pick", "combo:随机,固定")]
         for label, key, ptype in lib_params:
             row = ParamRow(label, ptype, getattr(config, key))
             row.value_changed.connect(
@@ -87,16 +103,16 @@ class TemplatePage(QWidget):
             lib_form.addRow(row)
             self._rows[key] = row
 
-        # 固定模板：只显示文件名 + 一个「选择」按钮，按钮从模板文件夹里挑。
+        # 固定素材：从当前启用的模板/辅助视频文件夹里挑。
         self._fixed_row = TemplateChoiceRow(
             placeholder="未选择（点右侧「选择」）",
             current=str(getattr(config, "tpl_fixed", "")),
-            folder_getter=self._resolve_folder,
+            folder_getter=self._resolve_active_folder,
         )
         self._fixed_row.value_changed.connect(
             lambda v: self._on_fixed_changed(v)
         )
-        lib_form.addRow("固定模板", self._fixed_row)
+        lib_form.addRow("固定素材", self._fixed_row)
         self._rows["tpl_fixed"] = self._fixed_row
 
         # 固定项失效（模板被删或改名）时出片会**静默**退回随机，用户只会觉得
@@ -111,6 +127,7 @@ class TemplatePage(QWidget):
         # ── 中央窗口 ──
         # 全局默认值：所有模板共用这一套窗口几何。
         win_group = QGroupBox("中央窗口（全局，所有模板共用）")
+        self._win_group = win_group
         win_form = QFormLayout(win_group)
         win_form.setSpacing(10)
 
@@ -138,12 +155,20 @@ class TemplatePage(QWidget):
 
         self.reload_templates()
         self._update_fixed_enabled()
+        self._win_group.setEnabled(bool(self.config.tpl_enabled))
 
     # ── 模板目录与固定模板 ──
 
     def _resolve_folder(self) -> Path:
         folder = Path(str(getattr(self.config, "tpl_folder", "")))
         return folder if folder.is_absolute() else self._root / folder
+
+    def _resolve_aux_folder(self) -> Path:
+        folder = Path(str(getattr(self.config, "background_folder", "")))
+        return folder if folder.is_absolute() else self._root / folder
+
+    def _resolve_active_folder(self) -> Path:
+        return self._resolve_folder() if self.config.tpl_enabled else self._resolve_aux_folder()
 
     def _normalize_pick(self) -> None:
         """把不认识的选择方式归成「随机」。
@@ -156,6 +181,15 @@ class TemplatePage(QWidget):
 
     def _on_folder_changed(self, value: str) -> None:
         _setattr(self.config, "tpl_folder", value)
+        self.reload_templates()
+
+    def _on_aux_folder_changed(self, value: str) -> None:
+        _setattr(self.config, "background_folder", value)
+        self.reload_templates()
+
+    def _on_source_changed(self, template_enabled: bool) -> None:
+        _setattr(self.config, "tpl_enabled", template_enabled)
+        self._win_group.setEnabled(template_enabled)
         self.reload_templates()
 
     def _on_param_changed(self, key: str, value) -> None:
@@ -181,17 +215,17 @@ class TemplatePage(QWidget):
             return
         name = str(getattr(self.config, "tpl_fixed", "") or "")
         if not name:
-            self._fixed_hint.setText("还没选模板，出片时会随机挑一张。")
+            self._fixed_hint.setText("还没选素材，出片时会随机挑一个。")
         elif not self._fixed_row.available:
             # 列表还没扫（构造顺序）时不下结论，避免误报「不在文件夹里」。
             self._fixed_hint.setText("")
         elif name not in self._fixed_row.available:
             self._fixed_hint.setText(
-                f"「{name}」不在模板文件夹里（可能已删除或改名），"
+                f"「{name}」不在当前素材文件夹里（可能已删除或改名），"
                 "出片时会退回随机选择。"
             )
         else:
-            self._fixed_hint.setText("整批片子都用这一张。")
+            self._fixed_hint.setText("整批片子都用这一个素材。")
 
     def reload_templates(self) -> None:
         """重扫模板目录：更新可选项，并核对已选的那张还在不在。"""
@@ -199,7 +233,10 @@ class TemplatePage(QWidget):
 
         # 和引擎同一套加载逻辑（同一个清单参数），所以这里认为「在库里」的
         # 与出片时真能挑到的一模一样。
-        library = load_library(self._resolve_folder(), self.config.tpl_manifest)
+        library = load_library(
+            self._resolve_active_folder(),
+            self.config.tpl_manifest if self.config.tpl_enabled else "",
+        )
         self._fixed_row.set_available(sorted(spec.path.name for spec in library.specs))
         self._fixed_hint.setText("")  # 先清掉，_refresh_fixed_hint 会重算
         self._refresh_fixed_hint()
@@ -211,8 +248,30 @@ class TemplatePage(QWidget):
         self.reload_templates()
 
 
+class SourceChoiceRow(QWidget):
+    """模板/辅助视频二选一。"""
+
+    value_changed = Signal(object)
+
+    def __init__(self, template_enabled: bool, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.template = QRadioButton("启用模板")
+        self.auxiliary = QRadioButton("启用辅助视频")
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.group.addButton(self.template)
+        self.group.addButton(self.auxiliary)
+        layout.addWidget(self.template)
+        layout.addWidget(self.auxiliary)
+        self.template.setChecked(template_enabled)
+        self.auxiliary.setChecked(not template_enabled)
+        self.template.toggled.connect(self.value_changed.emit)
+
+
 class TemplateChoiceRow(QWidget):
-    """「固定模板」：只显示**文件名** + 一个「选择」按钮。
+    """「固定素材」：只显示**文件名** + 一个「选择」按钮。
 
     为什么不是下拉：模板可能有几十个、名字又长（`01_无向日葵浅色鲜花动态背景_粉色玫瑰_10秒.mp4`），
     下拉里翻起来比在文件夹里看缩略图还难认。所以按用户的要求给一个按钮，
@@ -234,6 +293,7 @@ class TemplateChoiceRow(QWidget):
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
+        self.setMinimumHeight(40)
         self._placeholder = placeholder
         self._value = str(current or "")
         self._available: list[str] = []
@@ -247,12 +307,12 @@ class TemplateChoiceRow(QWidget):
         self.edit = QLineEdit()
         self.edit.setReadOnly(True)
         self.edit.setPlaceholderText(placeholder)
-        self.edit.setToolTip("点右边的「选择」，从模板文件夹里挑一张")
+        self.edit.setToolTip("点右边的「选择」，从当前启用的素材文件夹里挑")
         layout.addWidget(self.edit, stretch=1)
 
         self.button = QPushButton("选择")
         self.button.setObjectName("browse")
-        self.button.setFixedWidth(56)
+        self.button.setFixedWidth(64)
         self.button.clicked.connect(self._browse)
         layout.addWidget(self.button)
 
@@ -271,7 +331,7 @@ class TemplateChoiceRow(QWidget):
         # 的事，归 TemplatePage._update_fixed_enabled 管。
         self.button.setEnabled(bool(names))
         self.edit.setPlaceholderText(
-            self._placeholder if names else "模板文件夹里没有视频"
+            self._placeholder if names else "当前素材文件夹里没有视频"
         )
 
     # ── 取值 ──
@@ -293,7 +353,7 @@ class TemplateChoiceRow(QWidget):
 
     def _browse(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(
-            self, "选择模板", str(self._folder_getter()), _video_filter(),
+            self, "选择素材", str(self._folder_getter()), _video_filter(),
         )
         if not chosen:
             return
@@ -301,10 +361,10 @@ class TemplateChoiceRow(QWidget):
         if name is None:
             QMessageBox.warning(
                 self,
-                "模板不在这里",
-                f"模板只能从模板文件夹里选：\n{self._folder_getter()}\n\n"
+                "素材不在这里",
+                f"素材只能从当前启用的文件夹里选：\n{self._folder_getter()}\n\n"
                 f"把「{Path(chosen).name}」放进这个文件夹，"
-                "或改上面的「模板文件夹」。",
+                "或改上面对应的素材文件夹。",
             )
             return
         self.value = name

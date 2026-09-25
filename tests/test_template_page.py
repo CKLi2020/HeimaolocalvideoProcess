@@ -1,4 +1,4 @@
-"""「模板」页：清单文件已从界面消失，选法只剩随机/固定，固定那张靠按钮挑。"""
+"""「模板」页：模板/辅助视频二选一，两者共用随机/固定选法。"""
 
 from __future__ import annotations
 
@@ -31,11 +31,26 @@ files_page = window._files_page
 page = window._pages["模板"]
 config = window.config
 row = page._fixed_row
+source = page._source_row
+
+assert (
+    config.tpl_window_w,
+    config.tpl_window_h,
+    config.tpl_window_center_x,
+    config.tpl_window_center_y,
+    config.tpl_window_feather,
+) == (80, 100, 50, 50, 200)
 
 # ── 左侧的「贴纸文件夹」整行去掉（「移动贴图文件夹」上一轮已挪走） ──
 assert "sticker_folder" not in files_page._rows, files_page._rows.keys()
 assert "moving_sticker_folder" not in files_page._rows
 assert "main_folder" in files_page._rows and "output_folder" in files_page._rows
+assert "tpl_folder" in page._rows and "background_folder" in page._rows
+
+# ── 模板/辅助视频必须互斥，默认启用模板 ──
+assert source.template.isChecked() and not source.auxiliary.isChecked()
+assert config.tpl_enabled
+assert page._win_group.isEnabled()
 
 # ── 模板页：清单文件名那一行没了 ──
 assert "tpl_manifest" not in page._rows, page._rows.keys()
@@ -62,7 +77,13 @@ assert row.button.text() == "选择"
 with TemporaryDirectory() as tmp:
     tmp = Path(tmp)
     tpl = _make_templates(tmp, ["甲.mp4", "乙.mp4", "丙.mp4"])
+    aux = tmp / "辅助视频"
+    aux.mkdir()
+    for name in ("背景甲.mp4", "背景乙.mp4"):
+        (aux / name).write_bytes(b"\x00" * 16)
     config.tpl_folder = str(tpl)
+    config.background_folder = str(aux)
+    source.template.setChecked(True)
     page.reload_templates()
 
     # 选项来自磁盘：对话框里能挑到的就是这些
@@ -83,9 +104,25 @@ with TemporaryDirectory() as tmp:
     # ── 选中即写进 config，且只显示文件名、不显示路径 ──
     row.value = row.resolve_choice(str(tpl / "乙.mp4"))
     assert config.tpl_fixed == "乙.mp4", config.tpl_fixed
+
+    # ── 切到辅助视频：互斥状态、库列表、随机/固定全部共用 ──
+    source.auxiliary.setChecked(True)
+    assert source.auxiliary.isChecked() and not source.template.isChecked()
+    assert not config.tpl_enabled
+    assert not page._win_group.isEnabled(), "辅助视频不使用模板中央窗口"
+    assert sorted(row.available) == ["背景乙.mp4", "背景甲.mp4"], row.available
+    config.tpl_pick = "固定"
+    page._update_fixed_enabled()
+    row.value = row.resolve_choice(str(aux / "背景乙.mp4"))
+    assert config.tpl_fixed == "背景乙.mp4"
+    assert "都用这一个素材" in page._fixed_hint.text()
+
+    # 切回模板后依然只能从模板目录挑。
+    source.template.setChecked(True)
+    row.value = "乙.mp4"
     assert row.edit.text() == "乙.mp4", row.edit.text()
     assert str(tmp) not in row.edit.text(), row.edit.text()
-    assert "都用这一张" in page._fixed_hint.text(), page._fixed_hint.text()
+    assert "都用这一个素材" in page._fixed_hint.text(), page._fixed_hint.text()
 
     # 这一行也要参与实时预览（和 ParamRow 一样靠 value_changed 被连上）
     assert window._preview._debounce.isActive(), "固定模板改动没有触发预览刷新"
@@ -114,7 +151,7 @@ with TemporaryDirectory() as tmp:
     # ── 固定项被删掉了：当场说明会退回随机，位置留着让人看见是哪张没了 ──
     (tpl / "乙.mp4").unlink()
     page.reload_templates()
-    assert "不在模板文件夹里" in page._fixed_hint.text(), page._fixed_hint.text()
+    assert "不在当前素材文件夹里" in page._fixed_hint.text(), page._fixed_hint.text()
     assert row.value == "乙.mp4", row.value   # 不改配置，用户可能只是改了个名
     library = load_library(config.tpl_folder, config.tpl_manifest)
     assert not library.has("乙.mp4")
@@ -131,4 +168,4 @@ with TemporaryDirectory() as tmp:
     assert config.tpl_fixed == "乙.mp4", config.tpl_fixed
 
 window.close()
-print(f"template page test: OK (清单行已去掉，选法={options})")
+print(f"template page test: OK (模板/辅助视频互斥，选法={options})")

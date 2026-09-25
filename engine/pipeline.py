@@ -198,6 +198,9 @@ def process_batch(
             and not templates.has(config.tpl_fixed)
         ):
             log(f"[警告] 固定模板「{config.tpl_fixed}」不在模板库里，改为随机选择")
+    elif config.tpl_pick == "固定" and config.tpl_fixed:
+        if not any(path.name == config.tpl_fixed for path in backgrounds):
+            log(f"[警告] 固定辅助视频「{config.tpl_fixed}」不在素材库里，改为随机选择")
 
     if not mains:
         log("[错误] 主素材文件夹中没有视频文件")
@@ -285,7 +288,11 @@ def process_batch(
                         exhausted_logged = True
                     background = None
                 else:
-                    background = random.choice(backgrounds)
+                    fixed = next(
+                        (path for path in backgrounds if path.name == config.tpl_fixed),
+                        None,
+                    ) if config.tpl_pick == "固定" else None
+                    background = fixed or random.choice(backgrounds)
 
             sticker_files: list[Path] = []
             if config.sticker_enabled:

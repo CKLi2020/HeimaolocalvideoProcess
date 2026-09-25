@@ -51,14 +51,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 
+from engine.native_core import core as _native_core
+
 # 窗口字段：清单 defaults 与每模板覆盖都只认这 5 个
 WINDOW_FIELDS = ("window_center_x", "window_center_y", "window_w", "window_h",
                  "window_feather")
-
-# 羽化宽度的基准短边。与 engine.auth.mask_alpha 用同一个基准，用户只需记一个
-# 概念：这里的 feather 填的就是「1080 短边的画面上的像素数」。
-_FEATHER_BASE = 1080
-
 
 @dataclass(frozen=True)
 class Window:
@@ -108,25 +105,11 @@ def window_matte(window: Window, canvas: tuple[int, int]) -> WindowMatte:
     对齐也不会因为黑边而整体错位。
     """
     cw, ch = canvas
-    d = max(1, round(window.feather * min(cw, ch) / _FEATHER_BASE))
-
-    left = cw * (window.center_x - window.width / 2) / 100
-    top = ch * (window.center_y - window.height / 2) / 100
-    box_w = max(1, round(cw * window.width / 100))
-    box_h = max(1, round(ch * window.height / 100))
-
-    def axis(size: str, value: float, span: int) -> str:
-        delta = value - span / 2
-        return f"{size}/2{'+' if delta >= 0 else '-'}{abs(delta):g}"
-
-    # 半径 r 的单次 boxblur 给出 2r+1 像素的线性过渡带，与羽化宽度 d 对齐
-    blur = max(1, round((d - 1) / 2))
-    return WindowMatte(chain=(
-        "format=gray,lutyuv=y=0,"
-        f"drawbox=x={axis('iw', left, cw)}:y={axis('ih', top, ch)}:"
-        f"w={box_w}:h={box_h}:color=white:t=fill,"
-        "lutyuv=y='if(gt(val,128),255,0)',"
-        f"boxblur={blur}:1"
+    return WindowMatte(chain=_native_core.window_matte_chain(
+        cw, ch,
+        window.center_x, window.center_y,
+        window.width, window.height,
+        window.feather,
     ))
 
 

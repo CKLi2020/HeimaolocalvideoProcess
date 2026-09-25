@@ -19,7 +19,14 @@ $SdkLibrary = Join-Path $VmProtectDir "Lib\Windows\MinGW\VMProtectSDK64.a"
 foreach ($path in @($Source, $VmProtect, $SdkLibrary)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Native dependency not found: $path" }
 }
-if (-not (Get-Command gcc.exe -ErrorAction SilentlyContinue)) { throw "64-bit gcc.exe not found" }
+$Gcc = (Get-Command gcc.exe -ErrorAction SilentlyContinue).Source
+if (-not $Gcc) {
+    $NuitkaGccRoot = Join-Path $env:LOCALAPPDATA "Nuitka\Nuitka\Cache\downloads\gcc"
+    $Gcc = Get-ChildItem -LiteralPath $NuitkaGccRoot -Filter gcc.exe -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object FullName -Match 'mingw64\\bin\\gcc\.exe$' |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $Gcc) { throw "64-bit gcc.exe not found (PATH or Nuitka cache)" }
 & $Python -c "import Cython"
 if ($LASTEXITCODE -ne 0) { throw "Cython is required" }
 
@@ -30,19 +37,17 @@ New-Item -ItemType Directory -Force -Path $Build | Out-Null
 & $Python -m cython -3 --module-name app._flowcut_core -o $Generated $Source
 if ($LASTEXITCODE -ne 0) { throw "Cython generation failed" }
 
-& gcc.exe -shared -O1 -fno-crossjumping -fno-ipa-icf -fno-reorder-blocks-and-partition `
+& $Gcc -shared -O1 -fno-crossjumping -fno-ipa-icf -fno-reorder-blocks-and-partition `
     -DMS_WIN64=1 -D_M_X64=1 `
     "-I$PythonInclude" "-I$SdkInclude" $Generated `
     "-L$PythonLib" -lpython39 $SdkLibrary -o $Raw
 if ($LASTEXITCODE -ne 0) { throw "Native compilation failed" }
 
 $markers = @(
-    "FCNATIVE:license.sign",
-    "FCNATIVE:license.verify",
-    "FCNATIVE:mask.alpha",
-    "FCNATIVE:task.verify",
-    "FCNATIVE:mask.authorized",
-    "FCNATIVE:butterfly.authorized"
+    "FCALGO:mask.alpha",
+    "FCALGO:butterfly.plan",
+    "FCALGO:template.window",
+    "FCALGO:concat.segment"
 ) | ForEach-Object {
     "      <Procedure MapAddress=`"VMProtectMarker &quot;$_&quot;`" IncludedInCompilation=`"true`" Options=`"1`" CompilationType=`"2`"/>"
 }
@@ -65,14 +70,12 @@ $xml = (@(
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Protected)) {
     throw "VMProtect native protection failed"
 }
-Copy-Item -LiteralPath $Protected -Destination $Output -Force
-
-Push-Location $Root
+& $Python -c "import importlib.util; p=r'$Protected'; s=importlib.util.spec_from_file_location('_flowcut_core',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert m.mask_alpha(1080,1920,20,.05,0); assert m.butterfly_plan(60,2)['main_frames']==1800; assert 'drawbox=' in m.window_matte_chain(1080,1920,50,50,80,100,200); assert len(m.concat_filter_segment(0,1,False,1080,1920,30))==2"
+if ($LASTEXITCODE -ne 0) { throw "Protected native module import test failed" }
 try {
-    & $Python -c "from app._flowcut_core import mask_alpha; assert mask_alpha(1080, 1920, 20, .05, 0)"
-    if ($LASTEXITCODE -ne 0) { throw "Protected native module import test failed" }
+    Copy-Item -LiteralPath $Protected -Destination $Output -Force
 }
-finally {
-    Pop-Location
+catch {
+    throw "Cannot replace $Output. Close the running app/Python process that loaded it, then build again."
 }
 Write-Host "Protected native core: $Output" -ForegroundColor Green

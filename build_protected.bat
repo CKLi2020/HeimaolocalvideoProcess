@@ -10,10 +10,10 @@ if not exist "%BUILD_PYTHON%" (
   exit /b 1
 )
 
-"%BUILD_PYTHON%" -c "import Cython, nuitka, PySide6, cryptography" >nul 2>&1
+"%BUILD_PYTHON%" -c "import Cython, nuitka, PySide6" >nul 2>&1
 if errorlevel 1 (
   echo ERROR: Python 3.9 is missing a build dependency.
-  echo Run: "%BUILD_PYTHON%" -m pip install Cython Nuitka PySide6 cryptography
+  echo Run: "%BUILD_PYTHON%" -m pip install Cython Nuitka PySide6
   pause
   exit /b 1
 )
@@ -27,5 +27,6 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Build completed.
+echo Core-protected standalone build completed.
+echo Protect the release EXE with SProtect, then run finalize_sprotect_release.bat.
 pause

@@ -1,234 +1,273 @@
-# 黑猫@苍狼：构建、加壳与授权保护流程
+# 月落@苍狼：核心保护与正式打包说明
 
-> **状态（YanJingwenhua 分支起）：本文部分章节已失效。**
-> 服务器授权（卡密登录、短期任务令牌、编译模块内的算法门禁）已从程序中移除，
-> 详见 `SECURITY.md`。下列章节**仅作历史存档**，不要照此理解当前构建：
-> **§4 原生核心编译、§5 原生核心保护范围、§8 运行时服务器授权、
-> §9 短期任务令牌**，以及 §1 中与之相关的条目、§6 的打包清单、§11 的检查项。
-> 仍然成立的是：§2 版本号、§3 构建入口、§6 的 Nuitka 主程序编译、
-> §7 最终 EXE 加壳、§10 本地数据与成品视频、§12 安全边界（结论部分）。
+本文说明核心算法是怎样保护的，以及每次发布时应该怎样打包。正式发布只需要按“正式打包步骤”操作。
 
-## 1. 当前结论
+## 一、保护方案
 
-当前（YanJingwenhua 分支起）默认运行 `build_protected.bat` 构建时，成品会经过以下保护：
+整体流程如下：
 
-1. Python 主程序使用 Nuitka 编译为 Windows onefile EXE。
-2. 最终 EXE 的入口点再次使用 VMProtect 保护。
-
-原方案还包含「Cython 编译原生 `.pyd` + 该模块内的 VMProtect Ultra 虚拟化 +
-每次批量处理前向服务器申请短期 Ed25519 签名任务令牌」三层，已随服务器授权一并
-移除（见 §1 之后的存档章节）。
-
-当前方案是“Nuitka 编译 + VMProtect 加壳”，不能理解为源码和运行数据绝对不可逆的整体加密。
-
-## 2. 唯一版本配置
-
-版本号在项目根目录的 `version.py` 中配置：
-
-```python
-APP_NAME = "黑猫@苍狼"
-APP_VERSION = "1.0.0"
+```text
+核心算法 flowcut_core.pyx
+        ↓ Cython 编译
+_flowcut_core.raw.pyd
+        ↓ VMProtect Ultra 虚拟化
+app/_flowcut_core.pyd
+        ↓ Nuitka standalone 打包
+月落@苍狼_V版本.exe + 运行依赖
+        ↓ 手工使用 SProtect
+最终发布 EXE
 ```
 
-构建脚本会将该版本同步用于：
+### 1. 原生核心
 
-- 主窗口标题；
-- Windows EXE 的文件版本和产品版本；
-- 成品文件名，例如 `黑猫@苍狼_V1.0.0.exe`。
+核心源码位于：
 
-## 3. 默认构建入口
+```text
+native_src/flowcut_core.pyx
+```
 
-发布时运行：
+当前放入原生核心的内容：
+
+| VMProtect 标记 | 保护内容 |
+|---|---|
+| `FCALGO:mask.alpha` | 蒙版 Alpha 和羽化表达式 |
+| `FCALGO:butterfly.plan` | 蝴蝶 AB 分段计划 |
+| `FCALGO:template.window` | 模板中央窗口计算 |
+| `FCALGO:concat.segment` | 素材拼接滤镜参数 |
+
+`scripts/build_native.ps1` 会完成以下工作：
+
+1. 用 Cython 把 `.pyx` 转为 C；
+2. 用 64 位 MinGW GCC 编译成 `.pyd`；
+3. 用 VMProtect Ultimate 对上述四个标记区域进行 Ultra 虚拟化；
+4. 导入保护后的 `.pyd` 并调用四组算法做冒烟测试；
+5. 测试通过后复制到 `app/_flowcut_core.pyd`。
+
+只要编译、VMProtect 或冒烟测试中任意一步失败，正式打包就会停止。
+
+### 2. 调试版与发布版的区别
+
+源码运行时可以使用 `engine/dev_core.py` 中的等价算法，方便开发和测试。
+
+正式 Nuitka 构建使用：
+
+```text
+--nofollow-import-to=engine.dev_core
+```
+
+因此调试算法不会被放进发布目录。发布版如果找不到正确版本的 `_flowcut_core.pyd`，会直接报错，不会退回 Python 明文算法。
+
+### 3. 外层程序
+
+Nuitka 使用 standalone 模式生成完整程序目录。这里不再给外层 EXE 套 VMProtect，因为最终外层由 SProtect 处理，避免重复加壳造成启动或兼容问题。
+
+## 二、打包前准备
+
+正式打包前确认电脑已经安装：
+
+- Python 3.9；
+- Cython、Nuitka、PySide6；
+- VMProtect Ultimate，并包含 SDK；
+- FFmpeg 和 FFprobe；
+- SProtect。
+
+Python 依赖缺失时运行：
+
+```bat
+%LocalAppData%\Programs\Python\Python39\python.exe -m pip install Cython Nuitka PySide6
+```
+
+项目默认使用：
+
+```text
+C:\Program Files (x86)\VMProtect Ultimate
+```
+
+GCC 优先从系统 PATH 查找；没有配置 PATH 时，脚本会自动查找 Nuitka 下载的 64 位 GCC。
+
+## 三、正式打包步骤
+
+### 第 1 步：关闭正在运行的软件
+
+先关闭“月落@苍狼”和从本项目启动的 Python 窗口。
+
+Windows 在程序运行时会锁定 `_flowcut_core.pyd`。如果没有关闭，构建时会提示：
+
+```text
+Cannot replace ... _flowcut_core.pyd
+```
+
+### 第 2 步：确认名称和版本
+
+打开根目录的 `version.py`：
+
+```python
+APP_NAME = "月落@苍狼"
+APP_VERSION = "1.2.0"
+```
+
+准备发布新版本时只修改 `APP_VERSION`。版本格式使用三段或四段数字，例如 `1.2.1`。
+
+### 第 3 步：生成核心已保护的 standalone 包
+
+双击运行：
+
+```text
+build_protected.bat
+```
+
+也可以在项目根目录的命令行运行：
 
 ```bat
 build_protected.bat
 ```
 
-该批处理会调用：
+脚本会自动完成：
 
-```powershell
-scripts\build_protected.ps1
-```
+1. 编译原生核心；
+2. 用 VMProtect Ultra 保护核心；
+3. 测试保护后的核心；
+4. 使用 Nuitka 生成 standalone 程序；
+5. 复制 FFmpeg、资源文件和工作目录。
 
-默认构建不会跳过 VMProtect。如果 VMProtect、Cython、GCC、Nuitka 或原生依赖缺失，构建会直接失败，不会静默生成未保护版本。
-
-`scripts\build_protected.ps1` 提供了开发用的 `-SkipVmProtect` 参数。手动使用该参数时，最终 EXE 不会执行最后一层 VMProtect 入口保护，因此不能作为正式发布包。
-
-## 4. 第一层：原生核心编译（历史存档，当前构建不再执行）
-
-`scripts\build_native.ps1` 执行以下流程：
+成功后生成：
 
 ```text
-native_src\flowcut_core.pyx
-        ↓ Cython
-临时 flowcut_core.c
-        ↓ GCC 编译
-_flowcut_core.raw.pyd
-        ↓ VMProtect Ultra
-app\_flowcut_core.pyd
+dist-protected\月落@苍狼_V1.2.0\
 ```
 
-原生模块生成后会立即执行导入和函数调用测试。测试失败时，整个正式构建终止。
-
-原生核心没有 Python 回退实现。缺少或破坏 `app\_flowcut_core.pyd` 时，授权模块和受保护处理流程无法正常运行。
-
-> **已失效（YanJingwenhua 分支起）**：`build_protected.ps1` 不再调用
-> `build_native.ps1`，也不再打包 `app\_flowcut_core.pyd`。上面的「没有 Python
-> 回退」不再成立——引擎改用 `engine/auth.py` 的纯 Python 实现
-> （`mask_alpha` / `butterfly_plan`），**不存在** `.pyd` 缺失即无法运行的情况。
-> `native_src\flowcut_core.pyx` 与 `scripts\build_native.ps1` 保留在仓库中，
-> 前者仍是算法的权威规格，需要时可单独运行后者。
-
-## 5. 原生核心保护范围（历史存档，当前构建不再执行）
-
-以下关键区域使用 `VMProtectBeginUltra` / `VMProtectEnd` 标记，并由构建脚本配置为 VMProtect Ultra 虚拟化：
-
-| 标记 | 作用 |
-|---|---|
-| `FCNATIVE:license.sign` | 授权请求 HMAC 签名 |
-| `FCNATIVE:license.verify` | Ed25519 服务器响应验签 |
-| `FCNATIVE:mask.alpha` | 蒙版 Alpha/羽化表达式计算 |
-| `FCNATIVE:task.verify` | 短期任务令牌验签与作用域校验 |
-| `FCNATIVE:mask.authorized` | 验证令牌后生成蒙版处理参数 |
-| `FCNATIVE:butterfly.authorized` | 验证令牌后生成蝴蝶 AB 隐藏段和关键帧计划 |
-
-其中蒙版通道与蝴蝶 AB 通道的关键处理计划，不依赖 Python 层传入一个简单的 `True/False` 放行值。
-
-## 6. 第二层：Nuitka 主程序编译
-
-原生核心生成后，`scripts\build_protected.ps1` 使用 Nuitka：
-
-- `--standalone --onefile` 编译并封装 Python 主程序；
-- 打包 PySide6（**原先还打包 Cryptography 与 `app._flowcut_core`，已移除**）；
-- 打包图标和运行资源；
-- 关闭 Windows 控制台窗口；
-- 写入产品名称、描述和版本信息。
-
-Nuitka 会把 Python 程序编译为 C/C++ 级别的可执行程序并封装依赖。onefile 封装和压缩本身不等于密码学加密，但比直接分发 `.py` 或普通 PyInstaller 字节码更难直接还原。
-
-中间产物位于：
+里面的外层启动器是：
 
 ```text
-build\protected\BlackCatFlowCut.nuitka.exe
+月落@苍狼_V1.2.0.exe
 ```
 
-该文件还不是最终发布文件。
+此时原生核心已经保护，但外层 EXE 还没有经过 SProtect。
 
-## 7. 第三层：最终 EXE 加壳
+### 第 4 步：使用 SProtect 保护外层 EXE
 
-Nuitka 构建完成后，脚本自动生成 VMProtect 项目文件，并使用 VMProtect 保护 EXE 入口点：
+在 SProtect 中选择发布目录里的启动器：
 
 ```text
-BlackCatFlowCut.nuitka.exe
-        ↓ VMProtect
-dist-protected\黑猫@苍狼_V<版本号>.exe
+dist-protected\月落@苍狼_V1.2.0\月落@苍狼_V1.2.0.exe
 ```
 
-脚本会检查 VMProtect 返回码和最终文件是否存在。保护失败时构建终止。
+不要选择 `build` 目录里的中间文件，也不要单独处理 `_flowcut_core.pyd`；核心 `.pyd` 已经由 VMProtect 处理完成。
 
-当前最终 EXE 层保护的是入口点。（原方案在这里还有一句「关键业务函数的更强虚拟化
-保护位于前面的原生 `.pyd` 层」——该层已移除，所以**当前成品只有 EXE 入口点这一层
-VMProtect 保护**。）
-
-## 8. 运行时服务器授权（历史存档，当前版本无网络授权）
-
-应用 ID 为：
+按照现有 SProtect 配置执行保护，并把输出放回同一个发布目录，名称必须是：
 
 ```text
-blackcat-flowcut
+月落@苍狼_V1.2.0.sp.exe
 ```
 
-客户端授权请求包含：
+如果 SProtect 自动生成了其他名称，手动改成上面的 `.sp.exe` 名称。
 
-- 卡密；
-- 设备码；
-- 设备指纹；
-- 时间戳；
-- nonce；
-- request ID；
-- session ID；
-- 应用 ID 和版本号；
-- HMAC-SHA256 请求签名。
+### 第 5 步：完成发布包
 
-通信只允许 HTTPS；仅开发环境允许访问 `localhost` 或 `127.0.0.1` 的 HTTP 地址。
-
-服务器响应同时包含：
-
-- Ed25519 签名；
-- HMAC 校验值；
-- 服务器时间和响应 ID；
-- 授权状态及授权数据。
-
-客户端在原生核心中验证 Ed25519 签名，并再次校验响应 HMAC。响应字段、签名或校验值被修改时，客户端拒绝授权。
-
-服务器的 Ed25519 私钥只保存在服务器环境中，不进入客户端构建包。客户端只包含公钥。
-
-## 9. 短期任务令牌（历史存档，当前版本不再申请令牌）
-
-软件登录成功不代表可以无限期直接处理。每次启动一个批量处理任务时，客户端会向服务器申请短期签名任务令牌。
-
-任务令牌绑定：
-
-- 应用 ID；
-- 处理通道：`flowcut-hdh` 或 `flowcut-ab`；
-- 批次 ID；
-- 输入数量；
-- 完整参数 SHA-256；
-- 设备码；
-- 设备指纹；
-- 签发时间和过期时间。
-
-FlowCut 任务令牌最长有效期为 5 分钟。处理线程收到令牌后，先在原生核心验签；蒙版参数和蝴蝶 AB 处理计划生成时还会再次验证同一令牌和作用域。
-
-以下情况会拒绝处理：
-
-- 没有任务令牌；
-- 签名被修改；
-- 令牌已过期；
-- 通道、批次、输入数量或参数哈希不一致；
-- 设备码或设备指纹不一致。
-
-因此，单纯修改 Python 层的授权返回值，不能构造完整且匹配的受保护处理计划。
-
-## 10. 本地数据与成品视频
-
-用户选择记住卡密时，本地配置保存在：
+回到项目根目录，双击运行：
 
 ```text
-%APPDATA%\BlackCatFlowCut\license.json
+finalize_sprotect_release.bat
 ```
 
-该文件不是加密保险库，不应在其中保存服务器私钥或其他服务端机密。
+收尾脚本会：
 
-输出视频保持标准 MP4，可由普通播放器直接播放。当前项目没有对成品视频使用私有加密容器，这是为了保证平台上传和播放器兼容性。
+1. 检查原 EXE 和 `.sp.exe` 是否都存在；
+2. 检查两个文件大小是否合理；
+3. 检查两个文件的 SHA-256 是否不同；
+4. 把未加 SProtect 的原 EXE 备份到：
 
-## 11. 正式发布检查
+   ```text
+   build\protected\sprotect-backups\
+   ```
 
-正式发布前确认：
+5. 把 `.sp.exe` 替换为正式文件名；
+6. 在发布目录生成 `SHA256SUMS.txt`。
 
-1. 修改 `version.py` 中的版本号。
-2. 使用 `build_protected.bat`，不要传入 `-SkipVmProtect`。
-3. ~~构建日志出现 `Protected native core`~~ —— 该行不再出现，日志中不再有原生核心层。
-4. 构建日志出现 `Protected executable`。
-5. 只发布 `dist-protected` 中带版本号的最终 EXE。
-6. 不发布 `build\protected` 中的 Nuitka 中间 EXE。
-7. 不发布 `.flowcut_private_key.pem`、服务器环境配置或数据库备份。
-8. 在干净电脑上验证**无需卡密即可启动**、HDH 蒙版、蝴蝶 AB 与模板通道。
+完成后，正式启动器仍叫：
 
-每次构建会生成独立的 `dist-protected\黑猫@苍狼_V<版本号>` 发布文件夹。
-构建脚本会把 EXE、`ico`、`resources`、`showlight`、`startmovie`、`贴纸`
-和 `配置文件` 放入该文件夹，并复制 `ffmpeg.exe`、`ffprobe.exe`。脚本只创建空的
-`主视频`、`辅助视频`、`蒙版成品`、`蝴蝶AB成品`、`模板` 目录，不会复制开发机
-中的测试视频或历史成品。包含开发机绝对路径的 `config.json` 也不会进入
-发布目录，软件首次启动时会在 EXE 旁生成新的相对路径配置。
+```text
+月落@苍狼_V1.2.0.exe
+```
 
-## 12. 安全边界
+但它已经是 SProtect 处理后的文件。
 
-客户端保护只能提高逆向、篡改和绕过成本，无法承诺绝对不可破解。真正不能下发到客户端的机密必须保留在服务器。
+### 第 6 步：发布前测试
 
-> **已失效（YanJingwenhua 分支起）**：当前版本没有任何服务器信任根，也不含卡密
-> 校验或任务令牌。**整个引擎是纯 Python 且无授权门禁**（默认门禁一律放行），
-> 所以本节以及 §8/§9 描述的「验证服务器」「提高篡改成本」在当前成品上都不成立，
-> 唯一的保护层是 §7 的 EXE 入口点 VMProtect。
-> 将来接入新的授权服务器时，把信任根（公钥/密钥）保留在服务端、客户端只放公钥
-> 这条原则仍然适用；接入点是 `engine/auth.py` 的 `set_gate()`。
+不要只测试 EXE 文件，要测试整个发布目录。至少检查：
+
+1. 软件可以正常启动；
+2. 蒙版通道可以生成视频；
+3. 蝴蝶 AB 通道可以生成视频；
+4. 模板和辅助视频切换正常；
+5. 素材拼接的头部、尾部和同时拼接都正常；
+6. FFmpeg 和 FFprobe 没有缺失；
+7. 换到一台没有开发环境的电脑上也能运行。
+
+测试无误后，把整个目录压缩发送：
+
+```text
+dist-protected\月落@苍狼_V1.2.0\
+```
+
+不能只发送 EXE，因为 standalone 模式依赖同目录中的 DLL、插件和资源。
+
+## 四、发布目录检查
+
+正式发布目录中应该包含：
+
+- SProtect 处理后的主 EXE；
+- Nuitka 运行库、PySide6 插件和 DLL；
+- `ffmpeg.exe`、`ffprobe.exe`；
+- `resources`、`ico`、`showlight`、`startmovie` 等资源；
+- 主视频、辅助视频、模板、成品等工作目录；
+- `SHA256SUMS.txt`。
+
+正式发布目录中不应该包含：
+
+- `.sp.exe` 临时文件；
+- `.unprotected.exe` 未保护启动器；
+- Python 源码；
+- `engine/dev_core.py`；
+- VMProtect 或 SProtect 工程文件；
+- 测试视频和历史成品。
+
+## 五、常见错误
+
+### `_flowcut_core.pyd` 正在使用
+
+关闭“月落@苍狼”和相关 Python 进程，再重新运行 `build_protected.bat`。
+
+### 找不到 VMProtect
+
+确认下面文件存在：
+
+```text
+C:\Program Files (x86)\VMProtect Ultimate\VMProtect_Con.exe
+```
+
+### 找不到 GCC
+
+先运行一次 Nuitka 构建，让 Nuitka 下载 GCC；或者把 64 位 MinGW 的 `bin` 目录加入 PATH。
+
+### 收尾脚本提示找不到 `.sp.exe`
+
+确认 SProtect 输出位于当前版本的发布目录，并严格命名为：
+
+```text
+月落@苍狼_V当前版本.sp.exe
+```
+
+### 收尾脚本提示备份已经存在
+
+说明同一版本可能已经完成过收尾。检查：
+
+```text
+build\protected\sprotect-backups\
+```
+
+确认情况后再决定是提高版本号重新构建，还是手工保存并移走旧备份。
+
+## 六、安全边界
+
+这套方案提高算法提取、静态分析和篡改的成本，但不能保证客户端程序绝对不可破解。没有服务器密钥体系时，把 AES 密钥直接放在客户端没有实际保密意义，因此当前方案采用“原生编译 + VMProtect 核心虚拟化 + Nuitka + SProtect 外层保护”，没有增加虚假的本地 AES 加密层。

@@ -1,18 +1,11 @@
-# cython: language_level=3
-"""FlowCut native security and processing core."""
+# cython: language_level=3, binding=False, embedsignature=False
+"""月落@苍狼原生算法核心。
 
-import base64
-import hashlib
-import hmac
-import json
-import time
+发布构建会把本模块编译成扩展模块，再由 VMProtect Ultra 单独保护。
+这里仅保留稳定、纯计算的核心步骤，文件遍历和进程调度仍由 Python 负责。
+"""
 
-from cryptography.hazmat.primitives import serialization
-
-APP_ID = "blackcat-flowcut"
-SERVER_PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAh2j/V2PHHxUJ+IUjr25ecNb7PDn538SopwI6qWg512s=
------END PUBLIC KEY-----"""
+from libc.math cimport round
 
 
 cdef extern from "VMProtectSDK.h":
@@ -20,147 +13,125 @@ cdef extern from "VMProtectSDK.h":
     void VMProtectEnd()
 
 
-cdef bytes _b64url_decode(str value):
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-
-cdef dict _verify_task(
-    str token,
-    str engine,
-    str batch_id,
-    str job_id,
-    int input_count,
-    str params_hash,
-    str device_code,
-    str device_fingerprint,
-):
-    parts = token.split(".")
-    if len(parts) != 2:
-        raise ValueError("任务令牌格式无效")
-    payload_text = _b64url_decode(parts[0]).decode("utf-8")
-    signature_text = _b64url_decode(parts[1]).decode("ascii")
-    key = serialization.load_pem_public_key(SERVER_PUBLIC_KEY)
-    key.verify(base64.b64decode(signature_text), payload_text.encode("utf-8"))
-    claims = json.loads(payload_text)
-    expected = {
-        "tokenType": "blackcat-task",
-        "appId": APP_ID,
-        "engine": engine,
-        "batchId": batch_id,
-        "jobId": job_id,
-        "inputCount": input_count,
-        "paramsHash": params_hash,
-        "deviceCode": device_code,
-        "deviceFingerprint": device_fingerprint,
-    }
-    for name, value in expected.items():
-        if claims.get(name) != value:
-            raise ValueError(f"任务令牌字段不匹配: {name}")
-    if int(claims.get("expiresAt", 0)) <= int(time.time() * 1000):
-        raise ValueError("任务令牌已过期")
-    return claims
-
-
-cdef str _mask_alpha(int width, int height, int feather, double margin_tb, double margin_lr):
-    edge = max(1, round(feather * min(width, height) / 1080))
-    fades = []
+def mask_alpha(w, h, feather, margin_tb, margin_lr):
+    cdef int d
+    cdef double offset
+    cdef list parts
+    cdef str inner
+    cdef str part
+    cdef str result
+    VMProtectBeginUltra(b"FCALGO:mask.alpha")
+    d = max(1, <int>round(feather * min(w, h) / 1080.0))
+    offset = d / 2.0
+    parts = []
     if margin_lr > 0:
-        fades.extend((
-            f"clip((X-W*{margin_lr}+{edge / 2})/{edge},0,1)",
-            f"clip((W*(1-{margin_lr})-X+{edge / 2})/{edge},0,1)",
-        ))
+        parts.append("clip((X-W*%s+%s)/%d,0,1)" % (margin_lr, offset, d))
+        parts.append("clip((W*(1-%s)-X+%s)/%d,0,1)" % (margin_lr, offset, d))
     if margin_tb > 0:
-        fades.extend((
-            f"clip((Y-H*{margin_tb}+{edge / 2})/{edge},0,1)",
-            f"clip((H*(1-{margin_tb})-Y+{edge / 2})/{edge},0,1)",
-        ))
-    if not fades:
-        return ""
-    expression = fades[0]
-    for fade in fades[1:]:
-        expression = f"min({expression},{fade})"
-    return f"255*{expression}"
-
-
-cdef dict _butterfly_plan(double duration, double head, object hidden, int fps):
-    hidden_value = duration + 0.0667 if hidden is None else float(hidden)
-    chunks = [23.0] * int(hidden_value // 23)
-    if hidden_value - sum(chunks) > 0.02:
-        chunks.append(hidden_value - sum(chunks))
-    return {
-        "hidden": hidden_value,
-        "chunks": chunks,
-        "jump_frame": round((head + hidden_value) * fps),
-        "main_frames": round(duration * fps),
-    }
-
-
-cpdef str sign_request(str secret, str stable_json):
-    VMProtectBeginUltra(b"FCNATIVE:license.sign")
-    result = base64.urlsafe_b64encode(
-        hmac.new(
-            secret.encode("utf-8"),
-            stable_json.encode("utf-8"),
-            hashlib.sha256,
-        ).digest()
-    ).decode("ascii").rstrip("=")
+        parts.append("clip((Y-H*%s+%s)/%d,0,1)" % (margin_tb, offset, d))
+        parts.append("clip((H*(1-%s)-Y+%s)/%d,0,1)" % (margin_tb, offset, d))
+    if parts:
+        inner = parts[0]
+        for part in parts[1:]:
+            inner = "min(%s,%s)" % (inner, part)
+        result = "255*%s" % inner
+    else:
+        result = ""
     VMProtectEnd()
     return result
 
 
-cpdef verify_response(bytes public_key_pem, str stable_json, str signature):
-    VMProtectBeginUltra(b"FCNATIVE:license.verify")
-    key = serialization.load_pem_public_key(public_key_pem)
-    key.verify(base64.b64decode(signature), stable_json.encode("utf-8"))
-    VMProtectEnd()
-    return True
+def butterfly_plan(double duration, double head, object hidden=None, int fps=30):
+    cdef double hidden_value
+    cdef double remaining
+    cdef double chunk
+    cdef list chunks = []
+
+    VMProtectBeginUltra(b"FCALGO:butterfly.plan")
+    try:
+        hidden_value = duration + 0.0667 if hidden is None else float(hidden)
+        chunks = [23.0] * <int>(hidden_value // 23.0)
+        remaining = hidden_value - sum(chunks)
+        if remaining > 0.02:
+            chunks.append(remaining)
+        return {
+            "hidden": hidden_value,
+            "chunks": chunks,
+            "jump_frame": round((head + hidden_value) * fps),
+            "main_frames": round(duration * fps),
+        }
+    finally:
+        VMProtectEnd()
 
 
-cpdef str mask_alpha(int width, int height, int feather, double margin_tb, double margin_lr):
-    VMProtectBeginUltra(b"FCNATIVE:mask.alpha")
-    result = _mask_alpha(width, height, feather, margin_tb, margin_lr)
-    VMProtectEnd()
-    return result
-
-
-cpdef dict task_claims(
-    str token, str engine, str batch_id, str job_id,
-    int input_count, str params_hash, str device_code, str device_fingerprint,
+def window_matte_chain(
+    int canvas_width,
+    int canvas_height,
+    double center_x,
+    double center_y,
+    double window_width,
+    double window_height,
+    double feather,
 ):
-    VMProtectBeginUltra(b"FCNATIVE:task.verify")
-    result = _verify_task(
-        token, engine, batch_id, job_id, input_count,
-        params_hash, device_code, device_fingerprint,
-    )
-    VMProtectEnd()
-    return result
+    cdef int d
+    cdef double left
+    cdef double top
+    cdef int box_width
+    cdef int box_height
+    cdef int blur
+    cdef str x_expr
+    cdef str y_expr
+
+    VMProtectBeginUltra(b"FCALGO:template.window")
+    try:
+        d = max(1, <int>round(feather * min(canvas_width, canvas_height) / 1080.0))
+        left = canvas_width * (center_x - window_width / 2.0) / 100.0
+        top = canvas_height * (center_y - window_height / 2.0) / 100.0
+        box_width = max(1, <int>round(canvas_width * window_width / 100.0))
+        box_height = max(1, <int>round(canvas_height * window_height / 100.0))
+        left -= canvas_width / 2.0
+        top -= canvas_height / 2.0
+        x_expr = "iw/2%s%g" % ("+" if left >= 0 else "-", abs(left))
+        y_expr = "ih/2%s%g" % ("+" if top >= 0 else "-", abs(top))
+        blur = max(1, <int>round((d - 1) / 2.0))
+        return (
+            "format=gray,lutyuv=y=0,"
+            "drawbox=x=%s:y=%s:w=%d:h=%d:color=white:t=fill,"
+            "lutyuv=y='if(gt(val,128),255,0)',boxblur=%d:1"
+        ) % (x_expr, y_expr, box_width, box_height, blur)
+    finally:
+        VMProtectEnd()
 
 
-cpdef str authorized_mask_alpha(
-    str token, str engine, str batch_id, str job_id,
-    int input_count, str params_hash, str device_code, str device_fingerprint,
-    int width, int height, int feather, double margin_tb, double margin_lr,
+def concat_filter_segment(
+    int index,
+    double duration,
+    bint has_audio,
+    int width,
+    int height,
+    double fps,
 ):
-    VMProtectBeginUltra(b"FCNATIVE:mask.authorized")
-    _verify_task(
-        token, engine, batch_id, job_id, input_count,
-        params_hash, device_code, device_fingerprint,
-    )
-    result = _mask_alpha(width, height, feather, margin_tb, margin_lr)
-    VMProtectEnd()
-    return result
+    cdef str video_filter
+    cdef str audio_filter
 
-
-cpdef dict authorized_butterfly_plan(
-    str token, str engine, str batch_id, str job_id,
-    int input_count, str params_hash, str device_code, str device_fingerprint,
-    double duration, double head, object hidden, int fps=30,
-):
-    VMProtectBeginUltra(b"FCNATIVE:butterfly.authorized")
-    _verify_task(
-        token, engine, batch_id, job_id, input_count,
-        params_hash, device_code, device_fingerprint,
-    )
-    result = _butterfly_plan(duration, head, hidden, fps)
-    VMProtectEnd()
-    return result
+    VMProtectBeginUltra(b"FCALGO:concat.segment")
+    try:
+        video_filter = (
+            "[%d:v]scale=%d:%d:force_original_aspect_ratio=decrease,"
+            "pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=%g,"
+            "format=yuv420p,trim=duration=%g,setpts=PTS-STARTPTS[v%d]"
+        ) % (index, width, height, width, height, fps, duration, index)
+        if has_audio:
+            audio_filter = (
+                "[%d:a]aresample=48000,"
+                "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,"
+                "atrim=duration=%g,asetpts=PTS-STARTPTS[a%d]"
+            ) % (index, duration, index)
+        else:
+            audio_filter = (
+                "anullsrc=r=48000:cl=stereo,"
+                "atrim=duration=%g,asetpts=PTS-STARTPTS[a%d]"
+            ) % (duration, index)
+        return video_filter, audio_filter
+    finally:
+        VMProtectEnd()

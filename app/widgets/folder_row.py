@@ -28,6 +28,7 @@ class FolderRow(QWidget):
     ):
         super().__init__(parent)
         self._initial_dir = initial
+        self.setMinimumHeight(40)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -41,7 +42,7 @@ class FolderRow(QWidget):
 
         btn = QPushButton("选择")
         btn.setObjectName("browse")
-        btn.setFixedWidth(56)
+        btn.setFixedWidth(64)
         btn.clicked.connect(self._browse)
         layout.addWidget(btn)
 

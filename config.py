@@ -36,6 +36,14 @@ class AppConfig:
     ab_channel: str = "blackcat03"
     ab_insert_duration: float = 0.1
 
+    # ── 素材拼接通道 ──
+    concat_main_folder: str = "主视频"
+    concat_head_file: str = ""
+    concat_tail_file: str = ""
+    concat_output_folder: str = "拼接成品"
+    concat_prepend: bool = False
+    concat_append: bool = True
+
     # ── 画布与编码 ──
     resolution: str = "1080x2338"
     fps: int = 24
@@ -138,21 +146,22 @@ class AppConfig:
     # 只影响主视频的 alpha，不影响主视频的大小 —— 见 engine/template_lib.py。
     # 模板即背景（占用背景槽），不需要 alpha 通道 —— 与参考产品的模板一样是
     # 明文整屏 mp4。「适配 / 全屏」沿用上面的 main_fit 开关，不另设参数。
-    tpl_enabled: bool = False
+    tpl_enabled: bool = True
     tpl_folder: str = "模板"          # 模板库目录
     # 可选清单：全局默认窗口 + 每模板覆盖。界面上已经没有这一行了（用户不用它），
     # 保留是因为它不碍事：目录里没有这个文件就走「扫描模板目录 + 全局字段」，
     # 但也因此改窗口几何要整批一起改，不能逐张覆盖。
     tpl_manifest: str = "模板.json"
+    # 模板与辅助视频共用选择方式；具体使用哪个库由 tpl_enabled 决定。
     tpl_pick: str = "随机"            # combo: 随机,固定
-    # 「固定」时用哪一张（文件名，相对 tpl_folder）。空白/名字对不上就退回随机，
+    # 「固定」时用哪一个（文件名，相对当前素材目录）。名字对不上就退回随机，
     # 文件被删或改名不该让整批出不了片。
     tpl_fixed: str = ""
     tpl_window_center_x: int = 50     # 窗口中心 X（画布百分比）
     tpl_window_center_y: int = 50     # 窗口中心 Y（画布百分比）
     tpl_window_w: int = 80            # 窗口宽（画布百分比）
-    tpl_window_h: int = 55            # 窗口高（画布百分比）
-    tpl_window_feather: int = 60      # 边缘羽化宽度（以 1080 短边为基准的像素数）
+    tpl_window_h: int = 100           # 窗口高（画布百分比）
+    tpl_window_feather: int = 200     # 边缘羽化宽度（以 1080 短边为基准的像素数）
 
     # ── 开幕、封面与字幕 ──
     kaimu_enabled: bool = False
@@ -201,6 +210,14 @@ class AppConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "AppConfig":
         if "folders" in data and "params" in data:
             return cls.from_reference_dict(data)
+        data = dict(data)
+        # 旧版只有一个辅助文件 + 前/后二选一；迁移到头尾可同时启用。
+        legacy = data.get("concat_aux_file", "")
+        if legacy and "concat_head_file" not in data and "concat_tail_file" not in data:
+            before = data.get("concat_position") == "前面"
+            data["concat_head_file" if before else "concat_tail_file"] = legacy
+            data["concat_prepend"] = before
+            data["concat_append"] = not before
         # 只取已知字段，忽略未知
         known = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in known}

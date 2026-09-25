@@ -40,6 +40,7 @@ from app.pages.template_page import TemplatePage
 from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.pages.butterfly_ab_page import ButterflyABPage
+from app.pages.concat_page import ConcatPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
 from app.widgets.param_row import ParamRow
@@ -144,7 +145,8 @@ class MainWindow(QMainWindow):
         self._channel_group.setExclusive(True)
         channels = (
             ("01", "蒙版通道", "hdh"),
-            ("02", "蝴蝶AB", "butterfly_ab"),
+            ("02", "素材拼接", "concat"),
+            ("03", "蝴蝶AB", "butterfly_ab"),
         )
         # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
         # _workspace_stack 里的蝴蝶页、_on_start 的蝴蝶分支都还在原位，只是界面
@@ -182,9 +184,6 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(5, 4, 5, 5)
         left_layout.setSpacing(8)
         self._files_page = FilesPage(self.config)
-        # 「文件夹设置」块要占得比原来大：这 300 就是它的实际高度（左栏的富余
-        # 高度归下面的日志面板，它才是该变长的那一块）。
-        self._files_page.setMinimumHeight(340)
         left_layout.addWidget(self._files_page)
 
         controls = QFrame()
@@ -254,7 +253,7 @@ class MainWindow(QMainWindow):
         self._files_page.paths_changed.connect(self._preview.schedule_refresh)
         self._files_page.paths_changed.connect(lambda: self._save_config())
         center_layout.addWidget(self._preview, 1)
-        hint = QLabel("⚠ 请选择有效的主视频和辅助视频文件夹")
+        hint = QLabel("⚠ 请选择有效的主视频和背景素材")
         hint.setAlignment(Qt.AlignCenter)
         hint.setObjectName("previewHint")
         center_layout.addWidget(hint)
@@ -328,9 +327,13 @@ class MainWindow(QMainWindow):
         self._butterfly_page = ButterflyABPage(self.config)
         self._butterfly_page.start_requested.connect(self._on_start)
         self._butterfly_page.stop_requested.connect(self._on_stop)
+        self._concat_page = ConcatPage(self.config, self.root_dir)
+        self._concat_page.start_requested.connect(self._on_start)
+        self._concat_page.stop_requested.connect(self._on_stop)
         self._workspace_stack = QStackedWidget()
         self._workspace_stack.addWidget(hdh_workspace)
         self._workspace_stack.addWidget(self._butterfly_page)
+        self._workspace_stack.addWidget(self._concat_page)
         splitter.addWidget(self._workspace_stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -351,13 +354,20 @@ class MainWindow(QMainWindow):
 
     def _select_channel(self, channel: str) -> None:
         self._active_channel = channel
-        self._workspace_stack.setCurrentIndex(1 if channel == "butterfly_ab" else 0)
+        self._workspace_stack.setCurrentIndex(
+            {"hdh": 0, "butterfly_ab": 1, "concat": 2}[channel]
+        )
         if channel == "butterfly_ab":
             self._butterfly_page.show_first_video(
                 self._resolve(self.config.ab_main_folder)
             )
+        status = {
+            "hdh": "● 蒙版通道",
+            "butterfly_ab": "● 蝴蝶AB通道",
+            "concat": "● 素材拼接",
+        }[channel]
         self._set_status(
-            "● 蝴蝶AB通道" if channel == "butterfly_ab" else "● 蒙版通道",
+            status,
             "#34d399", "#0d2a1f", "#1a5a3e",
         )
 
@@ -373,6 +383,9 @@ class MainWindow(QMainWindow):
         """开始批量处理。"""
         if self._active_channel == "butterfly_ab":
             self._on_start_butterfly()
+            return
+        if self._active_channel == "concat":
+            self._on_start_concat()
             return
 
         # 基本校验。辅助视频不再是必填项：界面上已经没有它的入口，
@@ -424,11 +437,36 @@ class MainWindow(QMainWindow):
             self.config, self.root_dir, "butterfly_ab",
         )
 
+    def _on_start_concat(self) -> None:
+        main_folder = self._resolve(self.config.concat_main_folder)
+        if not main_folder.is_dir():
+            QMessageBox.warning(self, "提示", "请选择有效的主素材文件夹。")
+            return
+        if not self.config.concat_prepend and not self.config.concat_append:
+            QMessageBox.warning(self, "提示", "请至少选择一个拼接位置。")
+            return
+        for enabled, value, name in (
+            (self.config.concat_prepend, self.config.concat_head_file, "头部"),
+            (self.config.concat_append, self.config.concat_tail_file, "尾部"),
+        ):
+            if enabled and not self._resolve(value).is_file():
+                QMessageBox.warning(self, "提示", f"请选择有效的{name}素材文件。")
+                return
+        self._save_config()
+        self._running_channel = "concat"
+        self._concat_page.log.clear()
+        self._concat_page.set_running(True)
+        self._set_status("● 素材拼接中", "#fbbf24", "#1f1a0e", "#4a3a15")
+        self._worker.start(self.config, self.root_dir, "concat")
+
     def _on_stop(self) -> None:
         """停止处理。"""
         self._worker.cancel()
-        if getattr(self, "_running_channel", "hdh") == "butterfly_ab":
+        running = getattr(self, "_running_channel", "hdh")
+        if running == "butterfly_ab":
             self._butterfly_page.stop_button.setEnabled(False)
+        elif running == "concat":
+            self._concat_page.stop_button.setEnabled(False)
         else:
             self._btn_stop.setEnabled(False)
 
@@ -453,43 +491,59 @@ class MainWindow(QMainWindow):
     # ═══════════════════════════════════════
 
     def _on_log(self, text: str) -> None:
-        if getattr(self, "_running_channel", "hdh") == "butterfly_ab":
+        running = getattr(self, "_running_channel", "hdh")
+        if running == "butterfly_ab":
             self._butterfly_page.log.append(text)
+        elif running == "concat":
+            self._concat_page.log.append(text)
         else:
             self._log.append(text)
 
     def _on_progress(self, current: int, total: int) -> None:
-        progress = (
-            self._butterfly_page.progress
-            if getattr(self, "_running_channel", "hdh") == "butterfly_ab"
-            else self._progress
-        )
+        running = getattr(self, "_running_channel", "hdh")
+        progress = {
+            "butterfly_ab": self._butterfly_page.progress,
+            "concat": self._concat_page.progress,
+        }.get(running, self._progress)
         progress.setRange(0, total)
         progress.setValue(current)
 
     def _on_task(self, task: dict) -> None:
-        if getattr(self, "_running_channel", "hdh") == "butterfly_ab":
+        running = getattr(self, "_running_channel", "hdh")
+        if running == "butterfly_ab":
             self._butterfly_page.show_task(task)
+            return
+        if running == "concat":
+            self._concat_page.show_task(task)
             return
         self._preview_title.setText(f"● 正在处理：{Path(task['main']).name}")
         self._preview.show_task(task)
 
     def _on_done(self, success: bool, message: str) -> None:
-        butterfly = getattr(self, "_running_channel", "hdh") == "butterfly_ab"
+        running = getattr(self, "_running_channel", "hdh")
+        butterfly = running == "butterfly_ab"
+        concat = running == "concat"
         if butterfly:
             self._butterfly_page.set_running(False)
+        elif concat:
+            self._concat_page.set_running(False)
         else:
             self._progress.hide()
             self._btn_start.setEnabled(True)
             self._btn_stop.setEnabled(False)
         if success:
+            status = "● 素材拼接" if concat else (
+                "● 蝴蝶AB通道" if butterfly else "● 蒙版通道"
+            )
             self._set_status(
-                "● 蝴蝶AB通道" if butterfly else "● 蒙版通道",
+                status,
                 "#34d399", "#0d2a1f", "#1a5a3e",
             )
         else:
             self._set_status("● " + message, "#f87171", "#1f1518", "#3d1f28")
-        target_log = self._butterfly_page.log if butterfly else self._log
+        target_log = self._concat_page.log if concat else (
+            self._butterfly_page.log if butterfly else self._log
+        )
         target_log.append("--- " + message + " ---", "#5a7aa5")
 
     # ═══════════════════════════════════════

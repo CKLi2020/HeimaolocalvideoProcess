@@ -82,6 +82,7 @@ class BatchWorker:
 
             folder_value = (
                 config.ab_main_folder if channel == "butterfly_ab"
+                else config.concat_main_folder if channel == "concat"
                 else config.main_folder
             )
             folder = Path(folder_value)
@@ -89,6 +90,7 @@ class BatchWorker:
                 folder = base_dir / folder
             repeat = (
                 config.ab_repeat_count if channel == "butterfly_ab"
+                else 1 if channel == "concat"
                 else config.repeat_count
             )
 
@@ -99,7 +101,13 @@ class BatchWorker:
             if len(list_media(str(folder), VIDEO_EXTS)) * repeat <= 0:
                 raise RuntimeError("没有可处理的主视频任务")
 
-            if channel == "butterfly_ab":
+            if channel == "concat":
+                from engine.concat import process_batch as process_concat
+                ok = process_concat(
+                    config, base_dir, self._log, self._progress,
+                    lambda: self._cancel.is_set(), self._task,
+                )
+            elif channel == "butterfly_ab":
                 from engine.butterfly_ab import process_batch as process_butterfly_ab
                 ok = process_butterfly_ab(
                     config, base_dir, self._log, self._progress, self._cancel,

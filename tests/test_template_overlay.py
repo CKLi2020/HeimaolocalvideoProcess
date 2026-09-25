@@ -218,7 +218,7 @@ def check_manifest_precedence(folder: Path) -> int:
     if len(bare.specs) != 2 or bare.defaults:
         failures += 1
         print(f"  失败 无清单时应扫到 2 个且无 defaults，实得 {len(bare.specs)}")
-    if bare.resolve(bare.specs[0], config) != Window(50, 50, 70, 55, 60):
+    if bare.resolve(bare.specs[0], config) != Window(50, 50, 70, 55, 200):
         failures += 1
         print("  失败 无清单时应全部取 config 全局值")
 
