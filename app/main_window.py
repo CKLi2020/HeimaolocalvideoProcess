@@ -176,13 +176,6 @@ class MainWindow(QMainWindow):
         self._machine_gpu.setObjectName("machineInfo")
         self._machine_gpu.setWordWrap(True)
         channel_layout.addWidget(self._machine_gpu)
-        machine_output_title = QLabel("输出目录")
-        machine_output_title.setObjectName("machineTitle")
-        channel_layout.addWidget(machine_output_title)
-        self._machine_output = QLabel("output")
-        self._machine_output.setObjectName("machineInfo")
-        self._machine_output.setWordWrap(True)
-        channel_layout.addWidget(self._machine_output)
         channel_layout.addSpacing(8)
         channel_footer = QLabel("BLACK CAT VIDEO")
         channel_footer.setObjectName("brandSub")
@@ -349,11 +342,15 @@ class MainWindow(QMainWindow):
         self._concat_page.stop_requested.connect(self._on_stop)
         self._local_processor_page = LocalProcessorPage(self.root_dir)
         profile = self._local_processor_page.service.gpu_profile
-        gpu_name = profile.get("gpu_name") or profile.get("vendor_label") or "未检测到可用 GPU"
-        self._machine_gpu.setText("●  " + gpu_name)
-        self._local_processor_page.output_edit.textChanged.connect(
-            lambda value: self._machine_output.setText(Path(value).name or "output")
-        )
+        gpu_name = profile.get("gpu_name")
+        if profile.get("available"):
+            machine_text, machine_color = f"●  {gpu_name}\n支持 GPU 加速", "#34d399"
+        elif gpu_name:
+            machine_text, machine_color = f"●  {gpu_name}\n不支持 GPU 加速", "#fbbf24"
+        else:
+            machine_text, machine_color = "●  未检测到支持的显卡", "#f87171"
+        self._machine_gpu.setText(machine_text)
+        self._machine_gpu.setStyleSheet(f"color: {machine_color};")
         self._workspace_stack = QStackedWidget()
         self._workspace_stack.addWidget(hdh_workspace)
         self._workspace_stack.addWidget(self._butterfly_page)

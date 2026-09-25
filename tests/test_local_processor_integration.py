@@ -31,7 +31,7 @@ assert window._workspace_stack.count() == 4
 assert window._active_channel == "local_processor"
 assert window._workspace_stack.currentWidget() is page
 assert "NVIDIA GeForce RTX TEST" in window._machine_gpu.text()
-assert window._machine_output.text() == "output"
+assert "不支持 GPU 加速" in window._machine_gpu.text()
 assert [button.text() for button in window._channel_group.buttons()][:3] == [
     "01   视频处理", "02   蒙版模式", "03   素材拼接",
 ]
