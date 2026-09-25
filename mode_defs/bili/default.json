@@ -1,0 +1,20 @@
+{
+  "id": "bili/default",
+  "name": "默认通道",
+  "platform": "bili",
+  "platform_label": "哔哩处理",
+  "needs_aux": false,
+  "gpu_supported": true,
+  "output_suffix": "_bl",
+  "ext": "mp4",
+  "size": "1280x720",
+  "fps": 30,
+  "bitrate": "6000k",
+  "mix_seconds": 6,
+  "pip_scale": 0.35,
+  "margin": 24,
+  "help_text": "哔哩处理 · 默认通道",
+  "desc": "单视频规范化:哔哩处理 等比缩放居中补边到 1280x720、统一帧率,重编码为 H.264 + AAC。适合把任意来源的素材统一成平台规格。",
+  "command": "ffmpeg -y -hide_banner -i \"{input}\" -vf \"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps}\" -c:v {video_encoder} -preset medium -b:v {bitrate} -pix_fmt yuv420p -threads {threads} -c:a aac -b:a 128k -ar 44100 -movflags +faststart -map_metadata -1 -map 0:v:0 -map 0:a:0? \"{output}.{ext}\"",
+  "gpu_command": "ffmpeg -y -hide_banner -hwaccel {hwaccel} -i \"{input}\" -vf \"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps}\" -c:v {video_encoder} {gpu_opts} -b:v {bitrate} -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -movflags +faststart -map_metadata -1 -map 0:v:0 -map 0:a:0? \"{output}.{ext}\""
+}

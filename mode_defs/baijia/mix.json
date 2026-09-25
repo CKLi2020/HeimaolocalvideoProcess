@@ -1,0 +1,20 @@
+{
+  "id": "baijia/mix",
+  "name": "默认混剪",
+  "platform": "baijia",
+  "platform_label": "百家处理",
+  "needs_aux": true,
+  "gpu_supported": true,
+  "output_suffix": "_bjmix",
+  "ext": "mp4",
+  "size": "1280x720",
+  "fps": 30,
+  "bitrate": "6000k",
+  "mix_seconds": 6,
+  "pip_scale": 0.35,
+  "margin": 24,
+  "help_text": "百家处理 · 默认混剪",
+  "desc": "主视频 + 辅视频混剪:主画面铺满,辅视频缩到右下角作画中画。批量处理时主/辅按文件名顺序逐对配对,辅视频不够会循环复用。",
+  "command": "ffmpeg -y -hide_banner -i \"{input}\" -i \"{aux}\" -filter_complex \"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps}[base];[1:v]scale=iw*{pip_scale}:-2,setsar=1[pip];[base][pip]overlay=W-w-{margin}:H-h-{margin}:format=auto[v]\" -c:v {video_encoder} -preset medium -b:v {bitrate} -pix_fmt yuv420p -threads {threads} -c:a aac -b:a 128k -ar 44100 -movflags +faststart -map_metadata -1 -map \"[v]\" -map 0:a:0? \"{output}.{ext}\"",
+  "gpu_command": "ffmpeg -y -hide_banner -hwaccel {hwaccel} -i \"{input}\" -i \"{aux}\" -filter_complex \"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps}[base];[1:v]scale=iw*{pip_scale}:-2,setsar=1[pip];[base][pip]overlay=W-w-{margin}:H-h-{margin}:format=auto[v]\" -c:v {video_encoder} {gpu_opts} -b:v {bitrate} -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -movflags +faststart -map_metadata -1 -map \"[v]\" -map 0:a:0? \"{output}.{ext}\""
+}

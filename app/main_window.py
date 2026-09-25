@@ -41,6 +41,7 @@ from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.pages.butterfly_ab_page import ButterflyABPage
 from app.pages.concat_page import ConcatPage
+from app.pages.local_processor_page import LocalProcessorPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
 from app.widgets.param_row import ParamRow
@@ -146,7 +147,8 @@ class MainWindow(QMainWindow):
         channels = (
             ("01", "蒙版通道", "hdh"),
             ("02", "素材拼接", "concat"),
-            ("03", "蝴蝶AB", "butterfly_ab"),
+            ("03", "本地视频处理", "local_processor"),
+            ("04", "蝴蝶AB", "butterfly_ab"),
         )
         # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
         # _workspace_stack 里的蝴蝶页、_on_start 的蝴蝶分支都还在原位，只是界面
@@ -330,10 +332,12 @@ class MainWindow(QMainWindow):
         self._concat_page = ConcatPage(self.config, self.root_dir)
         self._concat_page.start_requested.connect(self._on_start)
         self._concat_page.stop_requested.connect(self._on_stop)
+        self._local_processor_page = LocalProcessorPage(self.root_dir)
         self._workspace_stack = QStackedWidget()
         self._workspace_stack.addWidget(hdh_workspace)
         self._workspace_stack.addWidget(self._butterfly_page)
         self._workspace_stack.addWidget(self._concat_page)
+        self._workspace_stack.addWidget(self._local_processor_page)
         splitter.addWidget(self._workspace_stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -355,7 +359,7 @@ class MainWindow(QMainWindow):
     def _select_channel(self, channel: str) -> None:
         self._active_channel = channel
         self._workspace_stack.setCurrentIndex(
-            {"hdh": 0, "butterfly_ab": 1, "concat": 2}[channel]
+            {"hdh": 0, "butterfly_ab": 1, "concat": 2, "local_processor": 3}[channel]
         )
         if channel == "butterfly_ab":
             self._butterfly_page.show_first_video(
@@ -365,6 +369,7 @@ class MainWindow(QMainWindow):
             "hdh": "● 蒙版通道",
             "butterfly_ab": "● 蝴蝶AB通道",
             "concat": "● 素材拼接",
+            "local_processor": "● 本地视频处理",
         }[channel]
         self._set_status(
             status,
@@ -381,6 +386,9 @@ class MainWindow(QMainWindow):
 
     def _on_start(self) -> None:
         """开始批量处理。"""
+        if self._active_channel == "local_processor":
+            self._local_processor_page.start()
+            return
         if self._active_channel == "butterfly_ab":
             self._on_start_butterfly()
             return
@@ -461,6 +469,9 @@ class MainWindow(QMainWindow):
 
     def _on_stop(self) -> None:
         """停止处理。"""
+        if self._active_channel == "local_processor":
+            self._local_processor_page.stop()
+            return
         self._worker.cancel()
         running = getattr(self, "_running_channel", "hdh")
         if running == "butterfly_ab":
@@ -469,6 +480,12 @@ class MainWindow(QMainWindow):
             self._concat_page.stop_button.setEnabled(False)
         else:
             self._btn_stop.setEnabled(False)
+
+    def closeEvent(self, event) -> None:
+        """关闭窗口时一并终止两类后台任务。"""
+        self._worker.cancel()
+        self._local_processor_page.stop()
+        event.accept()
 
     def _on_self_test(self) -> None:
         """环境自检。"""

@@ -40,8 +40,10 @@ try {
         --standalone --assume-yes-for-downloads `
         --enable-plugin=pyside6 --windows-console-mode=disable `
         --include-module=app._flowcut_core `
+        --include-package=core --include-package=modes `
         --nofollow-import-to=engine.dev_core `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
+        --include-data-dir=mode_defs=mode_defs --include-data-dir=client=client `
         --windows-icon-from-ico="$Icon" `
         --product-name="$ProductName" `
         --file-description="$ProductName" `
