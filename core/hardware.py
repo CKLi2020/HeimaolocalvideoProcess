@@ -69,11 +69,8 @@ def _classify_gpu(name):
     return None
 
 
-def detect_gpus():
-    """枚举本机显卡,返回 [{'name':..., 'vendor':'nvidia'/'amd'}, ...];失败返回 []。
-
-    依次尝试 PowerShell CIM / nvidia-smi / wmic,任一成功即用。去重后返回。
-    """
+def _detect_controller_names():
+    """枚举系统显示适配器名称,失败返回 []。"""
     names = []
 
     out = _run([
@@ -95,6 +92,25 @@ def detect_gpus():
             # wmic 输出首行是列名 "Name",末行常为空
             names = [ln for ln in lines[1:] if ln and ln.lower() != "name"]
 
+    unique_names, seen = [], set()
+    for name in names:
+        low = name.lower()
+        if "microsoft basic" in low or "remote display" in low:
+            continue
+        key = low
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_names.append(name)
+    return unique_names
+
+
+def detect_gpu_names():
+    """返回系统检测到的显卡型号,包括 Intel 等暂不支持硬件编码的显卡。"""
+    return _detect_controller_names()
+
+
+def _classify_gpus(names):
     gpus, seen = [], set()
     for name in names:
         vendor = _classify_gpu(name)
@@ -106,6 +122,11 @@ def detect_gpus():
         seen.add(key)
         gpus.append({"name": name, "vendor": vendor})
     return gpus
+
+
+def detect_gpus():
+    """枚举本机可用于本程序硬件编码的显卡,失败返回 []。"""
+    return _classify_gpus(_detect_controller_names())
 
 
 def available_encoders(ffmpeg_path):
@@ -178,11 +199,14 @@ def detect_gpu_profile(ffmpeg_path=None):
         "h264_encoder": "",
         "hevc_encoder": "",
         "encoders_checked": set(),
+        "gpu_names": [],
         "warning": "",
         "reason": "",
     }
 
-    gpus = detect_gpus()
+    gpu_names = _detect_controller_names()
+    profile["gpu_names"] = gpu_names
+    gpus = _classify_gpus(gpu_names)
     if not gpus:
         profile["reason"] = "未识别"
         profile["warning"] = "未检测到 N卡/A卡"
@@ -224,14 +248,20 @@ def detect_gpu_profile(ffmpeg_path=None):
 
 def gpu_summary(profile):
     """给侧边栏用的一行本机信息。"""
-    if not profile or not profile.get("available"):
-        return "未检测到可用 GPU"
-    gpus = detect_gpus()
-    name = gpus[0]["name"] if gpus else profile.get("vendor", "")
-    return "%s (%s)" % (name, profile.get("vendor_label") or "")
+    profile = profile or {}
+    names = profile.get("gpu_names") or []
+    if names:
+        name_text = ", ".join(names)
+        if profile.get("available"):
+            return "%s (%s，可用于硬件编码)" % (
+                name_text, profile.get("vendor_label") or "GPU")
+        return "%s (已检测到，硬件编码不可用)" % name_text
+    if not profile.get("available"):
+        return "未检测到 GPU"
+    return "%s (可用于硬件编码)" % (profile.get("vendor_label") or "GPU")
 
 
 __all__ = [
-    "detect_gpus", "detect_gpu_profile", "available_encoders",
+    "detect_gpus", "detect_gpu_names", "detect_gpu_profile", "available_encoders",
     "encoder_self_test", "gpu_summary", "_classify_gpu",
 ]

@@ -117,7 +117,7 @@ def assert_outputs(app, label, out_dir, want_count, want_size):
 def make_footage(ffmpeg, root):
     """造测试素材:testsrc2 主视频 + smptebars 辅视频。"""
     main_dir = os.path.join(root, "main")
-    aux_dir = os.path.join(root, "aux")
+    aux_dir = os.path.join(root, "auxiliary")
     os.makedirs(main_dir, exist_ok=True)
     os.makedirs(aux_dir, exist_ok=True)
 
@@ -179,7 +179,7 @@ def main():
         check("ffmpeg 已定位", bool(app.ffmpeg_path), app.ffmpeg_path)
         check("ffprobe 已定位", bool(app.ffprobe_path), app.ffprobe_path)
         total_modes = sum(len(v) for v in app.mode_groups.values())
-        check("模式总数 >= 24", total_modes >= 24, "共 %d 个" % total_modes)
+        check("模式总数 >= 22", total_modes >= 22, "共 %d 个" % total_modes)
         check("无模式加载错误", not getattr(app_mod.load_modes, "errors", []),
               str(getattr(app_mod.load_modes, "errors", [])))
         gpu = app.gpu_profile
@@ -210,36 +210,42 @@ def main():
             proc = gpu.get("vendor") if use_gpu else "cpu"
             app.var_processor.set(proc)
             app.var_processor_label.set(app_mod.PROCESSOR_LABELS.get(proc, ""))
-            print("\n[%s] 三通道端到端 (%s)" % (3 if not use_gpu else 3, label))
+            print("\n[%s] 通道端到端 (%s)" % (3 if not use_gpu else 3, label))
 
             cases = [
-                ("抖音处理", "默认通道", 720, "720x1280"),
-                ("抖音处理", "默认混剪", 720, "720x1280"),
-                ("哔哩处理", "高清修复", 1920, "1920x1080"),
+                ("抖音处理", "战斗通道0921", 720, "720x1280", "hevc_encoder"),
+                ("抖音处理", "童谣0921", 720, "720x1280", "hevc_encoder"),
+                ("快手处理", "撕裂者通道0921", 1024, "1024x576", "h264_encoder"),
+                ("视频号处理", "财神通道0923", 720, "720x1280", "h264_encoder"),
+                ("视频号处理", "天家通道0923", 720, "720x1280", "h264_encoder"),
+                ("快手处理", "冰峰财神通道0923", 720, "720x1280", "h264_encoder"),
+                ("哔哩处理", "高清修复", 1920, "1920x1080", "h264_encoder"),
             ]
-            for idx, (plat, mode_name, _w, want_size) in enumerate(cases):
+            for idx, (plat, mode_name, _w, want_size, encoder_key) in enumerate(cases):
                 out_dir = os.path.join(root, "out_%s_%d" % (label, idx))
-                aux = os.path.join(aux_dir, "a1.mp4") if "混剪" in mode_name else ""
+                aux = os.path.join(aux_dir, "a1.mp4") if mode_name in (
+                    "童谣0921", "财神通道0923", "天家通道0923", "冰峰财神通道0923"
+                ) else ""
                 text, done = run(app, plat, mode_name, os.path.join(main_dir, "m1.mp4"),
                                  aux, out_dir)
                 ok = done and "成功 1 / 失败 0 / 共 1" in text
                 check("%s · %s 退出码 0" % (plat, mode_name), ok)
                 if ok:
                     assert_outputs(app, "%s %s" % (label, mode_name), out_dir, 1, want_size)
-                    if use_gpu and "h264_nvenc" not in text:
+                    if use_gpu and gpu.get(encoder_key) not in text:
                         FAILURES.append("%s · %s 没有走硬件编码" % (label, mode_name))
 
         # ---------------------------------------------------------------- 5
         print("\n[5] 批量 + 辅视频循环复用")
         app.var_processor.set("cpu")
         out_dir = os.path.join(root, "out_batch")
-        text, done = run(app, "抖音处理", "默认混剪", main_dir, aux_dir, out_dir)
+        text, done = run(app, "抖音处理", "童谣0921", main_dir, aux_dir, out_dir)
         check("批量 3 主 / 2 辅 跑完", done and "成功 3 / 失败 0 / 共 3" in text)
         wanted = "提示: 辅视频 2 个,少于主视频 3 个,将循环复用配对"
         check("出现辅视频循环复用提示", wanted in text,
               "" if wanted in text else "日志里的辅视频相关行: %s"
               % [l for l in text.splitlines() if "辅" in l][:4])
-        assert_outputs(app, "批量混剪", out_dir, 3, "720x1280")
+        assert_outputs(app, "批量童谣", out_dir, 3, "720x1280")
 
         # ---------------------------------------------------------------- 6
         print("\n[6] GPU 回退")

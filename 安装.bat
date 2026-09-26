@@ -7,7 +7,7 @@ echo   黑猫视频处理软件(本地版) 环境安装
 echo ============================================================
 echo.
 
-rem ---- 1. 找 Python 3.11 ----
+rem ---- 1. 找 Python 3.x ----
 set PY=
 for %%P in (
   "%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
@@ -17,14 +17,14 @@ for %%P in (
 )
 if not defined PY (
   where py >nul 2>nul
-  if not errorlevel 1 for /f "delims=" %%I in ('py -3.11 -c "import sys;print(sys.executable)" 2^>nul') do set PY="%%I"
+  if not errorlevel 1 for /f "delims=" %%I in ('py -3 -c "import sys;print(sys.executable)" 2^>nul') do if exist "%%I" set PY="%%I"
 )
 if not defined PY (
   where python >nul 2>nul
-  if not errorlevel 1 for /f "delims=" %%I in ('python -c "import sys;print(sys.executable)" 2^>nul') do set PY="%%I"
+  if not errorlevel 1 for /f "delims=" %%I in ('python -c "import sys;print(sys.executable)" 2^>nul') do if exist "%%I" set PY="%%I"
 )
 if not defined PY (
-  echo   [X] 没找到 Python。请先装 Python 3.11 或更高版本:
+  echo   [X] 没找到 Python 3.x。请先安装 Python 3.10 或更高版本:
   echo       https://www.python.org/downloads/   安装时记得勾 Add python.exe to PATH
   pause
   exit /b 1
@@ -48,14 +48,29 @@ echo   [3/3] 安装依赖(customtkinter)...
   exit /b 1
 )
 
-rem ---- ffmpeg ----
-if not exist "bin\ffmpeg.exe" (
-  if exist "..\bin\ffmpeg.exe" (
+rem ---- ffmpeg / ffprobe ----
+set "FFMPEG_READY="
+set "FFMPEG_URL=https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+if exist "bin\ffmpeg.exe" if exist "bin\ffprobe.exe" set "FFMPEG_READY=1"
+
+if not defined FFMPEG_READY if exist "..\bin\ffmpeg.exe" if exist "..\bin\ffprobe.exe" (
+  if not exist "bin" (
     echo   链接 bin\ -^> ..\bin ^(复用原程序的 ffmpeg,不占额外空间^)
     powershell -NoProfile -Command "New-Item -ItemType Junction -Path 'bin' -Target '..\bin' | Out-Null"
-  ) else (
-    echo   [!] 没找到 ffmpeg.exe。请把 ffmpeg.exe / ffprobe.exe 放进 rebuild\bin\
   )
+  if exist "bin\ffmpeg.exe" if exist "bin\ffprobe.exe" set "FFMPEG_READY=1"
+)
+
+if not defined FFMPEG_READY (
+  echo   下载 FFmpeg ^(约 110 MB^)...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = 'Stop'; $zip = Join-Path $env:TEMP 'heimao-ffmpeg.zip'; $extract = Join-Path $env:TEMP 'heimao-ffmpeg'; Remove-Item -LiteralPath $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue; Invoke-WebRequest -Uri '%FFMPEG_URL%' -OutFile $zip -UseBasicParsing -TimeoutSec 600; Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force; $ffmpeg = Get-ChildItem -LiteralPath $extract -Filter 'ffmpeg.exe' -Recurse -File | Select-Object -First 1; $ffprobe = Get-ChildItem -LiteralPath $extract -Filter 'ffprobe.exe' -Recurse -File | Select-Object -First 1; New-Item -ItemType Directory -Path 'bin' -Force | Out-Null; Copy-Item -LiteralPath $ffmpeg.FullName -Destination 'bin\ffmpeg.exe' -Force; Copy-Item -LiteralPath $ffprobe.FullName -Destination 'bin\ffprobe.exe' -Force; Remove-Item -LiteralPath $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue"
+  if errorlevel 1 (
+    echo   [X] FFmpeg 下载或解压失败。请检查网络后重跑本脚本。
+    pause
+    exit /b 1
+  )
+  set "FFMPEG_READY=1"
 )
 
 echo.

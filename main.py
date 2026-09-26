@@ -100,6 +100,7 @@ class App(ctk.CTk):
         self.platform_widgets = {}
         self._aux_widgets = []
         self._active_platform = None
+        self._hover_platform = None
 
         self.var_main = tk.StringVar()
         self.var_aux = tk.StringVar()
@@ -347,6 +348,11 @@ class App(ctk.CTk):
     # 模式
     # ------------------------------------------------------------------
     def _load_modes_into_ui(self):
+        previous_platform = self._active_platform
+        previous_modes = {
+            title: data["var"].get()
+            for title, data in self.platform_widgets.items()
+        }
         try:
             self.mode_groups = load_modes()
         except Exception:
@@ -359,6 +365,7 @@ class App(ctk.CTk):
         for child in self.platform_container.winfo_children():
             child.destroy()
         self.platform_widgets = {}
+        self._hover_platform = None
 
         titles = list(self.mode_groups.keys())
         columns = 4
@@ -367,13 +374,19 @@ class App(ctk.CTk):
             row, col = divmod(idx, columns)
             self._create_platform_panel(title, modes, row, col)
 
+        for title, mode_name in previous_modes.items():
+            info = self.platform_widgets.get(title)
+            if info and mode_name in [mode.name for mode in info["modes"]]:
+                info["var"].set(mode_name)
+
         for col in range(columns):
             self.platform_container.grid_columnconfigure(col, weight=1, uniform="plat")
 
         # 默认激活第一个平台的第一个模式
         if titles:
-            first = titles[0]
-            self._activate_platform(first)
+            selected_platform = (previous_platform
+                                 if previous_platform in titles else titles[0])
+            self._activate_platform(selected_platform)
         else:
             self.log("✘ 没有加载到任何处理模式:请检查 mode_defs/ 目录是否完整")
 
@@ -382,9 +395,11 @@ class App(ctk.CTk):
                              corner_radius=6, border_width=1, border_color=C_BORDER)
         frame.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
 
-        label = ctk.CTkLabel(frame, text=title, font=self._font(12, True),
-                             text_color=C_TEXT)
-        label.pack(padx=8, pady=(6, 2))
+        label = ctk.CTkButton(
+            frame, text=title, command=lambda t=title: self._activate_platform(t),
+            font=self._font(12, True), text_color=C_TEXT, fg_color="transparent",
+            hover_color=C_ACTIVE, corner_radius=4, height=24)
+        label.pack(fill="x", padx=8, pady=(6, 2))
 
         names = [m.name for m in modes]
         var = tk.StringVar(value=names[0] if names else "")
@@ -395,9 +410,41 @@ class App(ctk.CTk):
             command=lambda _v, t=title: self._activate_platform(t))
         combo.pack(padx=8, pady=(0, 8))
 
+        self._bind_platform_hover(frame, title)
+        self._bind_platform_hover(label, title)
+        self._bind_platform_hover(combo, title)
+
         self.platform_widgets[title] = {
             "frame": frame, "label": label, "combo": combo, "var": var, "modes": modes,
         }
+
+    def _bind_platform_hover(self, widget, title):
+        targets = []
+        for attribute in ("_canvas", "_entry"):
+            target = getattr(widget, attribute, None)
+            if target is not None:
+                targets.append(target)
+        for target in targets:
+            target.bind(
+                "<Enter>", lambda _event, t=title: self._set_platform_hover(t, True), add="+")
+            target.bind(
+                "<Leave>", lambda _event, t=title: self._set_platform_hover(t, False), add="+")
+
+    def _set_platform_hover(self, title, hovering):
+        if hovering:
+            self._hover_platform = title
+        elif self._hover_platform == title:
+            self._hover_platform = None
+        self._refresh_platform_styles()
+
+    def _refresh_platform_styles(self):
+        highlighted = self._hover_platform or self._active_platform
+        for title, data in self.platform_widgets.items():
+            active = title == highlighted
+            data["frame"].configure(
+                border_color=C_ACCENT if active else C_BORDER,
+                fg_color=C_ACTIVE if active else C_PANEL_ALT)
+            data["label"].configure(text_color=C_ACCENT if active else C_TEXT)
 
     def _activate_platform(self, title):
         info = self.platform_widgets.get(title)
@@ -411,12 +458,7 @@ class App(ctk.CTk):
 
         self._active_platform = title
         self.current_mode = mode
-
-        for other, data in self.platform_widgets.items():
-            active = other == title
-            data["frame"].configure(border_color=C_ACCENT if active else C_BORDER,
-                                    fg_color=C_ACTIVE if active else C_PANEL_ALT)
-            data["label"].configure(text_color=C_ACCENT if active else C_TEXT)
+        self._refresh_platform_styles()
 
         self._update_aux_state()
         if mode is not None:
@@ -489,6 +531,8 @@ class App(ctk.CTk):
 
     def _processor_text(self):
         if not self.gpu_profile.get("available"):
+            if self.gpu_profile.get("gpu_names"):
+                return "已检测到 GPU，但硬件编码不可用，已切到CPU处理"
             # 「自効」是原码错别字,照抄恢复出的原文,不改
             return "未检测到可用 GPU，已自効切到CPU处理"
         vendor = self.gpu_profile.get("vendor")

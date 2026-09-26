@@ -19,15 +19,16 @@ ffmpeg 命令模板不在客户端里，由服务器下发（`xknmb.zjwhcmxy.com
 
 | 场景 | 做什么 |
 |---|---|
-| 第一次用（新机器） | 双击 **`安装.bat`** —— 建 `.venv`、装 customtkinter、链接 `bin\` |
+| 第一次用（新机器） | 双击 **`安装.bat`** —— 建 `.venv`、装 customtkinter、准备 `bin\` 中的 FFmpeg |
 | 日常使用 | 双击 **`启动.bat`** |
 | 出错要看堆栈 | 双击 **`启动-调试.bat`**（保留控制台） |
 | 改完代码验证 | 双击 **`自检.bat`**（几十秒，退出码 0 = 全过） |
 
 启动**没有任何登录 / 卡密 / 联网环节**，直接进主界面。
 
-`bin\` 是指向 `..\bin` 的目录联接，复用原程序的 `ffmpeg.exe`/`ffprobe.exe`，不复制那 200 MB。
-换 ffmpeg 就把新的丢进 `..\bin\`，或在 `client/config.json` 里改 `ffmpeg_path`。
+安装时优先复用 `..\bin` 中的 `ffmpeg.exe`/`ffprobe.exe`；找不到时，脚本会从 gyan.dev 下载并解压
+FFmpeg essentials 到本地 `bin\`。换 ffmpeg 就把新的丢进 `..\bin\` 或 `bin\`，也可以在
+`client/config.json` 里改 `ffmpeg_path`。
 
 ---
 
@@ -196,5 +197,5 @@ mode_defs/<平台>/<通道>.json 的 command ──┴─> render() ──> 命�
 **重建（`RECONSTRUCTED`，需按业务调整）**：ffmpeg 命令模板本体、模式定义内容、
 控件精确坐标。模板是照恢复出的语义 + 实测产物尺寸反推的，**画质参数请按实际业务调**。
 
-**环境**：Python 3.11（PATH 首位是 3.10.11，脚本里已显式指定 3.11）、customtkinter 6.0.0、
-`bin/ffmpeg.exe`（gyan.dev 2025-02-20）。
+**环境**：Python 3.x、customtkinter 6.0.0；`安装.bat` 会从 gyan.dev 准备
+`bin/ffmpeg.exe` 和 `bin/ffprobe.exe`。
