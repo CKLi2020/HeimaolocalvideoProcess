@@ -163,6 +163,16 @@ class AppConfig:
     tpl_window_h: int = 100           # 窗口高（画布百分比）
     tpl_window_feather: int = 200     # 边缘羽化宽度（以 1080 短边为基准的像素数）
 
+    # ── 声音处理 ──
+    audio_bgm_enabled: bool = False
+    audio_bgm_folder: str = "背景音乐"
+    audio_bgm_pick: str = "随机"       # combo: 随机,固定
+    audio_bgm_fixed: str = ""          # 固定时使用的文件名
+    audio_bgm_volume: int = 15          # 百分比；参考软件默认 0.15
+    audio_voice_adaptive: bool = False  # 自动分析基频后做轻度音色变化
+    audio_voice_enabled: bool = False
+    audio_voice_pitch: int = 2          # 半音，负数低沉、正数明亮；保持原时长
+
     # ── 开幕、封面与字幕 ──
     kaimu_enabled: bool = True
     kaimu_mode: str = "素材-随机"

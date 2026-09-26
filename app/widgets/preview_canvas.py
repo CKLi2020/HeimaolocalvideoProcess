@@ -197,6 +197,10 @@ class PreviewCanvas(QWidget):
                 preview_config = copy.copy(self._config)
                 preview_config.sticker_switch_sec = 0
                 preview_config.kaimu_enabled = False
+                # 静态画面预览不需要解码或混合音轨；声音设置在导出时生效。
+                preview_config.audio_bgm_enabled = False
+                preview_config.audio_voice_enabled = False
+                preview_config.audio_voice_adaptive = False
                 cmd = build_ffmpeg_command(
                     preview_config, main_v, bg_v, image,
                     sticker_files=stickers or None,

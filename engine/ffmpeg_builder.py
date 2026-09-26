@@ -27,6 +27,7 @@ if TYPE_CHECKING:  # 仅用于类型标注，避免与 template_lib 形成运行
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 
 # 移动贴纸在没有任何显式参数时的默认位置（界面新增一行也用它）。
 # 用负值是为了走 (x+100)/200 那套换算，-50 正好是半个画幅的振幅，
@@ -64,6 +65,9 @@ def build_ffmpeg_command(
     mover_files: Optional[List[Path]] = None,
     template_window: Optional["Window"] = None,
     mover_layers: Optional[List[dict]] = None,
+    background_audio: Optional[Path] = None,
+    main_has_audio: bool = True,
+    voice_pitch: Optional[float] = None,
 ) -> List[str]:
     """构建完整的 ffmpeg 命令行。
 
@@ -670,6 +674,47 @@ def build_ffmpeg_command(
     # ═══════════════════════════════════════════════════════════
     filters.append(f"[{base_tag}]format=yuv420p[next_v]")
 
+    # ═══════════════════════════════════════════════════════════
+    # AUDIO: 原对白轻度移调 + 循环背景音乐
+    # ═══════════════════════════════════════════════════════════
+    audio_map: List[str]
+    dialogue_tag = "1:a"
+    effective_pitch = (
+        voice_pitch if voice_pitch is not None
+        else config.audio_voice_pitch if config.audio_voice_enabled else 0.0
+    )
+    if main_has_audio and effective_pitch:
+        ratio = 2 ** (effective_pitch / 12.0)
+        filters.append(
+            f"[1:a]aresample=48000,rubberband=pitch={ratio:.8f}:"
+            "formant=shifted:pitchq=quality[dialogue]"
+        )
+        dialogue_tag = "dialogue"
+
+    if (
+        config.audio_bgm_enabled
+        and background_audio is not None
+        and background_audio.is_file()
+    ):
+        cmd += ["-stream_loop", "-1", "-i", str(background_audio)]
+        bgm_idx = input_idx
+        input_idx += 1
+        filters.append(
+            f"[{bgm_idx}:a]aresample=48000,volume={config.audio_bgm_volume / 100:.3f}[bgm]"
+        )
+        if main_has_audio:
+            filters.append(
+                f"[{dialogue_tag}][bgm]amix=inputs=2:duration=first:"
+                "dropout_transition=2:normalize=0[mixed_audio]"
+            )
+            audio_map = ["-map", "[mixed_audio]"]
+        else:
+            audio_map = ["-map", "[bgm]"]
+    elif main_has_audio and effective_pitch:
+        audio_map = ["-map", "[dialogue]"]
+    else:
+        audio_map = ["-map", "1:a?"]
+
     # 选择编码器
     if config.gpu:
         if config.hevc:
@@ -687,7 +732,7 @@ def build_ffmpeg_command(
     cmd += [
         "-filter_complex", filter_complex,
         "-map", "[next_v]",
-        "-map", "1:a?",
+        *audio_map,
         "-c:v", encoder,
         "-preset", config.preset,
         "-crf", str(config.crf),

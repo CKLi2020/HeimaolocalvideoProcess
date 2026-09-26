@@ -290,6 +290,8 @@ class TemplateChoiceRow(QWidget):
         placeholder: str = "",
         current: str = "",
         folder_getter: Optional[Callable[[], Path]] = None,
+        file_filter: Optional[str] = None,
+        dialog_title: str = "选择素材",
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
@@ -299,6 +301,8 @@ class TemplateChoiceRow(QWidget):
         self._available: list[str] = []
         # 对话框的起始目录，同时也是「选中的文件必须在库里」的判定依据。
         self._folder_getter: Callable[[], Path] = folder_getter or (lambda: Path("."))
+        self._file_filter = file_filter
+        self._dialog_title = dialog_title
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -353,7 +357,10 @@ class TemplateChoiceRow(QWidget):
 
     def _browse(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(
-            self, "选择素材", str(self._folder_getter()), _video_filter(),
+            self,
+            self._dialog_title,
+            str(self._folder_getter()),
+            self._file_filter or _video_filter(),
         )
         if not chosen:
             return

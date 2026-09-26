@@ -83,7 +83,8 @@ $WorkingDirectories = @(
     (ConvertFrom-CodePoints @(0x8499, 0x7248, 0x6210, 0x54C1)),
     ((ConvertFrom-CodePoints @(0x8774, 0x8776)) + "AB" + (ConvertFrom-CodePoints @(0x6210, 0x54C1))),
     (ConvertFrom-CodePoints @(0x6A21, 0x677F)),
-    (ConvertFrom-CodePoints @(0x62FC, 0x63A5, 0x6210, 0x54C1))
+    (ConvertFrom-CodePoints @(0x62FC, 0x63A5, 0x6210, 0x54C1)),
+    (ConvertFrom-CodePoints @(0x80CC, 0x666F, 0x97F3, 0x4E50))
 )
 foreach ($name in $WorkingDirectories) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Release $name) | Out-Null

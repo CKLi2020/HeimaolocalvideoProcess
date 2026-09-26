@@ -23,6 +23,7 @@ from engine import HIDDEN_SUBPROCESS
 from engine.ffmpeg_builder import (
     VIDEO_EXTS,
     IMAGE_EXTS,
+    AUDIO_EXTS,
     list_media,
     pick_random,
     build_ffmpeg_command,
@@ -55,6 +56,71 @@ def _probe_duration(path: Path) -> float:
     except Exception:
         pass
     return 0.0
+
+
+def _probe_has_audio(path: Path) -> bool:
+    """主素材是否含音轨；声音处理开启时每个文件只探测一次。"""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "a:0",
+                "-show_entries", "stream=index", "-of", "csv=p=0", str(path),
+            ],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=20, **HIDDEN_SUBPROCESS,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
+def _estimate_voice_pitch(path: Path) -> Optional[float]:
+    """估算前 30 秒对白的基频中位数（Hz）；无可靠人声时返回 None。"""
+    try:
+        import numpy as np
+
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-i", str(path), "-t", "30",
+                "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-",
+            ],
+            capture_output=True, timeout=40, **HIDDEN_SUBPROCESS,
+        )
+        if result.returncode != 0 or len(result.stdout) < 3200:
+            return None
+        samples = np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32)
+        frame_size, hop = 640, 320
+        energies = np.array([
+            np.mean(samples[i:i + frame_size] ** 2)
+            for i in range(0, len(samples) - frame_size, hop)
+        ])
+        if not len(energies) or float(energies.max()) <= 0:
+            return None
+        energy_floor = max(float(np.percentile(energies, 60)), 1e4)
+        pitches: list[float] = []
+        min_lag, max_lag = 16000 // 300, 16000 // 70
+        window = np.hanning(frame_size).astype(np.float32)
+        for n, i in enumerate(range(0, len(samples) - frame_size, hop)):
+            if n % 3 or energies[n] < energy_floor:
+                continue
+            frame = samples[i:i + frame_size]
+            frame = (frame - frame.mean()) * window
+            corr = np.correlate(frame, frame, mode="full")[frame_size - 1:]
+            if corr[0] <= 0:
+                continue
+            lag = min_lag + int(np.argmax(corr[min_lag:max_lag + 1]))
+            if corr[lag] / corr[0] >= 0.30:
+                pitches.append(16000.0 / lag)
+        return float(np.median(pitches)) if len(pitches) >= 3 else None
+    except Exception:
+        return None
+
+
+def _adaptive_voice_shift(pitch_hz: Optional[float]) -> float:
+    """低声线轻微提亮，高声线轻微压低；检测失败则不冒险处理。"""
+    if pitch_hz is None:
+        return 0.0
+    return 2.0 if pitch_hz < 165.0 else -2.0
 
 
 def _run_ffmpeg(
@@ -175,11 +241,28 @@ def process_batch(
     )
     scanlight_folder = resolve(config.scanlight_folder)
     kaimu_folder = resolve(config.kaimu_folder)
+    audio_bgm_folder = resolve(config.audio_bgm_folder)
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
     mains = list_media(str(main_folder), VIDEO_EXTS)
     backgrounds = list_media(str(background_folder), VIDEO_EXTS)
+    background_audios = (
+        list_media(str(audio_bgm_folder), AUDIO_EXTS)
+        if config.audio_bgm_enabled else []
+    )
+
+    if config.audio_bgm_enabled:
+        if background_audios:
+            log(f"背景音乐: {len(background_audios)} 首，选自 {config.audio_bgm_folder}")
+            if (
+                config.audio_bgm_pick == "固定"
+                and config.audio_bgm_fixed
+                and not any(p.name == config.audio_bgm_fixed for p in background_audios)
+            ):
+                log(f"[警告] 固定音乐「{config.audio_bgm_fixed}」不在音乐库里，改为随机选择")
+        else:
+            log(f"[警告] 背景音乐文件夹中没有可用音频: {audio_bgm_folder}")
 
     # 模板模式：模板占用背景槽，所以不要求背景目录有素材。
     templates = None
@@ -224,10 +307,21 @@ def process_batch(
     # ── 预扫描所有主视频时长，用于真实进度 ──
     log("正在分析视频时长...")
     main_durations: dict[str, float] = {}
+    main_audio: dict[str, bool] = {}
+    adaptive_pitches: dict[str, tuple[Optional[float], float]] = {}
     total_duration = 0.0
     for mv in mains:
         dur = _probe_duration(mv)
         main_durations[str(mv)] = max(dur, 0.5)  # 至少 0.5 秒防止除零
+        if (
+            config.audio_bgm_enabled
+            or config.audio_voice_enabled
+            or config.audio_voice_adaptive
+        ):
+            main_audio[str(mv)] = _probe_has_audio(mv)
+        if config.audio_voice_adaptive and main_audio.get(str(mv), False):
+            detected = _estimate_voice_pitch(mv)
+            adaptive_pitches[str(mv)] = (detected, _adaptive_voice_shift(detected))
         total_duration += main_durations[str(mv)] * config.repeat_count
 
     if total_duration <= 0:
@@ -269,6 +363,14 @@ def process_batch(
                 return False
 
             job_index += 1
+
+            background_audio = None
+            if background_audios:
+                fixed_audio = next(
+                    (p for p in background_audios if p.name == config.audio_bgm_fixed),
+                    None,
+                ) if config.audio_bgm_pick == "固定" else None
+                background_audio = fixed_audio or random.choice(background_audios)
 
             # 随机选择素材
             backgrounds = [p for p in backgrounds if p.exists()]
@@ -355,6 +457,7 @@ def process_batch(
                     "movers": mover_files,
                     "mover_layers": mover_layers,
                     "template_window": template_window,
+                    "background_audio": background_audio,
                 })
 
             suffix = f"_{repeat + 1}" if config.repeat_count > 1 else ""
@@ -391,6 +494,12 @@ def process_batch(
                 mover_files=mover_files or None,
                 template_window=template_window,
                 mover_layers=mover_layers,
+                background_audio=background_audio,
+                main_has_audio=main_audio.get(str(main_video), True),
+                voice_pitch=(
+                    adaptive_pitches.get(str(main_video), (None, 0.0))[1]
+                    if config.audio_voice_adaptive else None
+                ),
             )
 
             log(f"  [{job_index}/{total_jobs}] {main_video.stem}{suffix}")
@@ -407,6 +516,19 @@ def process_batch(
                     + ("  [位置本次随机]" if config.mover_random else "  [位置按界面]"))
             if scanlight_file:
                 log(f"    扫光: {scanlight_file.name}")
+            if background_audio:
+                log(f"    背景音乐: {background_audio.name} ({config.audio_bgm_volume}%)")
+            if config.audio_voice_adaptive:
+                detected, shift = adaptive_pitches.get(str(main_video), (None, 0.0))
+                if detected is None:
+                    log("    [提示] 未检测到可靠对白基频，跳过智能音色变声")
+                else:
+                    log(f"    智能音色变声: 基频约 {detected:.0f}Hz，自动 {shift:+.0f} 半音")
+            elif config.audio_voice_enabled:
+                if main_audio.get(str(main_video), True):
+                    log(f"    对白变声: {config.audio_voice_pitch:+d} 半音（时长不变）")
+                else:
+                    log("    [提示] 主视频没有原声音轨，跳过对白变声")
 
             try:
                 result = _run_ffmpeg(

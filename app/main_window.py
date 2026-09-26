@@ -37,6 +37,7 @@ from app.pages.pip_page import PipPage
 from app.pages.sticker_page import StickerPage
 from app.pages.mover_page import MoverPage
 from app.pages.template_page import TemplatePage
+from app.pages.audio_page import AudioPage
 from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.pages.butterfly_ab_page import ButterflyABPage
@@ -305,6 +306,7 @@ class MainWindow(QMainWindow):
             "人脸遮挡": FaceColorPage(self.config, "face"),
             "卡秒": FaceColorPage(self.config, "mp4"),
             "模板": TemplatePage(self.config, self.root_dir),
+            "声音处理": AudioPage(self.config, self.root_dir),
         }
         # 「贴图」页整页收起（贴纸/扫光 与 画中画 都不再露出）。
         # 必须留住这个引用：里面的子页仍挂在 self._pages 上参与参数联动与
@@ -319,6 +321,7 @@ class MainWindow(QMainWindow):
             ("基础参数", self._pages["基础参数"]),
             ("封面", self._pages["封面"]),
             ("模板", self._pages["模板"]),
+            ("声音处理", self._pages["声音处理"]),
             ("移动贴纸", self._pages["移动贴纸"]),
             ("画面滤镜", self._pages["画面滤镜"]),
             ("蒙版", self._pages["蒙版"]),
