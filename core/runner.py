@@ -88,6 +88,7 @@ def _resolve(cfg_path, exe_name):
             cands.append(os.path.join(CLIENT_DIR, raw))
 
     for base in (BASE_DIR, CLIENT_DIR, os.path.dirname(BASE_DIR)):
+        cands.append(os.path.join(base, exe_name + suffix))
         cands.append(os.path.join(base, "bin", exe_name + suffix))
         if raw:
             cands.append(os.path.join(base, os.path.basename(raw)))
