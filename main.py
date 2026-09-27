@@ -739,8 +739,14 @@ class App(ctk.CTk):
                 if note:
                     self.log("  " + note)
 
-                command, is_gpu, err = mode.render(
-                    state, fpath, aux_path or None, use_gpu=use_gpu, out_base=tmp_base)
+                render_steps = getattr(mode, "render_steps", None)
+                if callable(render_steps):
+                    commands, is_gpu, err = render_steps(
+                        state, fpath, aux_path or None, use_gpu=use_gpu, out_base=tmp_base)
+                else:
+                    command, is_gpu, err = mode.render(
+                        state, fpath, aux_path or None, use_gpu=use_gpu, out_base=tmp_base)
+                    commands = [command] if command else []
                 if err:
                     # 模板本身渲不出来也走回退:GPU 模板写坏了不该让整个任务断在这里,
                     # CPU 模板还能跑就接着跑
@@ -752,10 +758,22 @@ class App(ctk.CTk):
                     gpu_disabled_batch = True
 
                 self._remove(tmp_base, mode.ext)
-                code = self.runner.run(command, duration=duration,
-                                       on_log=self.log, on_progress=on_progress)
+                code = -1
+                for command_idx, command in enumerate(commands):
+                    code = self.runner.run(
+                        command,
+                        duration=duration,
+                        on_log=self.log,
+                        on_progress=on_progress if command_idx == len(commands) - 1 else None,
+                    )
+                    if code != 0 or self.stop_flag.is_set():
+                        break
                 if code == 0:
                     break
+
+            cleanup_render = getattr(mode, "cleanup_render", None)
+            if callable(cleanup_render):
+                cleanup_render(tmp_base)
 
             if self.stop_flag.is_set():
                 self._remove(tmp_base, mode.ext)

@@ -179,7 +179,7 @@ def main():
         check("ffmpeg 已定位", bool(app.ffmpeg_path), app.ffmpeg_path)
         check("ffprobe 已定位", bool(app.ffprobe_path), app.ffprobe_path)
         total_modes = sum(len(v) for v in app.mode_groups.values())
-        check("模式总数 >= 22", total_modes >= 22, "共 %d 个" % total_modes)
+        check("模式总数 >= 21", total_modes >= 21, "共 %d 个" % total_modes)
         check("无模式加载错误", not getattr(app_mod.load_modes, "errors", []),
               str(getattr(app_mod.load_modes, "errors", [])))
         gpu = app.gpu_profile

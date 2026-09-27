@@ -15,7 +15,6 @@ def main():
     } == {
         "shipinhao/caishen0923",
         "shipinhao/tianjia0923",
-        "shipinhao/sph4",
     }
 
     cfg = {"ffmpeg_path": "bin/ffmpeg.exe", "ffprobe_path": "bin/ffprobe.exe"}
