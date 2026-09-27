@@ -1,19 +1,14 @@
-# 黑猫视频处理软件 · 本地重写版
+# 月落@苍狼·本地视频处理
 
-原 `小花猫 .exe` 的替代实现。原程序由离职工程师用 **Nuitka + MapoSafe SProtect64** 打包，
-源码丢失且**无法反编译还原**（IDA 里只有 VM handler，不是 Python 源码）；
-ffmpeg 命令模板不在客户端里，由服务器下发（`xknmb.zjwhcmxy.com`，2026-09-16 实测**仍在运行**）。
+本仓库以「月落@苍狼」的 `YanJingwenhua` 分支为唯一基础，在原界面和原有功能上增加了「03 本地视频处理」通道。
 
-所以这不是"还原"，是**照恢复出的规格重写**一个等价的纯本地客户端：无卡密、无后端、双击即用。
+## 已整合功能
 
-> **关于原版的 ffmpeg 命令模板**：2026-09-16 已从运行中的原客户端把真实参数整条取回
-> （值藏在 NTFS 备用数据流 `ffarg` 里，取证过程见
-> `work/xiaohuamao-src-recover/evidence/E-008.md`）。
-> 但其滤镜链的核心是**隔行交织 + 音频微量变速/噪声底 + 伪造元数据**，
-> 用途是规避平台的重复内容/指纹识别，**不属于视频处理功能，未移植进本目录**。
-> 本目录只做正当的归一化与转码。
+- 视频处理：支持主/辅视频文件或文件夹批处理，包含抖音、快手、视频号、小红书、TK、百家、哔哩和多多 8 类模式
+- 蒙版模式
+- 素材拼接
 
----
+## 源码启动
 
 ## 一、怎么跑
 
@@ -62,67 +57,22 @@ mode_defs/<平台>/<通道>.json 的 command ──┴─> render() ──> 命�
                                               FFmpegRunner.run() ──> 产物
                                                              │
                                                    verify_output() 单轨断言
+```powershell
+python -m pip install -r requirements.txt
+python main.py
 ```
 
----
+FFmpeg/FFprobe 会按 `client/config.json` 配置和程序根目录自动查找。
 
-## 三、加一个模式（团队最常用的操作）
+## 受保护版打包
 
-**方式 A：只丢一个 json —— 够用，最省事**
+按原 `YanJingwenhua` 流程执行：
 
-往 `mode_defs/<平台>/` 丢一个 `<通道>.json`，重启程序，该平台下拉框自动多一项。
-不用改任何 Python。空白模板：
-
-```json
-{
-  "id": "douyin/my_channel",
-  "name": "我的通道",
-  "platform": "douyin",
-  "needs_aux": false,
-  "gpu_supported": true,
-  "output_suffix": "_my",
-  "ext": "mp4",
-  "size": "720x1280",
-  "fps": 30,
-  "bitrate": "6000k",
-  "desc": "这个模式干什么用的，会显示在日志里",
-  "command":     "ffmpeg -y -hide_banner -i \"{input}\" -vf \"scale={width}:{height}\" -c:v {video_encoder} -preset medium -b:v {bitrate} -pix_fmt yuv420p -threads {threads} -map 0:v:0 -map 0:a:0? -c:a aac -b:a 128k -movflags +faststart \"{output}.{ext}\"",
-  "gpu_command": "ffmpeg -y -hide_banner -hwaccel {hwaccel} -i \"{input}\" -vf \"scale={width}:{height}\" -c:v {video_encoder} {gpu_opts} -b:v {bitrate} -pix_fmt yuv420p -map 0:v:0 -map 0:a:0? -c:a aac -b:a 128k -movflags +faststart \"{output}.{ext}\""
-}
+```powershell
+scripts\build\_protected.bat
 ```
 
-**方式 B：再配一个 `modes/<平台>/mode_<通道>.py`** —— 需要特殊参数逻辑时才写。
-里面暴露 `MODE = 你的模式实例`（继承 `BaseMode`）。同 `id` 的 json 会覆盖它的字段。
-
-### 占位符表
-
-| 占位符 | 含义 |
-|---|---|
-| `{input}` | 主视频完整路径 |
-| `{aux}` | 辅视频完整路径（`needs_aux` 为真时才有） |
-| `{output}` | 产物路径**不含扩展名** |
-| `{ext}` | 扩展名（来自 json 的 `ext`） |
-| `{width}` `{height}` `{size}` | 目标分辨率 |
-| `{fps}` | 目标帧率 |
-| `{threads}` | 线程数 |
-| `{bitrate}` | 码率 |
-| `{video_encoder}` | CPU 时 `libx264`；GPU 时 `h264_nvenc`/`h264_amf` |
-| `{hwaccel}` | GPU 时的硬解方式，默认 `auto` |
-| `{gpu_opts}` | **按厂商注入的编码器参数**，见下 |
-| `{suffix}` `{mix_seconds}` `{pip_scale}` `{margin}` | 模式自有字段 |
-
-> **`{gpu_opts}` 是必须的，别在 `gpu_command` 里写死编码器参数。**
-> NVENC（`-preset p5 -rc vbr -cq 21 …`）和 AMF（`-quality balanced -rc cqp …`）的参数体系
-> 完全不兼容，一份模板要同时服务 N 卡和 A 卡，只能靠这个占位符按厂商注入。
-> 要改画质就在这里改：`modes/base_mode.py` 的 `_GPU_OPTS`。
-
-> **路径引号写在模板里**（`"{input}"`），因为 `build_params` 给的是不带引号的裸路径。
-> 这是与原版的刻意差异：原版在 `build_params` 里就 quote 好了，导致 `{output}.{ext}`
-> 的后缀落到引号外面（`"路径".mp4`），输出目录带空格就会被拆开。
-
----
-
-## 四、产物完整性保障
+打包脚本已包含新增的 `core`、`modes`、`mode_defs` 和 `client` 资源。如需交给 SProtect 处理，再执行：
 
 > **⚠️ 更正（2026-09-16）**：本节原先写"原版 `output/` 两个产物是坏的多轨 MP4，疑似 GPU→CPU
 > 重试写了同一文件"。**该结论已证伪。** 那两个文件不是 `小花猫 .exe` 产物，而是一个本地脚本
@@ -199,3 +149,6 @@ mode_defs/<平台>/<通道>.json 的 command ──┴─> render() ──> 命�
 
 **环境**：Python 3.x、customtkinter 6.0.0；`安装.bat` 会从 gyan.dev 准备
 `bin/ffmpeg.exe` 和 `bin/ffprobe.exe`。
+```powershell
+scripts\finalize_sprotect_release.bat
+```

@@ -1,21 +1,23 @@
-# Local Python environment and caches
-.venv/
 __pycache__/
+.venv/
 *.py[cod]
-
-# Generated media and interrupted transcodes
+config.json
+配置文件/
+.codex_video_frames/
+主视频/
+辅助视频/
+贴纸/
+扫光/
+开幕/
+成品视频/
+蒙版成品/
+蝴蝶AB成品/
+模板/
+拼接成品/
+build/
+dist-protected/
+app/_flowcut_core.pyd
+showlight/
+startmovie/
 output/
-*.part.*
-
-# The local FFmpeg junction points outside this repository
-bin/
-
-# Test/config recovery leftovers
-*.selftest_backup
-*.log
-
-# Editor/OS files
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
+ico/*.png

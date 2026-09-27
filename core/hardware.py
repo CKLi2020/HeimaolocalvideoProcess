@@ -212,11 +212,12 @@ def detect_gpu_profile(ffmpeg_path=None):
         profile["warning"] = "未检测到 N卡/A卡"
         return profile
 
+    gpus.sort(key=lambda g: 0 if g["vendor"] == "nvidia" else 1)
+    profile["gpu_name"] = gpus[0]["name"]
     encoders = available_encoders(ffmpeg_path)
     profile["encoders_checked"] = encoders
 
     # N 卡优先,其次 A 卡
-    gpus.sort(key=lambda g: 0 if g["vendor"] == "nvidia" else 1)
     first_reason = ""
 
     for gpu in gpus:
