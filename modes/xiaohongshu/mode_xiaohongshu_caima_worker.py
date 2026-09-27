@@ -6,14 +6,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from fractions import Fraction
 from pathlib import Path
 from typing import Any, Sequence
 
 
-MODE = "xiaohongshu_pianpian"
-TRIM_HEAD_FRAMES = 5
-TRIM_TAIL_FRAMES = 1
+MODE = "xiaohongshu_caima"
 FORMAT_DURATION_TOLERANCE = 0.001
 STABLE_FORMAT_TAGS = {
     "major_brand",
@@ -25,10 +22,6 @@ STABLE_FORMAT_TAGS = {
     "comment",
     "location",
     "location-eng",
-    "make",
-    "model",
-    "metadata_status",
-    "capture_period",
     "encoder",
 }
 STABLE_STREAM_TAGS = {"language", "handler_name", "vendor_id", "encoder"}
@@ -196,58 +189,28 @@ def compare_signatures(expected: dict[str, Any], actual: dict[str, Any]) -> list
     return differences
 
 
-def _frame_count(video: dict[str, Any]) -> int:
-    raw_count = video.get("nb_frames") or video.get("nb_read_frames")
-    if raw_count not in (None, "N/A"):
-        return int(raw_count)
-    duration = Fraction(str(video["duration"]))
-    return round(duration * Fraction(video["avg_frame_rate"]))
-
-
 def build_command(
-    ffmpeg: str,
+    ffmpeg: Path,
     input_path: Path,
     output_path: Path,
-    input_probe: dict[str, Any],
-    threads: int,
+    reference_probe: dict[str, Any],
     video_encoder: str = "libx264",
     encoder_options: Sequence[str] = (),
     pixel_format: str | None = None,
 ) -> list[str]:
-    input_video = get_stream(input_probe, "video")
-    input_audio = get_stream(input_probe, "audio")
-    input_frames = _frame_count(input_video)
-    target_frames = input_frames - TRIM_HEAD_FRAMES - TRIM_TAIL_FRAMES
-    if target_frames <= 0:
-        raise ProcessingError("Input is too short for the captured head/tail trim.")
+    reference_video = get_stream(reference_probe, "video")
+    reference_audio = get_stream(reference_probe, "audio")
+    timescale = reference_video["time_base"].split("/", maxsplit=1)[1]
 
-    input_rate = Fraction(input_video["avg_frame_rate"])
-    target_time_base = Fraction(input_video["time_base"])
-    frame_step = int((Fraction(1, 1) / input_rate) / target_time_base)
-    trim_start_seconds = Fraction(TRIM_HEAD_FRAMES, 1) / input_rate
-    sample_rate = int(input_audio["sample_rate"])
-    target_audio_samples = round(Fraction(target_frames, 1) * sample_rate / input_rate)
-    output_pixel_format = pixel_format or input_video["pix_fmt"]
-
-    filter_graph = (
-        f"[0:v:0]trim=start_frame={TRIM_HEAD_FRAMES}:end_frame={input_frames - TRIM_TAIL_FRAMES},"
-        f"settb=expr={target_time_base.numerator}/{target_time_base.denominator},"
-        f"setpts=N*{frame_step}[video];"
-        f"[0:a:0]atrim=start={float(trim_start_seconds):.9f},"
-        f"aresample={sample_rate},apad,"
-        f"atrim=end_sample={target_audio_samples},asetpts=PTS-STARTPTS[audio]"
-    )
     command = [
         str(ffmpeg),
         "-y",
         "-i",
         str(input_path),
-        "-filter_complex",
-        filter_graph,
         "-map",
-        "[video]",
+        "0:v:0",
         "-map",
-        "[audio]",
+        "0:a:0",
         "-map_metadata",
         "0",
         "-map_chapters",
@@ -255,151 +218,116 @@ def build_command(
         "-c:v",
         video_encoder,
     ]
-    if video_encoder == "libx264":
-        command.extend([
-            "-crf:v", "23",
-            "-refs:v", "1",
-            "-threads", str(threads),
-        ])
+    if video_encoder in {"libx264", "libx265"}:
+        command.extend(["-crf:v", "18"])
     command.extend(encoder_options)
     command.extend([
-        "-profile:v", "main",
-        "-level:v", "4.0",
-        "-maxrate:v", "4367k",
-        "-bufsize:v", "4367k",
-        "-pix_fmt", output_pixel_format,
-        "-fps_mode:v", "passthrough",
-        "-video_track_timescale", str(target_time_base.denominator),
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-ar:a", str(sample_rate),
-        "-ac:a", str(input_audio["channels"]),
+        "-profile:v",
+        "high",
+        "-level:v",
+        "4.0",
+        "-pix_fmt",
+        pixel_format or reference_video["pix_fmt"],
+        "-fps_mode",
+        "passthrough",
+        "-video_track_timescale",
+        timescale,
+        "-c:a",
+        "aac",
+        "-ar:a",
+        str(reference_audio["sample_rate"]),
+        "-ac:a",
+        str(reference_audio["channels"]),
         str(output_path),
     ])
     return command
 
 
-def build_stage_one(
+def build_stages(
     ffmpeg: Path,
     input_path: Path,
-    intermediate_path: Path,
-    input_probe: dict[str, Any],
-    reference_probe: dict[str, Any],
-) -> tuple[list[str], dict[str, Any]]:
-    input_video = get_stream(input_probe, "video")
-    reference_video = get_stream(reference_probe, "video")
-    input_audio = get_stream(input_probe, "audio")
-    reference_audio = get_stream(reference_probe, "audio")
-    input_frames = int(input_video["nb_frames"])
-    target_frames = int(reference_video["nb_frames"])
-    removed_frames = input_frames - target_frames
-    if removed_frames < 2:
-        raise ProcessingError("Reference does not demonstrate the captured head/tail trim.")
-    trim_start_frames = removed_frames - 1
-    trim_end_frame = trim_start_frames + target_frames
-    input_rate = Fraction(input_video["avg_frame_rate"])
-    trim_start_seconds = Fraction(trim_start_frames, 1) / input_rate
-    target_rate = Fraction(reference_video["avg_frame_rate"])
-    target_time_base = Fraction(reference_video["time_base"])
-    frame_step = int((Fraction(1, 1) / target_rate) / target_time_base)
-    start_pts = int(reference_video["start_pts"])
-    channels = int(reference_audio["channels"])
-    target_audio_samples = int(reference_audio["duration_ts"])
-
-    filter_graph = (
-        f"[0:v:0]trim=start_frame={trim_start_frames}:end_frame={trim_end_frame},"
-        f"settb=expr={target_time_base.numerator}/{target_time_base.denominator},"
-        f"setpts=N*{frame_step}+{start_pts}[video];"
-        f"[0:a:0]atrim=start={float(trim_start_seconds):.9f},"
-        f"aresample={reference_audio['sample_rate']},apad,"
-        f"atrim=end_sample={target_audio_samples},asetpts=PTS-STARTPTS[audio]"
-    )
-    arguments = [
-        str(ffmpeg),
-        "-y",
-        "-i",
-        str(input_path),
-        "-filter_complex",
-        filter_graph,
-        "-map",
-        "[video]",
-        "-map",
-        "[audio]",
-        "-map_metadata",
-        "0",
-        "-map_chapters",
-        "0",
-        "-c:v",
-        "libx264",
-        "-profile:v",
-        "main",
-        "-level:v",
-        "4.0",
-        "-crf:v",
-        "23",
-        "-maxrate:v",
-        "4367k",
-        "-bufsize:v",
-        "4367k",
-        "-refs:v",
-        "1",
-        "-pix_fmt",
-        reference_video["pix_fmt"],
-        "-fps_mode:v",
-        "passthrough",
-        "-video_track_timescale",
-        str(target_time_base.denominator),
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-ar:a",
-        str(reference_audio["sample_rate"]),
-        "-ac:a",
-        str(channels),
-        str(intermediate_path),
-    ]
-    return arguments, {
-        "trim_start_frames": trim_start_frames,
-        "trim_end_frame": trim_end_frame,
-        "trim_start_seconds": float(trim_start_seconds),
-        "target_video_frames": target_frames,
-        "target_video_start_pts": start_pts,
-        "target_video_time_base": str(target_time_base),
-        "target_audio_samples": target_audio_samples,
-        "input_audio_sample_rate": input_audio.get("sample_rate"),
-    }
-
-
-def build_stage_two(
-    ffmpeg: Path,
-    intermediate_path: Path,
     output_path: Path,
+    temporary_directory: Path,
     reference_probe: dict[str, Any],
-) -> list[str]:
-    arguments = [
-        str(ffmpeg),
-        "-y",
-        "-i",
-        str(intermediate_path),
-        "-map",
-        "0",
-        "-c",
-        "copy",
+    video_encoder: str = "libx264",
+    encoder_options: Sequence[str] = (),
+    pixel_format: str | None = None,
+) -> list[list[str]]:
+    reference_video = get_stream(reference_probe, "video")
+    reference_audio = get_stream(reference_probe, "audio")
+    frame_rate = reference_video["avg_frame_rate"]
+    timescale = reference_video["time_base"].split("/", maxsplit=1)[1]
+    stage_one = temporary_directory / "step1_j2k.mov"
+    stage_two = temporary_directory / "step2_audio.ogg"
+    stage_three = temporary_directory / "step2_muxed.mkv"
+
+    return [
+        [
+            str(ffmpeg),
+            "-y",
+            "-i",
+            str(input_path),
+            "-map",
+            "0:v:0",
+            "-map_metadata",
+            "0",
+            "-map_chapters",
+            "0",
+            "-c:v",
+            "jpeg2000",
+            "-pix_fmt",
+            reference_video["pix_fmt"],
+            "-r:v",
+            frame_rate,
+            "-video_track_timescale",
+            timescale,
+            "-an",
+            str(stage_one),
+        ],
+        [
+            str(ffmpeg),
+            "-y",
+            "-i",
+            str(input_path),
+            "-map",
+            "0:a:0",
+            "-map_metadata",
+            "0",
+            "-map_chapters",
+            "0",
+            "-c:a",
+            "libvorbis",
+            "-ar:a",
+            str(reference_audio["sample_rate"]),
+            "-ac:a",
+            str(reference_audio["channels"]),
+            "-vn",
+            str(stage_two),
+        ],
+        [
+            str(ffmpeg),
+            "-y",
+            "-i",
+            str(stage_one),
+            "-i",
+            str(stage_two),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            str(stage_three),
+        ],
+        build_command(
+            ffmpeg, stage_three, output_path, reference_probe,
+            video_encoder, encoder_options, pixel_format,
+        ),
     ]
-    format_tags = reference_probe.get("format", {}).get("tags", {})
-    for key in sorted(STABLE_FORMAT_TAGS - {"major_brand", "minor_version", "compatible_brands", "encoder"}):
-        if key in format_tags:
-            arguments.extend(["-metadata", f"{key}={format_tags[key]}"])
-    creation_time = format_tags.get("creation_time")
-    if creation_time:
-        arguments.extend(["-metadata", f"creation_time={creation_time}"])
-    arguments.extend(["-movflags", "+faststart+use_metadata_tags", str(output_path)])
-    return arguments
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reproduce the captured xiaohongshu_pianpian mode.")
+    parser = argparse.ArgumentParser(description="Reproduce the captured xiaohongshu_caima mode.")
     parser.add_argument("input", type=Path, help="Input media path")
     parser.add_argument("output", type=Path, help="Python-generated MP4 path")
     parser.add_argument("--reference", required=True, type=Path, help="Matching tool-produced reference MP4")
@@ -409,8 +337,8 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
-    script_dir = Path(__file__).resolve().parent
-    report_path = arguments.report or script_dir / "capture_xiaohongshu_pianpian" / "comparison.json"
+    script_dir = Path(__file__).resolve().parents[2]
+    report_path = arguments.report or script_dir / "capture_xiaohongshu_caima" / "comparison.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         input_path = arguments.input.resolve(strict=True)
@@ -423,15 +351,13 @@ def main() -> int:
         ffprobe = resolve_tool("ffprobe", script_dir)
         input_probe = probe(ffprobe, input_path)
         reference_probe = probe(ffprobe, reference_path)
+        get_stream(input_probe, "video")
+        get_stream(input_probe, "audio")
 
-        with tempfile.TemporaryDirectory(prefix=f"{MODE}_", dir=output_path.parent) as temporary_directory:
-            intermediate_path = Path(temporary_directory) / "reenc.mp4"
-            stage_one, derived_values = build_stage_one(
-                ffmpeg, input_path, intermediate_path, input_probe, reference_probe
-            )
-            run_checked(stage_one)
-            stage_two = build_stage_two(ffmpeg, intermediate_path, output_path, reference_probe)
-            run_checked(stage_two)
+        with tempfile.TemporaryDirectory(prefix=f"{MODE}_", dir=output_path.parent) as temporary_path:
+            stages = build_stages(ffmpeg, input_path, output_path, Path(temporary_path), reference_probe)
+            for stage in stages:
+                run_checked(stage)
 
         expected = normalized_signature(reference_probe)
         actual = normalized_signature(probe(ffprobe, output_path))
@@ -445,9 +371,7 @@ def main() -> int:
             "python_output": str(output_path),
             "ffmpeg": str(ffmpeg),
             "ffprobe": str(ffprobe),
-            "stage_one_arguments": stage_one,
-            "stage_two_arguments": stage_two,
-            "derived_values": derived_values,
+            "stage_arguments": stages,
             "expected_signature": expected,
             "actual_signature": actual,
             "differences": differences,
@@ -462,7 +386,7 @@ def main() -> int:
                     "creation_time",
                 ],
                 "unknown_transformations": [
-                    "The encrypted first-stage filter text is not exposed. Frame matching demonstrated a six-frame head trim; the worker reproduces the observed trim and timing structure."
+                    "The encrypted stage-one payload suppressed its FFmpeg log. Its JPEG 2000 stream structure is reproduced from the captured stage-one probe, but its private quality controls remain unknown."
                 ],
             },
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduce captured douyin_tongyao encoding and verify stable media features."""
+"""Reproduce captured shipin_tianjia encoding and verify stable media features."""
 
 from __future__ import annotations
 
@@ -8,15 +8,11 @@ import json
 import shutil
 import subprocess
 import sys
-from fractions import Fraction
 from pathlib import Path
 from typing import Any, Sequence
 
 
-X265_PARAMS = (
-    "bframes=4:no-scenecut=1:keyint=27000:min-keyint=270:no-info=1:"
-    "no-hrd=1:vui-timing-info=0:vui-hrd-info=0:repeat-headers=0:no-open-gop=1"
-)
+X264_PARAMS = "aq-mode=2:aq-strength=1.00"
 UNKNOWN_TRANSFORMATION = (
     "The tool used a second, infinitely looped video in a transient filter_complex. "
     "That response stream was deleted before capture, so this worker reproduces the "
@@ -75,13 +71,6 @@ def first_stream(report: dict[str, Any], codec_type: str) -> dict[str, Any]:
         if stream.get("codec_type") == codec_type:
             return stream
     raise ProcessingError(f"Reference has no {codec_type} stream.")
-
-
-def decimal_rate(rate: str) -> str:
-    value = Fraction(rate)
-    if value.denominator == 1:
-        return str(value.numerator)
-    return f"{float(value):.8f}".rstrip("0").rstrip(".")
 
 
 def stable_tags(tags: Any) -> dict[str, Any]:
@@ -184,24 +173,42 @@ def build_command(
     output_path: Path,
     reference: dict[str, Any],
     threads: int,
-    video_encoder: str = "libx265",
+    video_encoder: str = "libx264",
     encoder_options: Sequence[str] = (),
+    pixel_format: str | None = None,
+) -> list[str]:
+    return build_command_with_encoder(
+        ffmpeg, input_path, effect_input, output_path, reference, threads,
+        video_encoder, encoder_options, pixel_format,
+    )
+
+
+def build_command_with_encoder(
+    ffmpeg: str,
+    input_path: Path,
+    effect_input: Path,
+    output_path: Path,
+    reference: dict[str, Any],
+    threads: int,
+    video_encoder: str,
+    encoder_options: Sequence[str],
+    pixel_format: str | None,
 ) -> list[str]:
     video = first_stream(reference, "video")
     audio = first_stream(reference, "audio")
     width = int(video["width"])
     height = int(video["height"])
-    frame_rate = decimal_rate(video["r_frame_rate"])
-    video_duration = video["duration"]
+    frame_rate = video["r_frame_rate"].split("/")[0]
+    frame_count = int(video["nb_read_frames"])
     audio_duration = audio["duration"]
-    field_filter = ",setfield=tff" if video_encoder == "libx265" else ""
     filter_complex = (
-        f"[0:v:0]scale={width}:{height}:flags=lanczos,setsar=1{field_filter},"
-        f"trim=duration={video_duration},setpts=PTS-STARTPTS[v];"
+        f"[0:v:0]scale={width}:{height}:flags=lanczos,setsar=1,fps={frame_rate},"
+        f"trim=end_frame={frame_count},setpts=PTS-STARTPTS[v];"
         f"[0:a:0]aresample={audio['sample_rate']},"
         f"aformat=channel_layouts={audio['channel_layout']},apad,"
         f"atrim=duration={audio_duration},asetpts=PTS-STARTPTS[a]"
     )
+    pixel_format = pixel_format or video.get("pix_fmt") or "yuv420p"
     command = [
         ffmpeg,
         "-progress", "pipe:2",
@@ -217,43 +224,43 @@ def build_command(
         "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", "[a]",
+        "-r", frame_rate,
+        "-fps_mode", "cfr",
         "-c:v", video_encoder,
     ]
-    if video_encoder == "libx265":
+    if video_encoder == "libx264":
         command.extend([
-            "-preset", "fast",
-            "-crf", "16",
-            "-x265-params", X265_PARAMS,
+            "-preset", "medium",
+            "-tune", "film",
+            "-crf", "17",
+            "-profile:v", "high",
+            "-level:v", "4.2",
+            "-bf", "0",
+            "-refs", "3",
+            "-g", "120",
+            "-keyint_min", "120",
+            "-sc_threshold", "0",
+            "-force_key_frames", "expr:gte(t,n_forced*1)",
+            "-x264-params", X264_PARAMS,
         ])
     else:
         command.extend(encoder_options)
     command.extend([
-        "-tag:v", "hvc1",
-        "-force_key_frames", "0,9.000,10.000,11.000",
-        "-sc_threshold", "0",
-        "-pix_fmt", video["pix_fmt"],
+        "-pix_fmt", pixel_format,
         "-colorspace", video.get("color_space", "bt709"),
         "-color_trc", "bt709",
         "-color_primaries", "bt709",
         "-color_range", video.get("color_range", "tv"),
-        "-r", frame_rate,
-        "-fps_mode", "cfr",
-        "-video_track_timescale", str(Fraction(video["time_base"]).denominator),
+        "-video_track_timescale", "15360",
         "-threads", str(threads),
         "-c:a", "aac",
         "-b:a", "72k",
         "-ac", str(audio["channels"]),
         "-ar", audio["sample_rate"],
+        "-tag:v", "avc1",
         "-movflags", "+faststart",
-        "-f", "mp4",
         str(output_path),
     ])
-    if video_encoder == "libx265":
-        field_index = command.index("-video_track_timescale")
-        command[field_index:field_index] = [
-            "-field_order", video.get("field_order", "tb"),
-            "-flags:v", "+ilme+ildct",
-        ]
     return command
 
 
@@ -265,20 +272,18 @@ def process(
     reference: dict[str, Any],
     threads: int,
 ) -> None:
-    command = build_command(
-        ffmpeg, input_path, effect_input, output_path, reference, threads
-    )
+    command = build_command(ffmpeg, input_path, effect_input, output_path, reference, threads)
     completed = subprocess.run(command, check=False)
     if completed.returncode:
         raise ProcessingError(f"ffmpeg failed with exit code {completed.returncode}")
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Reproduce captured douyin_tongyao stable features.")
+    result = argparse.ArgumentParser(description="Reproduce captured shipin_tianjia stable features.")
     result.add_argument("input_path", type=Path)
     result.add_argument("output_path", type=Path)
     result.add_argument("--effect-input", required=True, type=Path, help="Second video selected by the mode")
-    result.add_argument("--reference", required=True, type=Path, help="douyin_tongyao output made by the tool")
+    result.add_argument("--reference", required=True, type=Path, help="shipin_tianjia output made by the tool")
     result.add_argument("--threads", type=int, default=6)
     result.add_argument("--report", type=Path)
     return result
@@ -286,7 +291,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = parser().parse_args()
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parents[2]
     input_path = arguments.input_path.expanduser().resolve()
     effect_input = arguments.effect_input.expanduser().resolve()
     output_path = arguments.output_path.expanduser().resolve()
@@ -307,7 +312,7 @@ def main() -> int:
         errors = differences(expected, actual)
         report = {
             "passed": not errors,
-            "mode": "douyin_tongyao",
+            "mode": "shipin_tianjia",
             "reference": str(reference_path),
             "output": str(output_path),
             "effect_input": str(effect_input),
@@ -320,13 +325,13 @@ def main() -> int:
             "expected": expected,
             "actual": actual,
         }
-        report_path = arguments.report or output_path.with_suffix(".douyin_tongyao-report.json")
+        report_path = arguments.report or output_path.with_suffix(".shipin_tianjia-report.json")
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if errors:
             for error in errors:
                 print(error, file=sys.stderr)
             return 2
-        print(f"douyin_tongyao stable features match. Report: {report_path}", file=sys.stderr)
+        print(f"shipin_tianjia stable features match. Report: {report_path}", file=sys.stderr)
         return 0
     except (OSError, ValueError, KeyError, ProcessingError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)

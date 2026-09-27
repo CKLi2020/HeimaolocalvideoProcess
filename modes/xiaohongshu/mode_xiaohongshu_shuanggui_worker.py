@@ -5,12 +5,11 @@ import json
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
 
-MODE = "xiaohongshu_caima"
+MODE = "xiaohongshu_shuanggui"
 FORMAT_DURATION_TOLERANCE = 0.001
 STABLE_FORMAT_TAGS = {
     "major_brand",
@@ -45,9 +44,7 @@ STREAM_FIELDS = (
     "r_frame_rate",
     "avg_frame_rate",
     "time_base",
-    "start_pts",
     "start_time",
-    "duration_ts",
     "duration",
     "nb_frames",
     "sample_fmt",
@@ -63,11 +60,12 @@ class ProcessingError(RuntimeError):
 
 def resolve_tool(name: str, script_dir: Path) -> Path:
     executable = f"{name}.exe"
-    for candidate in (
+    candidates = (
         script_dir / "bin" / executable,
         script_dir / executable,
         script_dir / "config" / "BIN" / "bin4" / executable,
-    ):
+    )
+    for candidate in candidates:
         if candidate.is_file():
             return candidate.resolve()
     resolved = shutil.which(executable) or shutil.which(name)
@@ -76,9 +74,15 @@ def resolve_tool(name: str, script_dir: Path) -> Path:
     raise ProcessingError(f"Unable to locate {executable} in bin/, the script directory, or PATH.")
 
 
-def run_checked(arguments: list[str]) -> None:
+def run_checked(arguments: list[str]) -> subprocess.CompletedProcess[str]:
     try:
-        subprocess.run(arguments, check=True)
+        return subprocess.run(
+            arguments,
+            check=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
     except subprocess.CalledProcessError as error:
         raise ProcessingError(f"Command failed with exit code {error.returncode}: {arguments[0]}") from error
     except OSError as error:
@@ -112,13 +116,6 @@ def probe(ffprobe: Path, media_path: Path) -> dict[str, Any]:
         raise ProcessingError(f"Unable to probe {media_path}: {error}") from error
 
 
-def get_stream(probe_data: dict[str, Any], codec_type: str) -> dict[str, Any]:
-    for stream in probe_data.get("streams", []):
-        if stream.get("codec_type") == codec_type:
-            return stream
-    raise ProcessingError(f"Required {codec_type} stream is missing.")
-
-
 def selected_tags(tags: dict[str, Any] | None, allowed: set[str]) -> dict[str, Any]:
     tags = tags or {}
     return {key: tags[key] for key in sorted(allowed) if key in tags}
@@ -131,6 +128,7 @@ def normalized_signature(probe_data: dict[str, Any]) -> dict[str, Any]:
         normalized["disposition"] = stream.get("disposition", {})
         normalized["tags"] = selected_tags(stream.get("tags"), STABLE_STREAM_TAGS)
         streams.append(normalized)
+
     format_data = probe_data.get("format", {})
     return {
         "streams": streams,
@@ -175,6 +173,7 @@ def compare_signatures(expected: dict[str, Any], actual: dict[str, Any]) -> list
                     "actual": actual_format.get(field),
                 }
             )
+
     expected_duration = float(expected_format["duration"])
     actual_duration = float(actual_format["duration"])
     if abs(expected_duration - actual_duration) > FORMAT_DURATION_TOLERANCE:
@@ -190,18 +189,16 @@ def compare_signatures(expected: dict[str, Any], actual: dict[str, Any]) -> list
 
 
 def build_command(
-    ffmpeg: Path,
+    ffmpeg: str,
     input_path: Path,
     output_path: Path,
-    reference_probe: dict[str, Any],
+    threads: int,
     video_encoder: str = "libx264",
     encoder_options: Sequence[str] = (),
     pixel_format: str | None = None,
 ) -> list[str]:
-    reference_video = get_stream(reference_probe, "video")
-    reference_audio = get_stream(reference_probe, "audio")
-    timescale = reference_video["time_base"].split("/", maxsplit=1)[1]
-
+    output_pixel_format = pixel_format or "yuv444p"
+    video_filter = f"format={output_pixel_format},pad=iw:ih+2:0:2:black,fps=120,setdar=16/9"
     command = [
         str(ffmpeg),
         "-y",
@@ -215,119 +212,48 @@ def build_command(
         "0",
         "-map_chapters",
         "0",
+        "-vf",
+        video_filter,
         "-c:v",
         video_encoder,
     ]
-    if video_encoder in {"libx264", "libx265"}:
-        command.extend(["-crf:v", "18"])
     command.extend(encoder_options)
     command.extend([
-        "-profile:v",
-        "high",
+        "-b:v",
+        "15000k",
+        "-maxrate:v",
+        "18000k",
+        "-bufsize:v",
+        "16000k",
         "-level:v",
-        "4.0",
+        "4.2",
         "-pix_fmt",
-        pixel_format or reference_video["pix_fmt"],
-        "-fps_mode",
-        "passthrough",
+        output_pixel_format,
+        "-threads",
+        str(threads),
+        "-fps_mode:v",
+        "cfr",
         "-video_track_timescale",
-        timescale,
+        "15360",
         "-c:a",
         "aac",
+        "-b:a",
+        "192k",
         "-ar:a",
-        str(reference_audio["sample_rate"]),
+        "48000",
         "-ac:a",
-        str(reference_audio["channels"]),
+        "2",
         str(output_path),
     ])
     return command
 
 
-def build_stages(
-    ffmpeg: Path,
-    input_path: Path,
-    output_path: Path,
-    temporary_directory: Path,
-    reference_probe: dict[str, Any],
-    video_encoder: str = "libx264",
-    encoder_options: Sequence[str] = (),
-    pixel_format: str | None = None,
-) -> list[list[str]]:
-    reference_video = get_stream(reference_probe, "video")
-    reference_audio = get_stream(reference_probe, "audio")
-    frame_rate = reference_video["avg_frame_rate"]
-    timescale = reference_video["time_base"].split("/", maxsplit=1)[1]
-    stage_one = temporary_directory / "step1_j2k.mov"
-    stage_two = temporary_directory / "step2_audio.ogg"
-    stage_three = temporary_directory / "step2_muxed.mkv"
-
-    return [
-        [
-            str(ffmpeg),
-            "-y",
-            "-i",
-            str(input_path),
-            "-map",
-            "0:v:0",
-            "-map_metadata",
-            "0",
-            "-map_chapters",
-            "0",
-            "-c:v",
-            "jpeg2000",
-            "-pix_fmt",
-            reference_video["pix_fmt"],
-            "-r:v",
-            frame_rate,
-            "-video_track_timescale",
-            timescale,
-            "-an",
-            str(stage_one),
-        ],
-        [
-            str(ffmpeg),
-            "-y",
-            "-i",
-            str(input_path),
-            "-map",
-            "0:a:0",
-            "-map_metadata",
-            "0",
-            "-map_chapters",
-            "0",
-            "-c:a",
-            "libvorbis",
-            "-ar:a",
-            str(reference_audio["sample_rate"]),
-            "-ac:a",
-            str(reference_audio["channels"]),
-            "-vn",
-            str(stage_two),
-        ],
-        [
-            str(ffmpeg),
-            "-y",
-            "-i",
-            str(stage_one),
-            "-i",
-            str(stage_two),
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c",
-            "copy",
-            str(stage_three),
-        ],
-        build_command(
-            ffmpeg, stage_three, output_path, reference_probe,
-            video_encoder, encoder_options, pixel_format,
-        ),
-    ]
+def build_ffmpeg_arguments(ffmpeg: Path, input_path: Path, output_path: Path) -> list[str]:
+    return build_command(str(ffmpeg), input_path, output_path, 6)
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Reproduce the captured xiaohongshu_caima mode.")
+    parser = argparse.ArgumentParser(description="Reproduce the captured xiaohongshu_shuanggui mode.")
     parser.add_argument("input", type=Path, help="Input media path")
     parser.add_argument("output", type=Path, help="Python-generated MP4 path")
     parser.add_argument("--reference", required=True, type=Path, help="Matching tool-produced reference MP4")
@@ -337,29 +263,23 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
-    script_dir = Path(__file__).resolve().parent
-    report_path = arguments.report or script_dir / "capture_xiaohongshu_caima" / "comparison.json"
+    script_dir = Path(__file__).resolve().parents[2]
+    report_path = arguments.report or script_dir / "capture_xiaohongshu_shuanggui" / "comparison.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
         input_path = arguments.input.resolve(strict=True)
         reference_path = arguments.reference.resolve(strict=True)
         output_path = arguments.output.resolve()
-        if output_path in {input_path, reference_path}:
+        if output_path == input_path or output_path == reference_path:
             raise ProcessingError("Output must not overwrite the input or reference.")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         ffmpeg = resolve_tool("ffmpeg", script_dir)
         ffprobe = resolve_tool("ffprobe", script_dir)
-        input_probe = probe(ffprobe, input_path)
-        reference_probe = probe(ffprobe, reference_path)
-        get_stream(input_probe, "video")
-        get_stream(input_probe, "audio")
+        command = build_ffmpeg_arguments(ffmpeg, input_path, output_path)
+        run_checked(command)
 
-        with tempfile.TemporaryDirectory(prefix=f"{MODE}_", dir=output_path.parent) as temporary_path:
-            stages = build_stages(ffmpeg, input_path, output_path, Path(temporary_path), reference_probe)
-            for stage in stages:
-                run_checked(stage)
-
-        expected = normalized_signature(reference_probe)
+        expected = normalized_signature(probe(ffprobe, reference_path))
         actual = normalized_signature(probe(ffprobe, output_path))
         differences = compare_signatures(expected, actual)
         report = {
@@ -371,7 +291,7 @@ def main() -> int:
             "python_output": str(output_path),
             "ffmpeg": str(ffmpeg),
             "ffprobe": str(ffprobe),
-            "stage_arguments": stages,
+            "ffmpeg_arguments": command,
             "expected_signature": expected,
             "actual_signature": actual,
             "differences": differences,
@@ -383,11 +303,11 @@ def main() -> int:
                     "whole_file_hash",
                     "encoded_packet_bytes",
                     "pixel_hashes",
-                    "creation_time",
                 ],
-                "unknown_transformations": [
-                    "The encrypted stage-one payload suppressed its FFmpeg log. Its JPEG 2000 stream structure is reproduced from the captured stage-one probe, but its private quality controls remain unknown."
-                ],
+                "visual_transform_note": (
+                    "The captured private payload was replayable but did not expose its filter expression. "
+                    "The worker uses the executable checks that identified a two-row top pad and 120 fps cadence."
+                ),
             },
         }
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

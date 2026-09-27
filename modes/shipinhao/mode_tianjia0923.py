@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from mode_shipin_tianjia_worker import build_command, probe, resolve_tool
+from modes.shipinhao.mode_shipin_tianjia_worker import build_command, probe, resolve_tool
 from modes.base_mode import BaseMode
 from modes.shipinhao.h264_gpu import select_h264_encoder
 

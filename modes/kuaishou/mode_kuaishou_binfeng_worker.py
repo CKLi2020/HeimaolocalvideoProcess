@@ -280,7 +280,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = parser().parse_args()
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parents[2]
     input_path = arguments.input_path.expanduser().resolve()
     effect_input = arguments.effect_input.expanduser().resolve()
     output_path = arguments.output_path.expanduser().resolve()

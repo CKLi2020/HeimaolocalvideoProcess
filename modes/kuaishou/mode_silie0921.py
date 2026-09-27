@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from mode_kuai_ai_worker import build_command
+from modes.kuaishou.mode_kuai_ai_worker import build_command
 from modes.base_mode import BaseMode
 from modes.kuaishou.h264_gpu import select_h264_encoder
 

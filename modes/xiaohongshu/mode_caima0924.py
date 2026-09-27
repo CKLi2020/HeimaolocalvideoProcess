@@ -4,7 +4,7 @@ import subprocess
 import shutil
 from pathlib import Path
 
-from mode_xiaohongshu_caima_worker import (
+from modes.xiaohongshu.mode_xiaohongshu_caima_worker import (
     build_command,
     build_stages,
     get_stream,

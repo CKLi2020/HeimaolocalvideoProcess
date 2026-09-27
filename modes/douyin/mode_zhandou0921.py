@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from mode_a1_worker import build_command, probe, resolve_tool
+from modes.douyin.mode_a1_worker import build_command, probe, resolve_tool
 from modes.base_mode import BaseMode
 from modes.douyin.hevc_gpu import select_hevc_encoder
 

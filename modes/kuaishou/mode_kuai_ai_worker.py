@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduce captured shipin_caishen encoding and verify stable media features."""
+"""Reproduce captured kuai_ai encoding and verify stable media features."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-X264_PARAMS = "aq-mode=2:aq-strength=1.00"
+X264_PARAMS = "ref=2:bframes=2:keyint=250:min-keyint=25:no-scenecut=1"
 UNKNOWN_TRANSFORMATION = (
-    "The tool used a second, infinitely looped video in a transient filter_complex. "
-    "That response stream was deleted before capture, so this worker reproduces the "
-    "demonstrated media structure but does not claim pixel-equivalent visual compositing."
+    "The tool's transient filter_complex response was deleted before capture. "
+    "The worker reproduces its demonstrated 1024x576 yuv444p output structure, "
+    "but does not claim pixel-equivalent hidden visual processing."
 )
 
 
@@ -50,20 +50,19 @@ def run_capture(command: Sequence[str]) -> str:
 
 
 def probe(ffprobe: str, path: Path) -> dict[str, Any]:
-    return json.loads(
-        run_capture(
-            [
-                ffprobe,
-                "-v", "error",
-                "-count_frames",
-                "-count_packets",
-                "-show_streams",
-                "-show_format",
-                "-of", "json",
-                str(path),
-            ]
-        )
+    output = run_capture(
+        [
+            ffprobe,
+            "-v", "error",
+            "-count_frames",
+            "-count_packets",
+            "-show_streams",
+            "-show_format",
+            "-of", "json",
+            str(path),
+        ]
     )
+    return json.loads(output)
 
 
 def first_stream(report: dict[str, Any], codec_type: str) -> dict[str, Any]:
@@ -138,8 +137,13 @@ def stable_features(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def differences(expected: Any, actual: Any, path: str = "") -> list[str]:
-    if path == "format.duration":
+    if path == "format.duration" or path.endswith(".tags.DURATION"):
         try:
+            if path.endswith(".tags.DURATION"):
+                expected_parts = expected.split(":")
+                actual_parts = actual.split(":")
+                expected = int(expected_parts[0]) * 3600 + int(expected_parts[1]) * 60 + float(expected_parts[2])
+                actual = int(actual_parts[0]) * 3600 + int(actual_parts[1]) * 60 + float(actual_parts[2])
             return [] if abs(float(expected) - float(actual)) <= 0.0011 else [
                 f"{path}: expected {expected!r}, got {actual!r}"
             ]
@@ -169,46 +173,18 @@ def differences(expected: Any, actual: Any, path: str = "") -> list[str]:
 def build_command(
     ffmpeg: str,
     input_path: Path,
-    effect_input: Path,
     output_path: Path,
-    reference: dict[str, Any],
     threads: int,
     video_encoder: str = "libx264",
     encoder_options: Sequence[str] = (),
-    pixel_format: str | None = None,
 ) -> list[str]:
-    return build_command_with_encoder(
-        ffmpeg, input_path, effect_input, output_path, reference, threads,
-        video_encoder, encoder_options, pixel_format,
-    )
-
-
-def build_command_with_encoder(
-    ffmpeg: str,
-    input_path: Path,
-    effect_input: Path,
-    output_path: Path,
-    reference: dict[str, Any],
-    threads: int,
-    video_encoder: str,
-    encoder_options: Sequence[str],
-    pixel_format: str | None,
-) -> list[str]:
-    video = first_stream(reference, "video")
-    audio = first_stream(reference, "audio")
-    width = int(video["width"])
-    height = int(video["height"])
-    frame_rate = video["r_frame_rate"].split("/")[0]
-    frame_count = int(video["nb_read_frames"])
-    audio_duration = audio["duration"]
+    gpu = video_encoder != "libx264"
+    pixel_format = "yuv420p" if gpu else "yuv444p"
     filter_complex = (
-        f"[0:v:0]scale={width}:{height}:flags=lanczos,setsar=1,fps={frame_rate},"
-        f"trim=end_frame={frame_count},setpts=PTS-STARTPTS[v];"
-        f"[0:a:0]aresample={audio['sample_rate']},"
-        f"aformat=channel_layouts={audio['channel_layout']},apad,"
-        f"atrim=duration={audio_duration},asetpts=PTS-STARTPTS[a]"
+        f"[0:v:0]scale=1024:576,format={pixel_format},split=2[base][duplicate];"
+        "[duplicate]trim=start_frame=1[duplicate_tail];"
+        "[base][duplicate_tail]interleave[v]"
     )
-    pixel_format = pixel_format or video.get("pix_fmt") or "yuv420p"
     command = [
         ffmpeg,
         "-progress", "pipe:2",
@@ -218,72 +194,55 @@ def build_command_with_encoder(
         "-stats",
         "-stats_period", "0.5",
         "-threads", str(threads),
+        "-copyts",
         "-i", str(input_path),
-        "-stream_loop", "-1",
-        "-i", str(effect_input),
         "-filter_complex", filter_complex,
         "-map", "[v]",
-        "-map", "[a]",
-        "-r", frame_rate,
-        "-fps_mode", "cfr",
+        "-map", "0:a:0",
         "-c:v", video_encoder,
     ]
-    if video_encoder == "libx264":
+    if gpu:
+        command.extend(encoder_options)
+    else:
         command.extend([
-            "-preset", "medium",
-            "-tune", "film",
-            "-crf", "17",
-            "-profile:v", "high",
-            "-level:v", "4.2",
-            "-bf", "0",
-            "-refs", "3",
-            "-g", "120",
-            "-keyint_min", "120",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-profile:v", "high444",
+            "-level:v", "5.2",
+            "-refs", "2",
+            "-bf", "2",
+            "-g", "250",
+            "-keyint_min", "25",
             "-sc_threshold", "0",
-            "-force_key_frames", "expr:gte(t,n_forced*1)",
             "-x264-params", X264_PARAMS,
         ])
-    else:
-        command.extend(encoder_options)
     command.extend([
         "-pix_fmt", pixel_format,
-        "-colorspace", video.get("color_space", "bt709"),
-        "-color_trc", "bt709",
         "-color_primaries", "bt709",
-        "-color_range", video.get("color_range", "tv"),
-        "-video_track_timescale", "15360",
+        "-color_trc", "bt709",
+        "-color_range", "tv",
+        "-fps_mode", "passthrough",
         "-threads", str(threads),
-        "-c:a", "aac",
-        "-b:a", "72k",
-        "-ac", str(audio["channels"]),
-        "-ar", audio["sample_rate"],
-        "-tag:v", "avc1",
-        "-movflags", "+faststart",
+        "-c:a", "copy",
+        "-avoid_negative_ts", "disabled",
+        "-f", "matroska",
         str(output_path),
     ])
     return command
 
 
-def process(
-    ffmpeg: str,
-    input_path: Path,
-    effect_input: Path,
-    output_path: Path,
-    reference: dict[str, Any],
-    threads: int,
-) -> None:
-    command = build_command(ffmpeg, input_path, effect_input, output_path, reference, threads)
+def process(ffmpeg: str, input_path: Path, output_path: Path, threads: int) -> None:
+    command = build_command(ffmpeg, input_path, output_path, threads)
     completed = subprocess.run(command, check=False)
     if completed.returncode:
         raise ProcessingError(f"ffmpeg failed with exit code {completed.returncode}")
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Reproduce captured shipin_caishen stable features.")
+    result = argparse.ArgumentParser(description="Reproduce captured kuai_ai stable media features.")
     result.add_argument("input_path", type=Path)
     result.add_argument("output_path", type=Path)
-    result.add_argument("--effect-input", required=True, type=Path, help="Second video selected by the mode")
-    result.add_argument("--reference", required=True, type=Path, help="shipin_caishen output made by the tool")
+    result.add_argument("--reference", required=True, type=Path, help="kuai_ai output made by the tool")
     result.add_argument("--threads", type=int, default=6)
     result.add_argument("--report", type=Path)
     return result
@@ -291,47 +250,46 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = parser().parse_args()
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parents[2]
     input_path = arguments.input_path.expanduser().resolve()
-    effect_input = arguments.effect_input.expanduser().resolve()
     output_path = arguments.output_path.expanduser().resolve()
     reference_path = arguments.reference.expanduser().resolve()
     try:
-        if not input_path.is_file() or not effect_input.is_file() or not reference_path.is_file():
-            raise ProcessingError("Input, effect input, or reference file does not exist.")
+        if not input_path.is_file() or not reference_path.is_file():
+            raise ProcessingError("Input or reference file does not exist.")
         if arguments.threads < 1:
             raise ProcessingError("--threads must be at least 1.")
         ffmpeg = resolve_tool(root, "ffmpeg.exe")
         ffprobe = resolve_tool(root, "ffprobe.exe")
-        reference_report = probe(ffprobe, reference_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        process(ffmpeg, input_path, effect_input, output_path, reference_report, arguments.threads)
+        process(ffmpeg, input_path, output_path, arguments.threads)
+        reference_report = probe(ffprobe, reference_path)
         output_report = probe(ffprobe, output_path)
         expected = stable_features(reference_report)
         actual = stable_features(output_report)
         errors = differences(expected, actual)
         report = {
             "passed": not errors,
-            "mode": "shipin_caishen",
+            "mode": "kuai_ai",
             "reference": str(reference_path),
             "output": str(output_path),
-            "effect_input": str(effect_input),
             "comparison_policy": (
-                "Stable ffprobe structure, frame and packet counts; format duration allows "
-                "1 ms muxer rounding. Bitrate, size, hashes and pixels are excluded."
+                "Stable ffprobe structure, frame and packet counts; format duration and "
+                "Matroska DURATION tags allow 1 ms muxer rounding. Bitrate, size, hashes "
+                "and pixels are excluded."
             ),
             "unknown_transformation": UNKNOWN_TRANSFORMATION,
             "errors": errors,
             "expected": expected,
             "actual": actual,
         }
-        report_path = arguments.report or output_path.with_suffix(".shipin_caishen-report.json")
+        report_path = arguments.report or output_path.with_suffix(".kuai_ai-report.json")
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if errors:
             for error in errors:
                 print(error, file=sys.stderr)
             return 2
-        print(f"shipin_caishen stable features match. Report: {report_path}", file=sys.stderr)
+        print(f"kuai_ai stable features match. Report: {report_path}", file=sys.stderr)
         return 0
     except (OSError, ValueError, KeyError, ProcessingError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)

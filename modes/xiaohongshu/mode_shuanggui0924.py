@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from mode_xiaohongshu_shuanggui_worker import build_command
+from modes.xiaohongshu.mode_xiaohongshu_shuanggui_worker import build_command
 from modes.base_mode import BaseMode
 from modes.shipinhao.h264_gpu import select_h264_encoder
 

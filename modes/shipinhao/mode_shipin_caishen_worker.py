@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduce captured shipin_tianjia encoding and verify stable media features."""
+"""Reproduce captured shipin_caishen encoding and verify stable media features."""
 
 from __future__ import annotations
 
@@ -279,11 +279,11 @@ def process(
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Reproduce captured shipin_tianjia stable features.")
+    result = argparse.ArgumentParser(description="Reproduce captured shipin_caishen stable features.")
     result.add_argument("input_path", type=Path)
     result.add_argument("output_path", type=Path)
     result.add_argument("--effect-input", required=True, type=Path, help="Second video selected by the mode")
-    result.add_argument("--reference", required=True, type=Path, help="shipin_tianjia output made by the tool")
+    result.add_argument("--reference", required=True, type=Path, help="shipin_caishen output made by the tool")
     result.add_argument("--threads", type=int, default=6)
     result.add_argument("--report", type=Path)
     return result
@@ -291,7 +291,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = parser().parse_args()
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parents[2]
     input_path = arguments.input_path.expanduser().resolve()
     effect_input = arguments.effect_input.expanduser().resolve()
     output_path = arguments.output_path.expanduser().resolve()
@@ -312,7 +312,7 @@ def main() -> int:
         errors = differences(expected, actual)
         report = {
             "passed": not errors,
-            "mode": "shipin_tianjia",
+            "mode": "shipin_caishen",
             "reference": str(reference_path),
             "output": str(output_path),
             "effect_input": str(effect_input),
@@ -325,13 +325,13 @@ def main() -> int:
             "expected": expected,
             "actual": actual,
         }
-        report_path = arguments.report or output_path.with_suffix(".shipin_tianjia-report.json")
+        report_path = arguments.report or output_path.with_suffix(".shipin_caishen-report.json")
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         if errors:
             for error in errors:
                 print(error, file=sys.stderr)
             return 2
-        print(f"shipin_tianjia stable features match. Report: {report_path}", file=sys.stderr)
+        print(f"shipin_caishen stable features match. Report: {report_path}", file=sys.stderr)
         return 0
     except (OSError, ValueError, KeyError, ProcessingError, subprocess.SubprocessError) as error:
         print(str(error), file=sys.stderr)
