@@ -22,4 +22,6 @@ startmovie/
 output/
 ico/*.png
 bin/ffmpeg.exe
-bin/ffprobe.exe
+bin/ffprobe.
+.github/
+capture*
