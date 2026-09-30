@@ -195,6 +195,8 @@ def _add_local_modes(errors, loaded_ids):
             modname, ext = os.path.splitext(os.path.basename(path))
             if ext not in _EXT_OK:
                 continue
+            if modname.endswith("_worker"):
+                continue
             try:
                 module = importlib.import_module("modes.%s.%s" % (pkey, modname))
                 mode = _instantiate(getattr(module, "MODE", None))

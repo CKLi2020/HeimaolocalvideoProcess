@@ -93,25 +93,46 @@ class LocalProcessorService:
                     if attempt_index and not use_gpu:
                         gpu_disabled = True
                         log("  GPU 处理失败，自动改用 CPU 重试")
-                    command, _, error = mode.render(
-                        state,
-                        str(source),
-                        str(auxiliary) if auxiliary else None,
-                        use_gpu=use_gpu,
-                        out_base=temporary_base,
-                    )
+                    render_steps = getattr(mode, "render_steps", None)
+                    if callable(render_steps):
+                        commands, _, error = render_steps(
+                            state,
+                            str(source),
+                            str(auxiliary) if auxiliary else None,
+                            use_gpu=use_gpu,
+                            out_base=temporary_base,
+                        )
+                    else:
+                        command, _, error = mode.render(
+                            state,
+                            str(source),
+                            str(auxiliary) if auxiliary else None,
+                            use_gpu=use_gpu,
+                            out_base=temporary_base,
+                        )
+                        commands = [command] if command else []
                     if error:
                         log("  【失败】" + error)
                         continue
                     self._remove(temporary_base, mode.ext)
-                    code = self.runner.run(
-                        command,
-                        duration=duration,
-                        on_log=log,
-                        on_progress=task_progress,
-                    )
+                    code = -1
+                    for command_index, command in enumerate(commands):
+                        code = self.runner.run(
+                            command,
+                            duration=duration,
+                            on_log=log,
+                            on_progress=(
+                                task_progress if command_index == len(commands) - 1 else None
+                            ),
+                        )
+                        if code != 0 or self._stop.is_set():
+                            break
                     if code == 0:
                         break
+
+                cleanup_render = getattr(mode, "cleanup_render", None)
+                if callable(cleanup_render):
+                    cleanup_render(temporary_base)
 
                 if self._stop.is_set():
                     self._remove(temporary_base, mode.ext)
