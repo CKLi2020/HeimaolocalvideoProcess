@@ -224,7 +224,7 @@ class LicenseDialog(QDialog):
         self.setWindowTitle(f"{APP_NAME} V{APP_VERSION} - 卡密登录")
         self.setModal(True)
         self.setFixedSize(552, 360)
-        icon = Path(__file__).resolve().parents[1] / "ico" / "feng_logo.ico"
+        icon = Path(__file__).resolve().parents[1] / "ico" / "heimao_logo.ico"
         if icon.exists():
             from PySide6.QtGui import QIcon
 

@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         channel_layout.setContentsMargins(12, 18, 12, 12)
         channel_layout.setSpacing(9)
         channel_logo = QLabel()
-        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "feng_logo.ico")).pixmap(120, 120))
+        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "heimao_logo.ico")).pixmap(120, 120))
         channel_logo.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_logo)
         channel_brand = QLabel(APP_NAME)

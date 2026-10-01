@@ -47,7 +47,7 @@ def main() -> None:
     app.setFont(font)
 
     # 设置图标
-    icon_path = ROOT / "ico" / "feng_logo.ico"
+    icon_path = ROOT / "ico" / "heimao_logo.ico"
     if icon_path.exists():
         from PySide6.QtGui import QIcon
         app.setWindowIcon(QIcon(str(icon_path)))

@@ -16,7 +16,7 @@ $ProductNameBase64 = (& $Python -c "import base64,runpy; print(base64.b64encode(
 $ProductName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ProductNameBase64))
 $Release = Join-Path $Dist "${ProductName}_V$Version"
 $LauncherName = "${ProductName}_V$Version.exe"
-$Icon = Join-Path $Root "ico\xinghuo_logo.ico"
+$Icon = Join-Path $Root "ico\heimao_logo.ico"
 $Ffmpeg = (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue).Source
 $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 
