@@ -1,0 +1,30 @@
+{
+  "source_slots": {
+    "a001": "metadata_format",
+    "a002": "filter_graph_file",
+    "a003": "video_map",
+    "a004": "audio_map",
+    "a005": "captured_video_encoder",
+    "a006": "video_tag",
+    "a007": "pixel_format",
+    "a008": "frame_rate",
+    "a009": "audio_encoder",
+    "a010": "audio_bitrate",
+    "a011": "audio_channels",
+    "a012": "audio_sample_rate",
+    "a013": "container_format"
+  },
+  "metadata_format": "ffmetadata",
+  "filter_graph_file": "filter_complex.txt",
+  "video_map": "[vout]",
+  "audio_map": "[aout]",
+  "captured_video_encoder": "libx265",
+  "video_tag": "hev1",
+  "pixel_format": "yuv420p",
+  "frame_rate": "30",
+  "audio_encoder": "aac",
+  "audio_bitrate": "72k",
+  "audio_channels": "2",
+  "audio_sample_rate": "44100",
+  "container_format": "mp4"
+}

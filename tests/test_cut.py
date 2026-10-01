@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory() as tmp:
         button for button in window._channel_group.buttons()
         if "视频裁剪" in button.text()
     ]
-    assert len(cut_buttons) == 1 and cut_buttons[0].isVisibleTo(window)
+    assert len(cut_buttons) == 1 and cut_buttons[0].isHidden()
     window._select_channel("cut")
     assert window._workspace_stack.currentWidget() is window._cut_page
     assert hasattr(window._pages["声音处理"], "_speed_row")

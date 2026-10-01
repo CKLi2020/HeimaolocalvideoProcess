@@ -1,4 +1,4 @@
-"""快手撕裂者通道0921。"""
+"""快手长河通道。"""
 
 import subprocess
 from pathlib import Path
@@ -10,14 +10,14 @@ from modes.kuaishou.h264_gpu import select_h264_encoder
 
 class ModeSilie0921(BaseMode):
     id = "kuaishou/silie0921"
-    name = "撕裂者通道0921"
+    name = "长河"
     platform = "kuaishou"
     needs_aux = False
     gpu_supported = True
     output_suffix = "_silie0921"
     output_naming = "source"
     ext = "mkv"
-    help_text = "快手处理 · 撕裂者通道0921（CPU / NVIDIA / AMD）"
+    help_text = "快手处理 · 长河（CPU / NVIDIA / AMD）"
 
     def has_gpu_command(self):
         return True
@@ -40,7 +40,7 @@ class ModeSilie0921(BaseMode):
                 encoder, encoder_options,
             )
         except (OSError, ValueError, KeyError, RuntimeError) as error:
-            return "", bool(use_gpu), "撕裂者通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "长河参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 

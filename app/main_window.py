@@ -153,11 +153,8 @@ class MainWindow(QMainWindow):
             ("视频裁剪", "cut"),
             ("蝴蝶AB", "butterfly_ab"),
         )
-        # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
-        # _workspace_stack 里的蝴蝶页、_on_start 的蝴蝶分支都还在原位，只是界面
-        # 上没有入口能切过去。要把按钮放回来，
-        # 只需把 "butterfly_ab" 从这个集合里删掉。
-        hidden_channels = {"butterfly_ab"}
+        # 只隐藏入口，保留页面和处理逻辑，后续开放时从集合中移除即可。
+        hidden_channels = {"concat", "cut", "butterfly_ab"}
         for name, channel in channels:
             button = QPushButton(name)
             button.setObjectName("channelButton")

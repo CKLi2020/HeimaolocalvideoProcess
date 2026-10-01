@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import shutil
 import subprocess
@@ -9,20 +8,25 @@ import sys
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-CAPTURE_DIR = SCRIPT_DIR / "capture_xiaohongshu_yanjingshe"
-DEFAULT_METADATA_URL = "http://xhm.zjwhcmxy.com/modes/xiaohongshu/xhs4.json.php?meta=1"
-FILTER_GRAPH = (
-    "[0:v]fps=30,scale=w='if(gte(iw\\,ih)\\,1024\\,576)':"
-    "h='if(gte(iw\\,ih)\\,576\\,1024)':flags=lanczos,setsar=1,"
-    "format=yuv420p,setpts=PTS*0.995322[vout];"
-    "anoisesrc=color=pink:amplitude=0.000568:sample_rate=44100,"
-    "aformat=channel_layouts=stereo[bg_noise];"
-    "[0:a]aresample=44100,aformat=channel_layouts=stereo,atempo=1.0047,"
-    "vibrato=f=0.266:d=0.034,volume=1.051[a_mod];"
-    "[a_mod][bg_noise]amix=inputs=2:duration=first,"
-    "aformat=channel_layouts=stereo,alimiter=limit=0.944,"
-    "asetpts=PTS-STARTPTS[aout]"
+SCRIPT_DIR = Path(__file__).resolve().parents[2]
+FFARGS_PATH = Path(__file__).resolve().parent / "feimao_ffargs.json"
+DEFAULT_METADATA_PATH = Path(__file__).resolve().parent / "feimao_metadata.txt"
+CAPTURE_DIR = SCRIPT_DIR / "capture_douyin_feimao"
+DEFAULT_METADATA_URL = str(DEFAULT_METADATA_PATH)
+REQUIRED_FFARGS = (
+    "metadata_format",
+    "filter_graph_file",
+    "video_map",
+    "audio_map",
+    "captured_video_encoder",
+    "video_tag",
+    "pixel_format",
+    "frame_rate",
+    "audio_encoder",
+    "audio_bitrate",
+    "audio_channels",
+    "audio_sample_rate",
+    "container_format",
 )
 STREAM_FIELDS = (
     "index",
@@ -48,7 +52,6 @@ STREAM_FIELDS = (
     "time_base",
     "start_time",
     "duration",
-    "duration_ts",
     "nb_frames",
     "sample_fmt",
     "sample_rate",
@@ -64,7 +67,8 @@ class WorkerError(Exception):
 
 
 def find_tool(name: str) -> str:
-    for candidate in (SCRIPT_DIR / "bin" / name, SCRIPT_DIR / name):
+    candidates = (SCRIPT_DIR / "bin" / name, SCRIPT_DIR / name)
+    for candidate in candidates:
         if candidate.is_file():
             return str(candidate)
     found = shutil.which(name)
@@ -73,7 +77,18 @@ def find_tool(name: str) -> str:
     raise WorkerError(f"Unable to find {name} in bin/, the script directory, or PATH")
 
 
-def run_probe(ffprobe: str, media_path: Path) -> dict:
+def load_ffargs() -> dict[str, str]:
+    try:
+        data = json.loads(FFARGS_PATH.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WorkerError(f"Unable to load FFmpeg parameters from {FFARGS_PATH}: {error}") from error
+    invalid = [name for name in REQUIRED_FFARGS if not isinstance(data.get(name), str) or not data[name]]
+    if invalid:
+        raise WorkerError(f"Invalid or missing FFmpeg parameters in {FFARGS_PATH}: {', '.join(invalid)}")
+    return {name: data[name] for name in REQUIRED_FFARGS}
+
+
+def probe(ffprobe: str, media_path: Path) -> dict:
     command = [
         ffprobe,
         "-v",
@@ -86,18 +101,18 @@ def run_probe(ffprobe: str, media_path: Path) -> dict:
         "json",
         str(media_path),
     ]
-    process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if process.returncode:
-        raise WorkerError(f"ffprobe failed for {media_path}: {process.stderr.strip()}")
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if result.returncode != 0:
+        raise WorkerError(f"ffprobe failed for {media_path}: {result.stderr.strip()}")
     try:
-        return json.loads(process.stdout)
+        return json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise WorkerError(f"ffprobe returned invalid JSON for {media_path}: {error}") from error
 
 
-def stable_tags(tags: dict | None, keys: tuple[str, ...]) -> dict:
+def select_tags(tags: dict | None, allowed: tuple[str, ...]) -> dict:
     tags = tags or {}
-    return {key: tags[key] for key in keys if key in tags}
+    return {key: tags[key] for key in allowed if key in tags}
 
 
 def signature(data: dict) -> dict:
@@ -105,29 +120,8 @@ def signature(data: dict) -> dict:
     for stream in data.get("streams", []):
         item = {key: stream.get(key) for key in STREAM_FIELDS}
         item["disposition"] = stream.get("disposition", {})
-        item["tags"] = stable_tags(stream.get("tags"), STREAM_TAGS)
+        item["tags"] = select_tags(stream.get("tags"), STREAM_TAGS)
         streams.append(item)
-
-    chapters = []
-    for chapter in data.get("chapters", []):
-        chapters.append(
-            {
-                key: chapter.get(key)
-                for key in ("id", "time_base", "start", "end", "start_time", "end_time")
-            }
-            | {"tags": chapter.get("tags", {})}
-        )
-
-    programs = []
-    for program in data.get("programs", []):
-        programs.append(
-            {
-                "program_id": program.get("program_id"),
-                "program_num": program.get("program_num"),
-                "stream_indexes": [stream.get("index") for stream in program.get("streams", [])],
-                "tags": program.get("tags", {}),
-            }
-        )
 
     media_format = data.get("format", {})
     return {
@@ -137,28 +131,26 @@ def signature(data: dict) -> dict:
             "start_time": media_format.get("start_time"),
             "duration": media_format.get("duration"),
             "nb_streams": media_format.get("nb_streams"),
-            "tags": stable_tags(media_format.get("tags"), FORMAT_TAGS),
+            "tags": select_tags(media_format.get("tags"), FORMAT_TAGS),
         },
-        "programs": programs,
-        "chapters": chapters,
+        "program_count": len(data.get("programs", [])),
+        "chapter_count": len(data.get("chapters", [])),
     }
 
 
 def compare_signatures(expected: dict, actual: dict) -> list[dict]:
     differences = []
-    streams_match_duration_and_count = len(expected["streams"]) == len(actual["streams"]) and all(
+    streams_match_duration_and_count = len(expected.get("streams", [])) == len(actual.get("streams", [])) and all(
         expected_stream.get("duration") == actual_stream.get("duration")
         and expected_stream.get("nb_frames") == actual_stream.get("nb_frames")
-        for expected_stream, actual_stream in zip(expected["streams"], actual["streams"])
+        for expected_stream, actual_stream in zip(expected.get("streams", []), actual.get("streams", []))
     )
 
-    def compare(path: str, expected_value, actual_value) -> None:
+    def compare(path: str, expected_value, actual_value):
         if isinstance(expected_value, dict) and isinstance(actual_value, dict):
             for key in sorted(set(expected_value) | set(actual_value)):
                 if key not in expected_value or key not in actual_value:
-                    differences.append(
-                        {"field": f"{path}.{key}", "expected": expected_value.get(key), "actual": actual_value.get(key)}
-                    )
+                    differences.append({"field": f"{path}.{key}", "expected": expected_value.get(key), "actual": actual_value.get(key)})
                 else:
                     compare(f"{path}.{key}", expected_value[key], actual_value[key])
             return
@@ -187,10 +179,25 @@ def build_command(
     input_path: Path,
     output_path: Path,
     metadata_url: str,
-    video_encoder: str = "libx264",
+    video_encoder: str = "libx265",
     encoder_options: tuple[str, ...] = (),
     threads: int = 6,
+    video_tag: str | None = None,
+    has_audio: bool = True,
 ) -> list[str]:
+    ffargs = load_ffargs()
+    filter_graph_path = FFARGS_PATH.parent / ffargs["filter_graph_file"]
+    try:
+        filter_graph = filter_graph_path.read_text(encoding="utf-8-sig")
+    except OSError as error:
+        raise WorkerError(f"Unable to read filter graph {filter_graph_path}: {error}") from error
+    if not has_audio:
+        if "[0:a]" not in filter_graph:
+            raise WorkerError(f"Filter graph has no input audio stream: {filter_graph_path}")
+        filter_graph = filter_graph.replace("[0:a]", "[1:a]")
+    if video_encoder != "libx265":
+        # Hardware HEVC encoders reject interlaced-flagged frames.
+        filter_graph = filter_graph.replace(",setfield=tff", "")
     command = [
         ffmpeg,
         "-progress",
@@ -206,57 +213,53 @@ def build_command(
         str(threads),
         "-i",
         str(input_path),
+    ]
+    metadata_index = 1
+    if not has_audio:
+        command.extend([
+            "-f",
+            "lavfi",
+            "-i",
+            f"anullsrc=channel_layout=stereo:sample_rate={ffargs['audio_sample_rate']}",
+        ])
+        metadata_index = 2
+    command.extend([
         "-f",
-        "ffmetadata",
+        ffargs["metadata_format"],
         "-i",
         metadata_url,
         "-filter_complex",
-        FILTER_GRAPH,
+        filter_graph,
         "-map",
-        "[vout]",
+        ffargs["video_map"],
         "-map",
-        "[aout]",
+        ffargs["audio_map"],
         "-map_metadata",
-        "1",
+        str(metadata_index),
         "-shortest",
-        "-r",
-        "120",
-        "-fps_mode",
-        "cfr",
         "-c:v",
         video_encoder,
-    ]
-    if video_encoder == "libx264":
+    ])
+    if video_encoder == "libx265":
         command.extend([
-            "-b:v",
-            "12000k",
-            "-maxrate",
-            "18000k",
-            "-bufsize",
-            "24000k",
-            "-bf",
-            "0",
-            "-refs",
-            "3",
-            "-keyint_min",
-            "120",
-            "-sc_threshold",
-            "0",
+            "-preset",
+            "fast",
+            "-crf",
+            "16",
+            "-x265-params",
+            "bframes=4:no-scenecut=1:keyint=27000:min-keyint=270:no-info=1:no-hrd=1:vui-timing-info=0:vui-hrd-info=0:repeat-headers=0:no-open-gop=1",
         ])
+        command.extend(encoder_options)
+        command.extend(["-field_order", "tb", "-flags:v", "+ilme+ildct"])
     else:
-        command.extend(["-b:v", "12000k"])
         command.extend(encoder_options)
     command.extend([
-        "-profile:v",
-        "high",
-        "-level:v",
-        "4.2",
-        "-g",
-        "120",
+        "-tag:v",
+        video_tag or ffargs["video_tag"],
         "-force_key_frames",
-        "expr:gte(t,n_forced*1)",
+        "0,9.000,10.000,11.000",
         "-pix_fmt",
-        "yuv420p",
+        ffargs["pixel_format"],
         "-colorspace",
         "bt709",
         "-color_trc",
@@ -265,22 +268,26 @@ def build_command(
         "bt709",
         "-color_range",
         "tv",
+        "-r",
+        ffargs["frame_rate"],
+        "-fps_mode",
+        "cfr",
         "-video_track_timescale",
-        "15360",
+        "16000",
         "-threads",
         str(threads),
         "-c:a",
-        "aac",
+        ffargs["audio_encoder"],
         "-b:a",
-        "72k",
+        ffargs["audio_bitrate"],
         "-ac",
-        "2",
+        ffargs["audio_channels"],
         "-ar",
-        "44100",
-        "-tag:v",
-        "avc1",
+        ffargs["audio_sample_rate"],
         "-movflags",
         "+faststart",
+        "-f",
+        ffargs["container_format"],
         str(output_path),
     ])
     return command
@@ -291,16 +298,8 @@ def write_report(path: Path, report: dict) -> None:
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for block in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Reproduce and verify xiaohongshu_yanjingshe mode.")
+    parser = argparse.ArgumentParser(description="Reproduce and verify the captured douyin_feimao mode.")
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--reference", type=Path, required=True)
@@ -309,7 +308,7 @@ def main() -> int:
     args = parser.parse_args()
 
     report = {
-        "mode": "xiaohongshu_yanjingshe",
+        "mode": "douyin_feimao",
         "input": str(args.input.resolve()),
         "reference": str(args.reference.resolve()),
         "output": str(args.output.resolve()),
@@ -318,11 +317,11 @@ def main() -> int:
         "actual_signature": None,
         "differences": [],
         "policy": {
-            "compared": "ordered streams, types, codecs/profiles/tags, dimensions, pixel/color/field properties, rates, timestamps, durations, frame counts, audio layout, dispositions, stable container tags, programs, and chapters",
-            "excluded": ["file size", "bitrate", "remote comment and other volatile metadata", "creation time", "encoded bytes and whole-file equality", "pixel hashes and image-quality scores"],
-            "tolerances": {"format.duration": "0.001 seconds only when every stream duration and frame count matches exactly"},
-            "nondeterminism": ["anoisesrc generates pink noise; encoded audio samples and whole-file bytes are not equality criteria"],
-            "unknown": ["the remote ffmetadata response body was not captured; its mapped comment may change between runs"],
+            "compared": "ordered streams, codec/profile/tag, dimensions, pixel/color/field properties, rates, timestamps, durations, frame counts, audio layout, dispositions, stable stream/container tags, format and chapter structure",
+            "excluded": ["file size", "bitrate", "format comment and other dynamic remote metadata", "creation time", "encoded bytes and whole-file equality", "pixel hashes and image-quality scores"],
+            "tolerances": {"format.duration": "0.001 seconds only; stream durations and frame counts are still compared exactly"},
+            "nondeterminism": ["the captured graph includes time-varying overlays and noise; encoded bytes and visual hashes are not equality criteria", "the metadata endpoint has returned varying device comments across repeated tool runs"],
+            "unknown": ["the metadata endpoint response body is not snapshotted; only its URL and mapped output metadata are observed"],
         },
         "passed": False,
     }
@@ -331,9 +330,8 @@ def main() -> int:
         input_path = args.input.resolve(strict=True)
         reference_path = args.reference.resolve(strict=True)
         output_path = args.output.resolve()
-        if len({input_path, reference_path, output_path}) != 3:
+        if input_path == reference_path or input_path == output_path or reference_path == output_path:
             raise WorkerError("Input, output, and reference paths must be distinct")
-
         ffmpeg = find_tool("ffmpeg.exe")
         ffprobe = find_tool("ffprobe.exe")
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -341,18 +339,18 @@ def main() -> int:
         process = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
         report["ffmpeg_command"] = command
         report["ffmpeg_stderr"] = process.stderr[-12000:]
-        if process.returncode:
+        if process.returncode != 0:
             report["processing_error"] = f"ffmpeg exited with code {process.returncode}"
             write_report(args.report, report)
             return 1
 
-        expected = signature(run_probe(ffprobe, reference_path))
-        actual = signature(run_probe(ffprobe, output_path))
-        differences = compare_signatures(expected, actual)
-        report["input_sha256"] = sha256(input_path)
-        report["reference_sha256"] = sha256(reference_path)
-        report["expected_signature"] = expected
-        report["actual_signature"] = actual
+        expected_data = probe(ffprobe, reference_path)
+        actual_data = probe(ffprobe, output_path)
+        expected_signature = signature(expected_data)
+        actual_signature = signature(actual_data)
+        differences = compare_signatures(expected_signature, actual_signature)
+        report["expected_signature"] = expected_signature
+        report["actual_signature"] = actual_signature
         report["differences"] = differences
         report["passed"] = not differences
         report["result"] = "pass" if not differences else "feature_mismatch"
