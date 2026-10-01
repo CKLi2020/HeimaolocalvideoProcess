@@ -8,11 +8,13 @@ import sys
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parents[2]
+FILTER_GRAPH_PATH = Path(__file__).resolve().parent / "filter_complex.txt"
+DEFAULT_METADATA_PATH = Path(__file__).resolve().parent / "feimao_metadata.txt"
 CAPTURE_DIR = SCRIPT_DIR / "capture_douyin_feimao"
 ACTIVE_RUN = CAPTURE_DIR / "run_20260928_202138"
 RESPONSE_DIR = ACTIVE_RUN / "ffargs" / "active"
-DEFAULT_METADATA_URL = "http://xhm.zjwhcmxy.com/modes/xiaohongshu/xhs4.json.php?meta=1"
+DEFAULT_METADATA_URL = str(DEFAULT_METADATA_PATH)
 STREAM_FIELDS = (
     "index",
     "codec_type",
@@ -165,8 +167,13 @@ def build_command(
     encoder_options: tuple[str, ...] = (),
     threads: int = 6,
     video_tag: str | None = None,
+    has_audio: bool = True,
 ) -> list[str]:
-    filter_graph = (ACTIVE_RUN / "filter_complex.txt").read_text(encoding="utf-8-sig")
+    filter_graph = FILTER_GRAPH_PATH.read_text(encoding="utf-8-sig")
+    if not has_audio:
+        if "[0:a]" not in filter_graph:
+            raise WorkerError(f"Filter graph has no input audio stream: {FILTER_GRAPH_PATH}")
+        filter_graph = filter_graph.replace("[0:a]", "[1:a]")
     if video_encoder != "libx265":
         # Hardware HEVC encoders reject interlaced-flagged frames.
         filter_graph = filter_graph.replace(",setfield=tff", "")
@@ -185,6 +192,17 @@ def build_command(
         str(threads),
         "-i",
         str(input_path),
+    ]
+    metadata_index = 1
+    if not has_audio:
+        command.extend([
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=44100",
+        ])
+        metadata_index = 2
+    command.extend([
         "-f",
         read_response("a001"),
         "-i",
@@ -196,11 +214,11 @@ def build_command(
         "-map",
         read_response("a004"),
         "-map_metadata",
-        "1",
+        str(metadata_index),
         "-shortest",
         "-c:v",
         video_encoder,
-    ]
+    ])
     if video_encoder == "libx265":
         command.extend([
             "-preset",

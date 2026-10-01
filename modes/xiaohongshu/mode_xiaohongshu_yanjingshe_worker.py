@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parents[2]
 CAPTURE_DIR = SCRIPT_DIR / "capture_xiaohongshu_yanjingshe"
 DEFAULT_METADATA_URL = "http://xhm.zjwhcmxy.com/modes/xiaohongshu/xhs4.json.php?meta=1"
 FILTER_GRAPH = (

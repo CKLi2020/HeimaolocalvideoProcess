@@ -3,9 +3,9 @@
 import subprocess
 from pathlib import Path
 
-import mode_xiaohongshu_yanjingshe_worker as worker
 from modes.base_mode import BaseMode
 from modes.shipinhao.h264_gpu import select_h264_encoder
+from modes.xiaohongshu import mode_xiaohongshu_yanjingshe_worker as worker
 
 
 class ModeYanjingshe0928(BaseMode):
