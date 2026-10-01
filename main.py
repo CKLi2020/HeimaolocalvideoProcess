@@ -32,7 +32,7 @@ def _style_native_title_bar(window: MainWindow) -> None:
     if dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark), ctypes.sizeof(dark)):
         dwm.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(dark), ctypes.sizeof(dark))
 
-    for attribute, color in ((35, 0x1F1007), (36, 0xF6EBE4), (34, 0x3A2113)):
+    for attribute, color in ((35, 0x19101D), (36, 0xFFF1E6), (34, 0x41264C)):
         value = ctypes.c_int(color)
         dwm.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
 
@@ -47,7 +47,7 @@ def main() -> None:
     app.setFont(font)
 
     # 设置图标
-    icon_path = ROOT / "ico" / "feng_logo.ico"
+    icon_path = ROOT / "ico" / "xinghuo_logo.ico"
     if icon_path.exists():
         from PySide6.QtGui import QIcon
         app.setWindowIcon(QIcon(str(icon_path)))

@@ -1,23 +1,23 @@
-"""小红书眼镜蛇通道0928。"""
+"""小红书浮光通道。"""
 
 import subprocess
 from pathlib import Path
 
-import mode_xiaohongshu_yanjingshe_worker as worker
 from modes.base_mode import BaseMode
 from modes.shipinhao.h264_gpu import select_h264_encoder
+from modes.xiaohongshu import mode_xiaohongshu_yanjingshe_worker as worker
 
 
 class ModeYanjingshe0928(BaseMode):
     id = "xiaohongshu/yanjingshe0928"
-    name = "眼镜蛇通道0928"
+    name = "浮光"
     platform = "xiaohongshu"
     needs_aux = False
     gpu_supported = True
     output_suffix = "_yanjingshe0928"
     output_naming = "source"
     ext = "mp4"
-    help_text = "小红书处理 · 眼镜蛇通道0928（单主视频，CPU / NVIDIA / AMD H.264）"
+    help_text = "小红书处理 · 浮光（单主视频，CPU / NVIDIA / AMD H.264）"
 
     def has_gpu_command(self):
         return True
@@ -46,7 +46,7 @@ class ModeYanjingshe0928(BaseMode):
                 int(params["threads"]),
             )
         except (OSError, ValueError, KeyError, RuntimeError, worker.WorkerError) as error:
-            return "", bool(use_gpu), "眼镜蛇通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "浮光参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 

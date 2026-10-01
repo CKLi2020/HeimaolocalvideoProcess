@@ -103,7 +103,8 @@ def mode_order_key(mode):
     """
     base = str(getattr(mode, "id", "") or getattr(mode, "name", "") or "").strip()
     match = re.search(r"(\d+)$", base)
-    return (0 if base.endswith("default") else 1,
+    return (int(getattr(mode, "sort_priority", 0)),
+            0 if base.endswith("default") else 1,
             -int(match.group(1)) if match else 0)
 
 

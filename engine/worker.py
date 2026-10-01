@@ -83,6 +83,7 @@ class BatchWorker:
             folder_value = (
                 config.ab_main_folder if channel == "butterfly_ab"
                 else config.concat_main_folder if channel == "concat"
+                else config.cut_main_folder if channel == "cut"
                 else config.main_folder
             )
             folder = Path(folder_value)
@@ -90,7 +91,7 @@ class BatchWorker:
                 folder = base_dir / folder
             repeat = (
                 config.ab_repeat_count if channel == "butterfly_ab"
-                else 1 if channel == "concat"
+                else 1 if channel in ("concat", "cut")
                 else config.repeat_count
             )
 
@@ -104,6 +105,12 @@ class BatchWorker:
             if channel == "concat":
                 from engine.concat import process_batch as process_concat
                 ok = process_concat(
+                    config, base_dir, self._log, self._progress,
+                    lambda: self._cancel.is_set(), self._task,
+                )
+            elif channel == "cut":
+                from engine.cut import process_batch as process_cut
+                ok = process_cut(
                     config, base_dir, self._log, self._progress,
                     lambda: self._cancel.is_set(), self._task,
                 )

@@ -51,6 +51,9 @@ assert "tpl_folder" in page._rows and "background_folder" in page._rows
 assert source.template.isChecked() and not source.auxiliary.isChecked()
 assert config.tpl_enabled
 assert page._win_group.isEnabled()
+assert not page._aux_group.isEnabled()
+assert {"aux_overlay_count", "delete_used_aux", "aux_opacity_range"} <= page._rows.keys()
+assert page._rows["aux_overlay_count"]._widget.maximum() == 5
 
 # ── 模板页：清单文件名那一行没了 ──
 assert "tpl_manifest" not in page._rows, page._rows.keys()
@@ -105,20 +108,25 @@ with TemporaryDirectory() as tmp:
     row.value = row.resolve_choice(str(tpl / "乙.mp4"))
     assert config.tpl_fixed == "乙.mp4", config.tpl_fixed
 
-    # ── 切到辅助视频：互斥状态、库列表、随机/固定全部共用 ──
+    # ── 切到辅助视频：只设数量和全局透明度，素材全部随机 ──
     source.auxiliary.setChecked(True)
     assert source.auxiliary.isChecked() and not source.template.isChecked()
     assert not config.tpl_enabled
     assert not page._win_group.isEnabled(), "辅助视频不使用模板中央窗口"
-    assert sorted(row.available) == ["背景乙.mp4", "背景甲.mp4"], row.available
-    config.tpl_pick = "固定"
-    page._update_fixed_enabled()
-    row.value = row.resolve_choice(str(aux / "背景乙.mp4"))
-    assert config.tpl_fixed == "背景乙.mp4"
-    assert "都用这一个素材" in page._fixed_hint.text()
+    assert page._aux_group.isEnabled(), "辅助视频模式应允许设置叠加数量和透明度"
+    page._rows["delete_used_aux"]._widget.setChecked(True)
+    assert config.delete_used_aux is True
+    assert not pick_row.isEnabled() and not row.isEnabled()
+    count_row = page._rows["aux_overlay_count"]
+    count_row._widget.setValue(2)
+    assert config.aux_overlay_count == 2
+    page._aux_opacity_row.minimum.setValue(4)
+    page._aux_opacity_row.maximum.setValue(7)
+    assert (config.aux_opacity_min, config.aux_opacity_max) == (4, 7)
 
     # 切回模板后依然只能从模板目录挑。
     source.template.setChecked(True)
+    assert pick_row.isEnabled()
     row.value = "乙.mp4"
     assert row.edit.text() == "乙.mp4", row.edit.text()
     assert str(tmp) not in row.edit.text(), row.edit.text()

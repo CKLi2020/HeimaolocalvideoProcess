@@ -1,23 +1,23 @@
-"""抖音飞猫通道09284。"""
+"""抖音听雪通道。"""
 
 import subprocess
 from pathlib import Path
 
-import mode_douyin_feimao_worker as worker
 from modes.base_mode import BaseMode
 from modes.douyin.hevc_gpu import select_hevc_encoder
+from modes.douyin import mode_douyin_feimao_worker as worker
 
 
 class ModeFeimao09284(BaseMode):
     id = "douyin/feimao09284"
-    name = "飞猫通道09284"
+    name = "听雪"
     platform = "douyin"
     needs_aux = False
     gpu_supported = True
     output_suffix = "_feimao09284"
     output_naming = "source"
     ext = "mp4"
-    help_text = "抖音处理 · 飞猫通道09284（单主视频，CPU / NVIDIA / AMD HEVC）"
+    help_text = "抖音处理 · 听雪（单主视频，CPU / NVIDIA / AMD HEVC）"
 
     def has_gpu_command(self):
         return True
@@ -34,6 +34,9 @@ class ModeFeimao09284(BaseMode):
             encoder, encoder_options, gpu_error = select_hevc_encoder(state, use_gpu)
             if gpu_error:
                 return "", bool(use_gpu), gpu_error
+            ffprobe = worker.find_tool("ffprobe.exe")
+            input_info = worker.probe(ffprobe, source)
+            has_audio = any(stream.get("codec_type") == "audio" for stream in input_info.get("streams", []))
             params = self.build_params(state, str(source))
             destination = Path(str(out_base or params["output"]) + "." + self.ext)
             command = worker.build_command(
@@ -44,10 +47,11 @@ class ModeFeimao09284(BaseMode):
                 encoder,
                 encoder_options,
                 int(params["threads"]),
-                "hvc1",
+                video_tag="hvc1",
+                has_audio=has_audio,
             )
         except (OSError, ValueError, KeyError, RuntimeError, worker.WorkerError) as error:
-            return "", bool(use_gpu), "飞猫通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "听雪参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 

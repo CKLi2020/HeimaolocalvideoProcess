@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import json
 import shutil
@@ -6,11 +8,26 @@ import sys
 from pathlib import Path
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parents[2]
+FFARGS_PATH = Path(__file__).resolve().parent / "feimao_ffargs.json"
+DEFAULT_METADATA_PATH = Path(__file__).resolve().parent / "feimao_metadata.txt"
 CAPTURE_DIR = SCRIPT_DIR / "capture_douyin_feimao"
-ACTIVE_RUN = CAPTURE_DIR / "run_20260928_202138"
-RESPONSE_DIR = ACTIVE_RUN / "ffargs" / "active"
-DEFAULT_METADATA_URL = "http://xhm.zjwhcmxy.com/modes/xiaohongshu/xhs4.json.php?meta=1"
+DEFAULT_METADATA_URL = str(DEFAULT_METADATA_PATH)
+REQUIRED_FFARGS = (
+    "metadata_format",
+    "filter_graph_file",
+    "video_map",
+    "audio_map",
+    "captured_video_encoder",
+    "video_tag",
+    "pixel_format",
+    "frame_rate",
+    "audio_encoder",
+    "audio_bitrate",
+    "audio_channels",
+    "audio_sample_rate",
+    "container_format",
+)
 STREAM_FIELDS = (
     "index",
     "codec_type",
@@ -60,12 +77,15 @@ def find_tool(name: str) -> str:
     raise WorkerError(f"Unable to find {name} in bin/, the script directory, or PATH")
 
 
-def read_response(name: str) -> str:
-    path = RESPONSE_DIR / name
+def load_ffargs() -> dict[str, str]:
     try:
-        return path.read_text(encoding="utf-8-sig").strip()
-    except OSError as error:
-        raise WorkerError(f"Unable to read captured response file {path}: {error}") from error
+        data = json.loads(FFARGS_PATH.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WorkerError(f"Unable to load FFmpeg parameters from {FFARGS_PATH}: {error}") from error
+    invalid = [name for name in REQUIRED_FFARGS if not isinstance(data.get(name), str) or not data[name]]
+    if invalid:
+        raise WorkerError(f"Invalid or missing FFmpeg parameters in {FFARGS_PATH}: {', '.join(invalid)}")
+    return {name: data[name] for name in REQUIRED_FFARGS}
 
 
 def probe(ffprobe: str, media_path: Path) -> dict:
@@ -163,8 +183,21 @@ def build_command(
     encoder_options: tuple[str, ...] = (),
     threads: int = 6,
     video_tag: str | None = None,
+    has_audio: bool = True,
 ) -> list[str]:
-    filter_graph = (ACTIVE_RUN / "filter_complex.txt").read_text(encoding="utf-8-sig")
+    ffargs = load_ffargs()
+    filter_graph_path = FFARGS_PATH.parent / ffargs["filter_graph_file"]
+    try:
+        filter_graph = filter_graph_path.read_text(encoding="utf-8-sig")
+    except OSError as error:
+        raise WorkerError(f"Unable to read filter graph {filter_graph_path}: {error}") from error
+    if not has_audio:
+        if "[0:a]" not in filter_graph:
+            raise WorkerError(f"Filter graph has no input audio stream: {filter_graph_path}")
+        filter_graph = filter_graph.replace("[0:a]", "[1:a]")
+    if video_encoder != "libx265":
+        # Hardware HEVC encoders reject interlaced-flagged frames.
+        filter_graph = filter_graph.replace(",setfield=tff", "")
     command = [
         ffmpeg,
         "-progress",
@@ -180,22 +213,33 @@ def build_command(
         str(threads),
         "-i",
         str(input_path),
+    ]
+    metadata_index = 1
+    if not has_audio:
+        command.extend([
+            "-f",
+            "lavfi",
+            "-i",
+            f"anullsrc=channel_layout=stereo:sample_rate={ffargs['audio_sample_rate']}",
+        ])
+        metadata_index = 2
+    command.extend([
         "-f",
-        read_response("a001"),
+        ffargs["metadata_format"],
         "-i",
         metadata_url,
         "-filter_complex",
         filter_graph,
         "-map",
-        read_response("a003"),
+        ffargs["video_map"],
         "-map",
-        read_response("a004"),
+        ffargs["audio_map"],
         "-map_metadata",
-        "1",
+        str(metadata_index),
         "-shortest",
         "-c:v",
         video_encoder,
-    ]
+    ])
     if video_encoder == "libx265":
         command.extend([
             "-preset",
@@ -211,11 +255,11 @@ def build_command(
         command.extend(encoder_options)
     command.extend([
         "-tag:v",
-        video_tag or read_response("a006"),
+        video_tag or ffargs["video_tag"],
         "-force_key_frames",
         "0,9.000,10.000,11.000",
         "-pix_fmt",
-        read_response("a007"),
+        ffargs["pixel_format"],
         "-colorspace",
         "bt709",
         "-color_trc",
@@ -225,7 +269,7 @@ def build_command(
         "-color_range",
         "tv",
         "-r",
-        read_response("a008"),
+        ffargs["frame_rate"],
         "-fps_mode",
         "cfr",
         "-video_track_timescale",
@@ -233,17 +277,17 @@ def build_command(
         "-threads",
         str(threads),
         "-c:a",
-        read_response("a009"),
+        ffargs["audio_encoder"],
         "-b:a",
-        read_response("a010"),
+        ffargs["audio_bitrate"],
         "-ac",
-        read_response("a011"),
+        ffargs["audio_channels"],
         "-ar",
-        read_response("a012"),
+        ffargs["audio_sample_rate"],
         "-movflags",
         "+faststart",
         "-f",
-        read_response("a013"),
+        ffargs["container_format"],
         str(output_path),
     ])
     return command

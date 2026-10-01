@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QFormLayout,
+    QLabel,
 )
 
 from config import AppConfig
@@ -56,7 +57,7 @@ class FaceColorPage(QWidget):
         color_form.setSpacing(10)
 
         color_params = [
-            ("预设滤镜", "filter_name", "combo:无,晴川,暖阳,复古,黑白,冷色,胶片,鲜明,淡雅"),
+            ("预设滤镜", "filter_name", "combo:无,随机,晴川,暖阳,复古,黑白,冷色,胶片,鲜明,淡雅"),
             ("滤镜强度", "filter_strength", "slider:0-100"),
             ("亮度", "brightness", "slider:-100-100"),
             ("对比度", "contrast", "slider:-100-100"),
@@ -72,6 +73,22 @@ class FaceColorPage(QWidget):
 
         root_layout.addWidget(color_group)
         color_group.setVisible(section in ("all", "color"))
+
+        segment_group = QGroupBox("随机滤镜分段")
+        segment_form = QFormLayout(segment_group)
+        segment_form.setSpacing(10)
+        row = ParamRow("片段数量", "slider:1-20", config.filter_segment_count)
+        row.value_changed.connect(
+            lambda value: _setattr(config, "filter_segment_count", value)
+        )
+        segment_form.addRow(row)
+        self._rows["filter_segment_count"] = row
+        hint = QLabel("设为 1 时整条视频使用上方预设；设为 2～20 时按时长平均分段，每段随机一个滤镜。")
+        hint.setObjectName("previewHint")
+        hint.setWordWrap(True)
+        segment_form.addRow(hint)
+        root_layout.addWidget(segment_group)
+        segment_group.setVisible(section in ("all", "color"))
 
         # ── MP4 后处理 ──
         mp4_group = QGroupBox("MP4 后处理 (元数据编辑)")

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -37,6 +38,7 @@ class LocalProcessorPage(QWidget):
         self.root_dir = root_dir
         self.service = LocalProcessorService()
         self.current_mode = None
+        self._aux_saved_value = ""
         self._platforms = {}
         self.log_received.connect(self._append_log)
         self.progress_received.connect(self._set_progress)
@@ -73,6 +75,15 @@ class LocalProcessorPage(QWidget):
             self.processor.addItem(f"GPU处理 {vendor}", True)
         self.processor.addItem("CPU处理", False)
         processor_row.addWidget(self.processor)
+        self.copies_label = QLabel("裂变个数：")
+        self.copies_spin = QSpinBox()
+        self.copies_spin.setRange(1, 100)
+        self.copies_spin.setValue(1)
+        self.copies_spin.setSuffix(" 份")
+        self.copies_label.hide()
+        self.copies_spin.hide()
+        processor_row.addWidget(self.copies_label)
+        processor_row.addWidget(self.copies_spin)
         self.processor_status = QLabel()
         processor_row.addWidget(self.processor_status, 1)
         execution_layout.addLayout(processor_row)
@@ -109,35 +120,40 @@ class LocalProcessorPage(QWidget):
     def _path_row(self, layout, row, label, allow_file):
         layout.addWidget(QLabel(label), row, 0)
         edit = QLineEdit()
+        edit._path_buttons = []
         layout.addWidget(edit, row, 1)
         if allow_file:
             file_button = QPushButton("选择文件")
             file_button.setObjectName("browse")
             file_button.clicked.connect(lambda: self._choose_file(edit))
             layout.addWidget(file_button, row, 2)
+            edit._path_buttons.append(file_button)
         folder_button = QPushButton("选择文件夹" if allow_file else "选择输出目录")
         folder_button.setObjectName("browse")
         folder_button.clicked.connect(lambda: self._choose_folder(edit))
-        layout.addWidget(folder_button, row, 3)
+        layout.addWidget(folder_button, row, 3 if allow_file else 2)
+        edit._path_buttons.append(folder_button)
         if not allow_file:
             open_button = QPushButton("打开文件夹")
             open_button.setObjectName("browse")
             open_button.clicked.connect(self._open_output)
-            layout.addWidget(open_button, row, 4)
+            layout.addWidget(open_button, row, 3)
         return edit
 
     def _load_modes(self):
+        unavailable = {"TK处理", "百家处理", "哔哩处理", "多多处理"}
         for index, (title, modes) in enumerate(self.service.mode_groups.items()):
             frame = QFrame()
             frame.setObjectName("localModeCard")
             card = QVBoxLayout(frame)
             caption = QLabel(title)
-            caption.setStyleSheet("font-weight: 700; color: #e4ebf6;")
+            caption.setStyleSheet("font-weight: 700; color: #f3e9ef;")
             caption.setAlignment(Qt.AlignCenter)
             card.addWidget(caption)
             combo = QComboBox()
             for mode in modes:
                 combo.addItem(mode.name, mode)
+            combo.setEnabled(title not in unavailable)
             combo.activated.connect(lambda _=0, name=title: self._activate(name))
             card.addWidget(combo)
             self.mode_grid.addWidget(frame, index // 4, index % 4)
@@ -152,14 +168,31 @@ class LocalProcessorPage(QWidget):
             active = name == title
             frame.setStyleSheet(
                 "QFrame#localModeCard { background: %s; border: 1px solid %s; border-radius: 8px; }"
-                % (("#1e3a6e", "#60a5fa") if active else ("#1b2c49", "#2c456d"))
+                % (("#5a273d", "#ff9a3c") if active else ("#24152c", "#4b2a55"))
             )
             if active:
                 self.current_mode = combo.currentData()
         needs_auxiliary = bool(self.current_mode and self.current_mode.needs_aux)
-        self.aux_edit.setEnabled(needs_auxiliary)
+        self._set_auxiliary_enabled(needs_auxiliary)
+        supports_copies = bool(getattr(self.current_mode, "supports_copies", False))
+        self.copies_label.setVisible(supports_copies)
+        self.copies_spin.setVisible(supports_copies)
         if self.current_mode:
             self.log_received.emit(f"当前模式：{title} · {self.current_mode.name}")
+
+    def _set_auxiliary_enabled(self, enabled):
+        notice = "本通道不需要辅助视频"
+        if not enabled and self.aux_edit.isEnabled():
+            self._aux_saved_value = self.aux_edit.text()
+            self.aux_edit.setText(notice)
+        elif enabled and not self.aux_edit.isEnabled():
+            self.aux_edit.setText(self._aux_saved_value)
+        self.aux_edit.setEnabled(enabled)
+        self.aux_edit.setStyleSheet(
+            "" if enabled else "QLineEdit:disabled { color: #ff4d5e; font-weight: 700; }"
+        )
+        for button in self.aux_edit._path_buttons:
+            button.setEnabled(enabled)
 
     def _show_environment(self):
         profile = self.service.gpu_profile
@@ -195,18 +228,20 @@ class LocalProcessorPage(QWidget):
         output = self.output_edit.text().strip() or str(self.root_dir / "output")
         state = {
             "main_video": main_value,
-            "aux_video": self.aux_edit.text().strip(),
+            "aux_video": self.aux_edit.text().strip() if self.current_mode.needs_aux else "",
             "output_dir": output,
             "threads": int(self.service.config.get("default_threads") or 6),
             "bitrate": str(self.service.config.get("default_bitrate") or "6000k"),
             "use_gpu": bool(self.processor.currentData()) and self.service.gpu_profile.get("available"),
             "gpu_profile": self.service.gpu_profile,
             "output_naming": str(self.service.config.get("output_naming") or "hash"),
+            "copies": self.copies_spin.value(),
         }
         self.progress.setValue(0)
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
-        self.log_received.emit(f"开始处理：{len(files)} 个任务")
+        copies = self.copies_spin.value() if getattr(self.current_mode, "supports_copies", False) else 1
+        self.log_received.emit(f"开始处理：{len(files) * copies} 个任务")
         self.service.start(
             state,
             self.current_mode,

@@ -1,4 +1,4 @@
-"""小红书偏偏通道0924。"""
+"""小红书清欢通道。"""
 
 import shutil
 import subprocess
@@ -17,14 +17,14 @@ from modes.shipinhao.h264_gpu import select_h264_encoder
 
 class ModePianpian0924(BaseMode):
     id = "xiaohongshu/pianpian0924"
-    name = "偏偏通道0924"
+    name = "清欢"
     platform = "xiaohongshu"
     needs_aux = False
     gpu_supported = True
     output_suffix = "_pianpian0924"
     output_naming = "source"
     ext = "mp4"
-    help_text = "小红书处理 · 偏偏通道0924（单主视频，CPU / NVIDIA / AMD）"
+    help_text = "小红书处理 · 清欢（单主视频，CPU / NVIDIA / AMD）"
 
     def has_gpu_command(self):
         return True
@@ -60,7 +60,7 @@ class ModePianpian0924(BaseMode):
                 build_stage_two("ffmpeg", intermediate, destination, input_probe),
             ]
         except (OSError, ValueError, KeyError, RuntimeError) as error:
-            return [], bool(use_gpu), "偏偏通道参数生成失败: %s" % error
+            return [], bool(use_gpu), "清欢参数生成失败: %s" % error
         return [subprocess.list2cmdline(command) for command in commands], bool(use_gpu), ""
 
     def cleanup_render(self, out_base):
@@ -86,7 +86,7 @@ class ModePianpian0924(BaseMode):
                 encoder, encoder_options, "yuv420p" if use_gpu else None,
             )
         except (OSError, ValueError, KeyError, RuntimeError) as error:
-            return "", bool(use_gpu), "偏偏通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "清欢参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 

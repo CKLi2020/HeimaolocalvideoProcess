@@ -1,6 +1,6 @@
 {
   "id": "baijia/hd",
-  "name": "高清修复",
+  "name": "修复",
   "platform": "baijia",
   "platform_label": "百家处理",
   "needs_aux": false,
@@ -13,8 +13,8 @@
   "mix_seconds": 6,
   "pip_scale": 0.35,
   "margin": 24,
-  "help_text": "百家处理 · 高清修复",
-  "desc": "高清修复:lanczos 超分到 1920x1080,配合 unsharp 锐化与 hqdn3d 轻度降噪。适合低清素材提升清晰度。",
+  "help_text": "百家处理 · 修复",
+  "desc": "修复:lanczos 超分到 1920x1080,配合 unsharp 锐化与 hqdn3d 轻度降噪。适合低清素材提升清晰度。",
   "command": "ffmpeg -y -hide_banner -i \"{input}\" -vf \"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps},unsharp=5:5:0.8:3:3:0.4,hqdn3d=1.5:1.5:6:6\" -c:v {video_encoder} -preset medium -b:v {bitrate} -pix_fmt yuv420p -threads {threads} -c:a aac -b:a 128k -ar 44100 -movflags +faststart -map_metadata -1 -map 0:v:0 -map 0:a:0? \"{output}.{ext}\"",
   "gpu_command": "ffmpeg -y -hide_banner -hwaccel {hwaccel} -i \"{input}\" -vf \"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps={fps},unsharp=5:5:0.8:3:3:0.4,hqdn3d=1.5:1.5:6:6\" -c:v {video_encoder} {gpu_opts} -b:v {bitrate} -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -movflags +faststart -map_metadata -1 -map 0:v:0 -map 0:a:0? \"{output}.{ext}\""
 }

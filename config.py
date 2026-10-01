@@ -44,6 +44,11 @@ class AppConfig:
     concat_prepend: bool = False
     concat_append: bool = True
 
+    # ── 视频裁剪通道 ──
+    cut_main_folder: str = "主视频"
+    cut_output_folder: str = "裁剪成品"
+    cut_segment_seconds: int = 15
+
     # ── 画布与编码 ──
     resolution: str = "1080x2338"
     fps: int = 24
@@ -51,6 +56,10 @@ class AppConfig:
     main_fit: bool = True
     aux_scale: int = 100
     aux_speed: int = 100
+    aux_overlay_count: int = 3
+    aux_opacity_min: int = 1
+    aux_opacity_max: int = 3
+    aux_layers_json: str = ""
     gpu: bool = False
     hevc: bool = False
     crf: int = 23
@@ -171,7 +180,10 @@ class AppConfig:
     audio_bgm_volume: int = 15          # 百分比；参考软件默认 0.15
     audio_voice_adaptive: bool = False  # 自动分析基频后做轻度音色变化
     audio_voice_enabled: bool = False
+    audio_voice_mild: bool = False       # 分段微变速 + 自然化声音处理
     audio_voice_pitch: int = 2          # 半音，负数低沉、正数明亮；保持原时长
+    playback_speed_min: float = 1.0
+    playback_speed_max: float = 1.0
 
     # ── 开幕、封面与字幕 ──
     kaimu_enabled: bool = True
@@ -202,6 +214,7 @@ class AppConfig:
     vignette: int = 0
     filter_name: str = ""
     filter_strength: int = 100
+    filter_segment_count: int = 1
     mp4_enabled: bool = False
     mp4_hevc: bool = False
     mp4_random_size: bool = False
@@ -320,7 +333,11 @@ class AppConfig:
         }
         aliases = {
             "main_scale": "main_scale", "aux_scale": "aux_scale",
-            "aux_speed": "aux_speed", "mask_margin_tb": "mask_margin_tb",
+            "aux_speed": "aux_speed", "aux_overlay_count": "aux_overlay_count",
+            "aux_opacity_min": "aux_opacity_min",
+            "aux_opacity_max": "aux_opacity_max",
+            "aux_layers_json": "aux_layers_json",
+            "mask_margin_tb": "mask_margin_tb",
             "mask_margin_lr": "mask_margin_lr", "mask_feather": "mask_feather",
             "top_scale": "top_scale", "top_opacity": "top_opacity",
             "top_feather": "top_feather", "top_bar_height": "top_bar_height",
