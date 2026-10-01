@@ -27,13 +27,13 @@ app = QApplication.instance() or QApplication([])
 window = MainWindow(AppConfig(), Path(__file__).resolve().parents[1])
 page = window._local_processor_page
 
-assert window._workspace_stack.count() == 4
+assert window._workspace_stack.count() == 5
 assert window._active_channel == "local_processor"
 assert window._workspace_stack.currentWidget() is page
 assert "NVIDIA GeForce RTX TEST" in window._machine_gpu.text()
 assert "不支持 GPU 加速" in window._machine_gpu.text()
-assert [button.text() for button in window._channel_group.buttons()][:3] == [
-    "视频处理", "蒙版模式", "素材拼接",
+assert [button.text() for button in window._channel_group.buttons()][:4] == [
+    "视频处理", "蒙版模式", "素材拼接", "视频裁剪",
 ]
 assert len(page.service.mode_groups) == 8
 assert page.current_mode is not None

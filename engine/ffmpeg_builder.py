@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from config import AppConfig
 from engine.auth import mask_alpha
+from engine.native_core import core as _native_core
 
 if TYPE_CHECKING:  # 仅用于类型标注，避免与 template_lib 形成运行时循环导入
     from engine.template_lib import Window
@@ -34,6 +35,15 @@ AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 # 换算细节见 build_mover_layers 的注释。
 DEFAULT_MOVER_X = -50.0
 DEFAULT_MOVER_Y = -50.0
+
+
+def _add_mild_voice_filters(
+    filters: List[str], input_tag: str, duration: float,
+) -> str:
+    """追加由受保护 core 生成的“轻微增强”对白链。"""
+    fragments, output_tag = _native_core.mild_voice_filters(input_tag, duration)
+    filters.extend(fragments)
+    return output_tag
 
 
 def list_media(folder: str, exts: set) -> List[Path]:
@@ -68,6 +78,11 @@ def build_ffmpeg_command(
     background_audio: Optional[Path] = None,
     main_has_audio: bool = True,
     voice_pitch: Optional[float] = None,
+    auxiliary_videos: Optional[List[Path]] = None,
+    auxiliary_opacities: Optional[List[float]] = None,
+    playback_rate: float = 1.0,
+    filter_segments: Optional[List[str]] = None,
+    video_duration: float = 0.0,
 ) -> List[str]:
     """构建完整的 ffmpeg 命令行。
 
@@ -89,6 +104,9 @@ def build_ffmpeg_command(
         template_window: 模板窗口几何；给出时背景槽应传入模板视频，模板盖在
             主视频之上，只有窗口区域（边缘羽化）露出主视频。主视频的尺寸与
             位置不受模板影响。None 表示无模板，行为与历史版本逐字节一致。
+        auxiliary_videos: 叠加在主画面上的辅助视频。每个输入无限循环，输出仍由
+            主视频长度决定。
+        auxiliary_opacities: 各辅助视频的不透明度（0.0~1.0）。
 
     Returns:
         ffmpeg 命令行参数列表
@@ -145,6 +163,9 @@ def build_ffmpeg_command(
     # ═══════════════════════════════════════════════════════════
     cmd += ["-i", str(main_video)]
     input_idx = 2
+    # 没有模板/背景视频时 input 0 是纯黑画布。顶部蒙层和横条若继续从 0 取样，
+    # 会把整块黑条盖到主画面上；此时应从主视频 input 1 取样。
+    decor_source_idx = 0 if background_video is not None else 1
 
     # 模板不改主视频的尺寸：模板只是盖在画布上的一层，窗口几何写在 alpha 里
     # （见下方 window_matte）。所以这里的缩放永远只按画布来，与无模板时一致。
@@ -213,6 +234,41 @@ def build_ffmpeg_command(
 
     base_tag = current_tag
 
+    # 辅助视频是主画面上的低透明叠层，不再只充当主视频背后的背景。所有输入
+    # 都循环，短素材自动从头播放；base 的时长来自主视频，所以长素材也会截断。
+    auxiliary_opacities = auxiliary_opacities or []
+    for i, auxiliary in enumerate(auxiliary_videos or []):
+        if not auxiliary or not auxiliary.exists():
+            continue
+        cmd += ["-stream_loop", "-1", "-i", str(auxiliary)]
+        idx = input_idx
+        input_idx += 1
+        opacity = max(
+            0.0,
+            min(1.0, auxiliary_opacities[i] if i < len(auxiliary_opacities) else 0.01),
+        )
+        aux_parts = [
+            f"scale={w}:{h}:force_original_aspect_ratio=increase",
+            f"crop={w}:{h}",
+        ]
+        if abs(aux_speed - 1.0) > 0.01:
+            aux_parts.insert(0, f"setpts={1/aux_speed}*PTS")
+        if abs(aux_scale_val - 1.0) > 0.01:
+            aux_parts.append(f"scale=iw*{aux_scale_val}:ih*{aux_scale_val}")
+            if aux_scale_val > 1:
+                aux_parts.append(f"crop={w}:{h}:(iw-{w})/2:(ih-{h})/2")
+            else:
+                aux_parts.append(f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black")
+        aux_parts += [
+            f"fps={fps}", "format=rgba", f"colorchannelmixer=aa={opacity:.4f}",
+        ]
+        filters.append(f"[{idx}:v]{','.join(aux_parts)}[aux_overlay{i}]")
+        filters.append(
+            f"[{base_tag}][aux_overlay{i}]overlay=0:0:shortest=1"
+            f"[with_aux{i}]"
+        )
+        base_tag = f"with_aux{i}"
+
     # ═══════════════════════════════════════════════════════════
     # TOP MATTE: 顶部蒙版叠层 (独立于横条)
     # ═══════════════════════════════════════════════════════════
@@ -231,7 +287,7 @@ def build_ffmpeg_command(
                 f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black@0"
             )
         filters.append(
-            f"[0:v]{top_size},"
+            f"[{decor_source_idx}:v]{top_size},"
             f"format=rgba,gblur=sigma={max(0.1, tf / 10):.2f},"
             f"colorchannelmixer=aa={to}"
             f"{next_tag('topmat')}"
@@ -279,7 +335,7 @@ def build_ffmpeg_command(
         # 顶部横条：从 [0:v] 重新处理背景 → 裁切顶部区域 → alpha 混合叠加
         if top_h_use > 0:
             filters.append(
-                f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"[{decor_source_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
                 f"crop={w}:{h},crop={w}:{top_h_use}:0:0,"
                 f"gblur=sigma={top_feather / 10:.2f},format=rgba,geq="
                 f"r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
@@ -294,7 +350,7 @@ def build_ffmpeg_command(
         # 底部横条：同理
         if bot_h_use > 0:
             filters.append(
-                f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
+                f"[{decor_source_idx}:v]scale={w}:{h}:force_original_aspect_ratio=increase,"
                 f"crop={w}:{h},crop={w}:{bot_h_use}:0:{h - bot_h_use},"
                 f"gblur=sigma={bot_feather / 10:.2f},format=rgba,geq="
                 f"r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
@@ -642,19 +698,47 @@ def build_ffmpeg_command(
     # ═══════════════════════════════════════════════════════════
     from engine.color_grade import apply_color_adjustments as _color
 
-    filter_frag, new_tag = _color(
-        base_tag,
-        brightness=config.brightness,
-        contrast=config.contrast,
-        saturation=config.saturation,
-        temperature=config.temperature,
-        vignette=config.vignette,
-        filter_name=config.filter_name,
-        filter_strength=config.filter_strength,
+    color_args = dict(
+        brightness=config.brightness, contrast=config.contrast,
+        saturation=config.saturation, temperature=config.temperature,
+        vignette=config.vignette, filter_strength=config.filter_strength,
     )
-    if filter_frag:
-        filters.append(filter_frag)
-        base_tag = new_tag
+    segment_names = list(filter_segments or [])
+    if len(segment_names) > 1 and video_duration > 0:
+        count = len(segment_names)
+        filters.append(
+            f"[{base_tag}]split={count}" + "".join(
+                f"[color_src_{i}]" for i in range(count)
+            )
+        )
+        colored_tags = []
+        for i, name in enumerate(segment_names):
+            start = video_duration * i / count
+            end = video_duration * (i + 1) / count
+            segment_tag = f"color_seg_{i}"
+            filters.append(
+                f"[color_src_{i}]trim=start={start:.6f}:end={end:.6f},"
+                f"setpts=PTS-STARTPTS[{segment_tag}]"
+            )
+            filter_frag, new_tag = _color(
+                segment_tag, filter_name=name, **color_args,
+            )
+            if filter_frag:
+                filters.append(filter_frag)
+            colored_tags.append(new_tag)
+        filters.append(
+            "".join(f"[{tag}]" for tag in colored_tags)
+            + f"concat=n={count}:v=1:a=0{next_tag('color_segments')}"
+        )
+        base_tag = "color_segments"
+    else:
+        filter_frag, new_tag = _color(
+            base_tag, filter_name=(segment_names[0] if segment_names else config.filter_name),
+            **color_args,
+        )
+        if filter_frag:
+            filters.append(filter_frag)
+            base_tag = new_tag
 
     # 暗角 (vignette) - 作为独立后处理
     vig = config.vignette / 100.0
@@ -672,6 +756,12 @@ def build_ffmpeg_command(
     # ═══════════════════════════════════════════════════════════
     # OUTPUT: 格式转换 + 编码
     # ═══════════════════════════════════════════════════════════
+    playback_rate = max(0.5, min(2.0, float(playback_rate)))
+    if abs(playback_rate - 1.0) > 0.0001:
+        filters.append(
+            f"[{base_tag}]setpts=PTS/{playback_rate:.6f}{next_tag('playback_v')}"
+        )
+        base_tag = "playback_v"
     filters.append(f"[{base_tag}]format=yuv420p[next_v]")
 
     # ═══════════════════════════════════════════════════════════
@@ -683,7 +773,12 @@ def build_ffmpeg_command(
         voice_pitch if voice_pitch is not None
         else config.audio_voice_pitch if config.audio_voice_enabled else 0.0
     )
-    if main_has_audio and effective_pitch:
+    dialogue_processed = main_has_audio and (
+        config.audio_voice_mild or bool(effective_pitch)
+    )
+    if main_has_audio and config.audio_voice_mild:
+        dialogue_tag = _add_mild_voice_filters(filters, "1:a", video_duration)
+    elif main_has_audio and effective_pitch:
         ratio = 2 ** (effective_pitch / 12.0)
         filters.append(
             f"[1:a]aresample=48000,rubberband=pitch={ratio:.8f}:"
@@ -707,13 +802,27 @@ def build_ffmpeg_command(
                 f"[{dialogue_tag}][bgm]amix=inputs=2:duration=first:"
                 "dropout_transition=2:normalize=0[mixed_audio]"
             )
-            audio_map = ["-map", "[mixed_audio]"]
+            audio_tag = "mixed_audio"
         else:
-            audio_map = ["-map", "[bgm]"]
-    elif main_has_audio and effective_pitch:
-        audio_map = ["-map", "[dialogue]"]
+            audio_tag = "bgm"
+    elif dialogue_processed:
+        audio_tag = "dialogue"
+    elif main_has_audio:
+        audio_tag = "1:a"
     else:
         audio_map = ["-map", "1:a?"]
+
+    if main_has_audio or (
+        config.audio_bgm_enabled
+        and background_audio is not None
+        and background_audio.is_file()
+    ):
+        if abs(playback_rate - 1.0) > 0.0001:
+            filters.append(
+                f"[{audio_tag}]atempo={playback_rate:.6f}[playback_audio]"
+            )
+            audio_tag = "playback_audio"
+        audio_map = ["-map", f"[{audio_tag}]" if audio_tag != "1:a" else "1:a"]
 
     # 选择编码器
     if config.gpu:
@@ -759,6 +868,23 @@ def _parse_layers(json_str: str) -> List[dict]:
     except (json.JSONDecodeError, TypeError):
         pass
     return []
+
+
+def build_auxiliary_layers(
+    count: int,
+    json_str: str,
+    default_opacity_min: int,
+    default_opacity_max: int,
+) -> List[dict]:
+    """返回最多 5 个辅助视频槽，全部共用同一透明度区间。"""
+    layers: List[dict] = []
+    for _ in range(min(5, max(1, count))):
+        layers.append({
+            "file": "",
+            "opacity_min": max(0, min(100, int(default_opacity_min))),
+            "opacity_max": max(0, min(100, int(default_opacity_max))),
+        })
+    return layers
 
 
 def build_mover_layers(

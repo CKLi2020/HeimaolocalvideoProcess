@@ -29,7 +29,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 
 from config import AppConfig
-from app.theme import MIDNIGHT_QSS
+from app.theme import SPARK_QSS
 from app.pages.files_page import FilesPage
 from app.pages.canvas_page import CanvasPage
 from app.pages.mask_page import MaskPage
@@ -42,6 +42,7 @@ from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.pages.butterfly_ab_page import ButterflyABPage
 from app.pages.concat_page import ConcatPage
+from app.pages.cut_page import CutPage
 from app.pages.local_processor_page import LocalProcessorPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
@@ -77,7 +78,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} V{APP_VERSION}")
         self.setGeometry(80, 50, 1500, 900)
         self.setMinimumSize(1280, 720)
-        self.setStyleSheet(MIDNIGHT_QSS)
+        self.setStyleSheet(SPARK_QSS)
 
         self.log_received.connect(self._on_log)
         self.progress_received.connect(self._on_progress)
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
         brand = QLabel(APP_NAME)
         brand.setObjectName("brand")
         header_layout.addWidget(brand)
-        brand_sub = QLabel("BLACKCAT")
+        brand_sub = QLabel("SPARK DRAMA")
         brand_sub.setObjectName("brandSub")
         header_layout.addWidget(brand_sub)
         header_layout.addStretch()
@@ -128,14 +129,14 @@ class MainWindow(QMainWindow):
         channel_layout.setContentsMargins(12, 18, 12, 12)
         channel_layout.setSpacing(9)
         channel_logo = QLabel()
-        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "feng_logo.ico")).pixmap(120, 120))
+        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "xinghuo_logo.ico")).pixmap(120, 120))
         channel_logo.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_logo)
         channel_brand = QLabel(APP_NAME)
         channel_brand.setObjectName("channelBrand")
         channel_brand.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_brand)
-        channel_caption = QLabel("BLACKCAT")
+        channel_caption = QLabel("SPARK DRAMA")
         channel_caption.setObjectName("brandSub")
         channel_caption.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_caption)
@@ -149,6 +150,7 @@ class MainWindow(QMainWindow):
             ("视频处理", "local_processor"),
             ("蒙版模式", "hdh"),
             ("素材拼接", "concat"),
+            ("视频裁剪", "cut"),
             ("蝴蝶AB", "butterfly_ab"),
         )
         # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
@@ -178,7 +180,7 @@ class MainWindow(QMainWindow):
         self._machine_gpu.setWordWrap(True)
         channel_layout.addWidget(self._machine_gpu)
         channel_layout.addSpacing(8)
-        channel_footer = QLabel("BLACK CAT VIDEO")
+        channel_footer = QLabel("IGNITE YOUR STORY")
         channel_footer.setObjectName("brandSub")
         channel_layout.addWidget(channel_footer)
         splitter.addWidget(channel_panel)
@@ -273,8 +275,8 @@ class MainWindow(QMainWindow):
         # Right: reference-style compact parameter tabs.
         right_panel = QFrame()
         right_panel.setObjectName("rightPanel")
-        right_panel.setMinimumWidth(340)
-        right_panel.setMaximumWidth(360)
+        right_panel.setMinimumWidth(460)
+        right_panel.setMaximumWidth(520)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(4, 4, 4, 4)
         self._tabs = QTabWidget()
@@ -335,7 +337,7 @@ class MainWindow(QMainWindow):
         hdh_workspace.setStretchFactor(0, 0)
         hdh_workspace.setStretchFactor(1, 1)
         hdh_workspace.setStretchFactor(2, 0)
-        hdh_workspace.setSizes([340, 850, 350])
+        hdh_workspace.setSizes([340, 650, 500])
 
         self._butterfly_page = ButterflyABPage(self.config)
         self._butterfly_page.start_requested.connect(self._on_start)
@@ -343,6 +345,9 @@ class MainWindow(QMainWindow):
         self._concat_page = ConcatPage(self.config, self.root_dir)
         self._concat_page.start_requested.connect(self._on_start)
         self._concat_page.stop_requested.connect(self._on_stop)
+        self._cut_page = CutPage(self.config, self.root_dir)
+        self._cut_page.start_requested.connect(self._on_start)
+        self._cut_page.stop_requested.connect(self._on_stop)
         self._local_processor_page = LocalProcessorPage(self.root_dir)
         profile = self._local_processor_page.service.gpu_profile
         gpu_name = profile.get("gpu_name")
@@ -359,6 +364,7 @@ class MainWindow(QMainWindow):
         self._workspace_stack.addWidget(self._butterfly_page)
         self._workspace_stack.addWidget(self._concat_page)
         self._workspace_stack.addWidget(self._local_processor_page)
+        self._workspace_stack.addWidget(self._cut_page)
         splitter.addWidget(self._workspace_stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -371,7 +377,9 @@ class MainWindow(QMainWindow):
 
     def _wire_params_to_preview(self) -> None:
         """Connect every parameter row across all pages to live preview refresh."""
-        for page in self._pages.values():
+        for name, page in self._pages.items():
+            if name == "声音处理":
+                continue
             for row in getattr(page, "_rows", {}).values():
                 if hasattr(row, "value_changed"):
                     row.value_changed.connect(self._preview.schedule_refresh)
@@ -381,7 +389,7 @@ class MainWindow(QMainWindow):
     def _select_channel(self, channel: str) -> None:
         self._active_channel = channel
         self._workspace_stack.setCurrentIndex(
-            {"hdh": 0, "butterfly_ab": 1, "concat": 2, "local_processor": 3}[channel]
+            {"hdh": 0, "butterfly_ab": 1, "concat": 2, "local_processor": 3, "cut": 4}[channel]
         )
         if channel == "butterfly_ab":
             self._butterfly_page.show_first_video(
@@ -392,6 +400,7 @@ class MainWindow(QMainWindow):
             "butterfly_ab": "● 蝴蝶AB通道",
             "concat": "● 素材拼接",
             "local_processor": "● 视频处理",
+            "cut": "● 视频裁剪",
         }[channel]
         self._set_status(
             status,
@@ -416,6 +425,9 @@ class MainWindow(QMainWindow):
             return
         if self._active_channel == "concat":
             self._on_start_concat()
+            return
+        if self._active_channel == "cut":
+            self._on_start_cut()
             return
 
         # 基本校验。辅助视频不再是必填项：界面上已经没有它的入口，
@@ -489,6 +501,21 @@ class MainWindow(QMainWindow):
         self._set_status("● 素材拼接中", "#fbbf24", "#1f1a0e", "#4a3a15")
         self._worker.start(self.config, self.root_dir, "concat")
 
+    def _on_start_cut(self) -> None:
+        main_folder = self._resolve(self.config.cut_main_folder)
+        if not main_folder.is_dir():
+            QMessageBox.warning(self, "提示", "请选择有效的长视频文件夹。")
+            return
+        if not self.config.cut_output_folder:
+            QMessageBox.warning(self, "提示", "请选择切片输出文件夹。")
+            return
+        self._save_config()
+        self._running_channel = "cut"
+        self._cut_page.log.clear()
+        self._cut_page.set_running(True)
+        self._set_status("● 视频裁剪中", "#fbbf24", "#1f1a0e", "#4a3a15")
+        self._worker.start(self.config, self.root_dir, "cut")
+
     def _on_stop(self) -> None:
         """停止处理。"""
         if self._active_channel == "local_processor":
@@ -500,6 +527,8 @@ class MainWindow(QMainWindow):
             self._butterfly_page.stop_button.setEnabled(False)
         elif running == "concat":
             self._concat_page.stop_button.setEnabled(False)
+        elif running == "cut":
+            self._cut_page.stop_button.setEnabled(False)
         else:
             self._btn_stop.setEnabled(False)
 
@@ -512,8 +541,8 @@ class MainWindow(QMainWindow):
     def _on_self_test(self) -> None:
         """环境自检。"""
         self._log.clear()
-        self._log.append("═══ 环境自检 ═══", "#60a5fa")
-        self._set_status("● 自检中", "#93c3fd", "#111c30", "#1e3a6e")
+        self._log.append("═══ 环境自检 ═══", "#ffad42")
+        self._set_status("● 自检中", "#ffd18a", "#3b1c31", "#7e3f52")
         self._btn_start.setEnabled(False)
         self._btn_stop.setEnabled(False)
         self._worker.start_self_test(self.root_dir)
@@ -535,6 +564,8 @@ class MainWindow(QMainWindow):
             self._butterfly_page.log.append(text)
         elif running == "concat":
             self._concat_page.log.append(text)
+        elif running == "cut":
+            self._cut_page.log.append(text)
         else:
             self._log.append(text)
 
@@ -543,6 +574,7 @@ class MainWindow(QMainWindow):
         progress = {
             "butterfly_ab": self._butterfly_page.progress,
             "concat": self._concat_page.progress,
+            "cut": self._cut_page.progress,
         }.get(running, self._progress)
         progress.setRange(0, total)
         progress.setValue(current)
@@ -555,6 +587,9 @@ class MainWindow(QMainWindow):
         if running == "concat":
             self._concat_page.show_task(task)
             return
+        if running == "cut":
+            self._cut_page.show_task(task)
+            return
         self._preview_title.setText(f"● 正在处理：{Path(task['main']).name}")
         self._preview.show_task(task)
 
@@ -562,16 +597,19 @@ class MainWindow(QMainWindow):
         running = getattr(self, "_running_channel", "hdh")
         butterfly = running == "butterfly_ab"
         concat = running == "concat"
+        cut = running == "cut"
         if butterfly:
             self._butterfly_page.set_running(False)
         elif concat:
             self._concat_page.set_running(False)
+        elif cut:
+            self._cut_page.set_running(False)
         else:
             self._progress.hide()
             self._btn_start.setEnabled(True)
             self._btn_stop.setEnabled(False)
         if success:
-            status = "● 素材拼接" if concat else (
+            status = "● 视频裁剪" if cut else "● 素材拼接" if concat else (
                 "● 蝴蝶AB通道" if butterfly else "● 蒙版模式"
             )
             self._set_status(
@@ -580,10 +618,10 @@ class MainWindow(QMainWindow):
             )
         else:
             self._set_status("● " + message, "#f87171", "#1f1518", "#3d1f28")
-        target_log = self._concat_page.log if concat else (
+        target_log = self._cut_page.log if cut else self._concat_page.log if concat else (
             self._butterfly_page.log if butterfly else self._log
         )
-        target_log.append("--- " + message + " ---", "#5a7aa5")
+        target_log.append("--- " + message + " ---", "#a88cad")
 
     # ═══════════════════════════════════════
     # 辅助方法

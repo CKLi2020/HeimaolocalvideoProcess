@@ -10,6 +10,10 @@ _REQUIRED = (
     "butterfly_plan",
     "window_matte_chain",
     "concat_filter_segment",
+    "playback_rate",
+    "filter_segments",
+    "color_adjustments_filter",
+    "mild_voice_filters",
 )
 
 try:

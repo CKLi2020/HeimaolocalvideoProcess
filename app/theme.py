@@ -1,8 +1,7 @@
 """
-BlackCat FlowCut — Deep Navy Blue Professional Theme
-Design system: "Midnight Blue"
-Deep navy palette with crisp sky-blue accents. Dark enough for
-comfortable video editing, unmistakably blue in tone.
+FlowCut Studio — shared professional control theme.
+The base rules remain available for compatibility; brand-specific
+colors are layered below without changing widget geometry.
 """
 
 MIDNIGHT_QSS = """
@@ -769,3 +768,220 @@ QPushButton#accent:disabled {
 CERULEAN_QSS = MIDNIGHT_QSS
 OBSIDIAN_QSS = MIDNIGHT_QSS
 LIGHT_QSS = MIDNIGHT_QSS
+
+
+# 星火漫剧：在成熟的控件规则上做品牌换肤，保留原布局与交互状态。
+SPARK_QSS = MIDNIGHT_QSS + """
+QWidget {
+    background: #1b1022;
+    color: #f3e9ef;
+}
+
+QMainWindow { background: #120b18; }
+
+QFrame#panel, QFrame#sidebar {
+    background: #24152c;
+    border-color: #4b2a55;
+}
+
+QFrame#channelBar {
+    background: #100916;
+    border-color: #3b2045;
+}
+
+QFrame#rightPanel {
+    background: #2c1934;
+    border-color: #684071;
+}
+
+QFrame#rightPanel QTabWidget::pane {
+    background: #2c1934;
+    border-color: #684071;
+}
+
+QFrame#rightPanel QGroupBox,
+QFrame#rightPanel QGroupBox::title {
+    background: #35203e;
+    border-color: #765080;
+}
+
+QLabel { color: #e8dce5; }
+QLabel#brand, QLabel#channelBrand { color: #fff7f0; }
+QLabel#brandSub, QLabel#sectionTitle { color: #ffad42; }
+QLabel#previewHint { color: #d8a45d; }
+QLabel#machineTitle { color: #f3e9ef; }
+QLabel#machineInfo { color: #c7a9cd; }
+
+QGroupBox {
+    background: #24152c;
+    border-color: #4b2a55;
+    color: #f3e9ef;
+}
+
+QGroupBox::title {
+    color: #ffd18a;
+    background: #24152c;
+    border-color: #5b3566;
+}
+
+QLineEdit, QSpinBox, QComboBox, QTextEdit {
+    background: #120b18;
+    color: #fff7f0;
+    border-color: #4b2a55;
+    selection-background-color: #f06a24;
+}
+
+QLineEdit:hover, QSpinBox:hover, QComboBox:hover {
+    background: #1b1022;
+    border-color: #765080;
+}
+
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    background: #201227;
+    border-color: #ff8a2a;
+}
+
+QLineEdit:read-only {
+    background: #1d1124;
+    color: #d9bfdc;
+    border-color: #44264e;
+}
+
+QComboBox::drop-down, QSpinBox::up-button, QSpinBox::down-button {
+    background: #301b38;
+    border-color: #4b2a55;
+}
+
+QComboBox QAbstractItemView {
+    background: #1b1022;
+    color: #f3e9ef;
+    border-color: #5b3566;
+    selection-background-color: #713148;
+}
+
+QComboBox QAbstractItemView::item:hover { background: #3a203f; }
+
+QSlider::groove:horizontal { background: #100916; }
+QSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #ff5f35, stop:1 #ffb627);
+}
+QSlider::handle:horizontal {
+    background: #fff7f0;
+    border-color: #ff9a3c;
+}
+
+QCheckBox, QRadioButton { color: #eadde7; }
+QCheckBox::indicator, QRadioButton::indicator {
+    background: #120b18;
+    border-color: #684071;
+}
+QCheckBox::indicator:hover { border-color: #ff8a2a; }
+QCheckBox::indicator:checked {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #ff8a2a, stop:1 #e84f2b);
+    border-color: #ffc15a;
+}
+QRadioButton { background: #24152c; border-color: #5b3566; }
+QRadioButton:checked {
+    color: #fff7f0;
+    background: #5a273d;
+    border-color: #ff9a3c;
+}
+QRadioButton::indicator:checked { background: #ff9a3c; border-color: #fff0d5; }
+
+QPushButton {
+    background: #301b38;
+    color: #eadde7;
+    border-color: #50305a;
+}
+QPushButton:hover {
+    background: #402247;
+    color: #fff7f0;
+    border-color: #765080;
+}
+QPushButton:pressed { background: #26142e; }
+
+QPushButton#accent {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #ff5f35, stop:0.55 #ff7a1a, stop:1 #ffb627);
+    color: #fffaf4;
+    border-color: #ffc15a;
+}
+QPushButton#accent:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #ff7650, stop:0.55 #ff933d, stop:1 #ffc94d);
+    border-color: #ffe09a;
+}
+QPushButton#accent:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #e84f2b, stop:1 #e99a15);
+}
+
+QPushButton#browse {
+    color: #ffc15a;
+    background: #3b1c31;
+    border-color: #7e3f52;
+}
+QPushButton#browse:hover { background: #52243a; border-color: #ff7a4d; }
+
+QPushButton#channelButton {
+    color: #cfbcd2;
+    background: transparent;
+    border-color: transparent;
+}
+QPushButton#channelButton:hover { color: #fff7f0; background: #2f1937; }
+QPushButton#channelButton:checked {
+    color: #fff7f0;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6d293f, stop:1 #3f2045);
+    border-color: #ff8a2a;
+}
+
+QTabWidget::pane { background: #24152c; border-color: #4b2a55; }
+QTabBar::tab {
+    background: #1b1022;
+    color: #bda9c1;
+    border-color: #4b2a55;
+}
+QTabBar::tab:hover { color: #ffe0aa; background: #321b39; }
+QTabBar::tab:selected {
+    color: #fff7f0;
+    background: #54233b;
+    border-color: #ff8a2a;
+}
+
+QLabel#logHeader { color: #ffad42; }
+QLabel#preview { background: #0c0710; border-color: #4b2a55; }
+QProgressBar { background: #120b18; color: #f3e9ef; border-color: #4b2a55; }
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #ff5f35, stop:1 #ffb627);
+}
+
+QScrollBar:vertical, QScrollBar:horizontal { background: #160c1c; }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #5c3865; }
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #ff8a2a; }
+QSplitter::handle { background: #120b18; }
+QSplitter::handle:hover { background: #ff8a2a; }
+QToolTip, QMenu { background: #24152c; color: #fff7f0; border-color: #684071; }
+QMenu::item:selected { background: #54233b; }
+
+QFrame#speedCard {
+    background: #321b39;
+    border: 1px solid #684071;
+    border-radius: 10px;
+}
+QLabel#speedCaption { color: #d1b8d5; font-size: 11px; font-weight: 600; }
+QDoubleSpinBox#speedValue {
+    color: #fff7f0;
+    background: #120b18;
+    border: 1px solid #ff8a2a;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 5px 20px 5px 8px;
+}
+QLabel#speedArrow { color: #ffad42; font-size: 22px; font-weight: 700; }
+QLabel#speedHint { color: #c7a9cd; font-size: 11px; padding: 2px 4px 0 4px; }
+"""

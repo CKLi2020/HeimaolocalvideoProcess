@@ -68,10 +68,10 @@ class PreviewCanvas(QWidget):
         self._pixmap = None
         self._label.setPixmap(QPixmap())
         self._label.setText(
-            '<div style="text-align:center;color:#4a6088;padding:40px;">'
-            '<div style="font-size:42px;color:#3b82f6;margin-bottom:6px;">▶</div>'
-            '<div style="font-size:13px;color:#7a95c0;font-weight:500;">选择素材后可预览</div>'
-            '<div style="margin-top:10px;font-size:10px;color:#4a6088;">'
+            '<div style="text-align:center;color:#806a84;padding:40px;">'
+            '<div style="font-size:42px;color:#ff8a2a;margin-bottom:6px;">▶</div>'
+            '<div style="font-size:13px;color:#c7a9cd;font-weight:500;">选择素材后可预览</div>'
+            '<div style="margin-top:10px;font-size:10px;color:#806a84;">'
             '拖拽贴纸调整位置 &nbsp;|&nbsp; 滚轮缩放贴纸</div>'
             "</div>"
         )
@@ -88,7 +88,8 @@ class PreviewCanvas(QWidget):
     def _refresh_preview(self) -> None:
         """用 ffmpeg 生成一帧预览图。"""
         from engine.ffmpeg_builder import (
-            IMAGE_EXTS, VIDEO_EXTS, build_ffmpeg_command, list_media,
+            IMAGE_EXTS, VIDEO_EXTS, build_auxiliary_layers,
+            build_ffmpeg_command, list_media,
         )
         task = self._task
         main_files = (
@@ -99,17 +100,48 @@ class PreviewCanvas(QWidget):
             # 没有辅助视频时 task["background"] 是 None（引擎会用纯色画布兜底），
             # 直接 Path(None) 会抛 TypeError，所以先判空。
             bg_files = [Path(task["background"])] if task["background"] else []
+            auxiliary_videos = [
+                Path(path) for path in task.get("auxiliary_videos", [])
+            ]
+            auxiliary_opacities = task.get("auxiliary_opacities", [])
         else:
             bg_files = list_media(
                 str(self._resolve(self._config.background_folder)), VIDEO_EXTS
             )
-            if self._config.tpl_pick == "固定" and self._config.tpl_fixed:
+            if (
+                self._config.tpl_enabled
+                and self._config.tpl_pick == "固定"
+                and self._config.tpl_fixed
+            ):
                 fixed = next(
                     (path for path in bg_files if path.name == self._config.tpl_fixed),
                     None,
                 )
                 if fixed is not None:
                     bg_files = [fixed]
+            layer_configs = build_auxiliary_layers(
+                self._config.aux_overlay_count,
+                self._config.aux_layers_json,
+                self._config.aux_opacity_min,
+                self._config.aux_opacity_max,
+            )
+            by_name = {path.name: path for path in bg_files}
+            unused = list(bg_files)
+            auxiliary_videos = []
+            auxiliary_opacities = []
+            for layer in layer_configs:
+                auxiliary = by_name.get(layer["file"])
+                if auxiliary is not None and auxiliary in unused:
+                    unused.remove(auxiliary)
+                if auxiliary is None and bg_files:
+                    auxiliary = unused.pop(0) if unused else bg_files[0]
+                if auxiliary is None:
+                    continue
+                auxiliary_videos.append(auxiliary)
+                opacity_lo, opacity_hi = sorted((
+                    layer["opacity_min"], layer["opacity_max"],
+                ))
+                auxiliary_opacities.append((opacity_lo + opacity_hi) / 200.0)
 
         if not main_files and not bg_files:
             self.show_placeholder()
@@ -141,12 +173,21 @@ class PreviewCanvas(QWidget):
             if spec is not None:
                 bg_v = spec.path
                 template_window = library.resolve(spec, self._config)
+            auxiliary_videos = []
+            auxiliary_opacities = []
+        else:
+            # 主视频与输出比例不一致时保持原比例，空出来的区域直接填黑。
+            bg_v = None
 
         # 没有背景不再是「退回单帧」的理由：引擎本来就会用纯色画布出片，
         # 预览也照着渲染（build_ffmpeg_command 接受 background_video=None），
         # 否则预览显示的画面和成品对不上。只有连主视频都没有才退化成静帧。
         if not main_v:
-            self._show_video_frame(bg_v)
+            fallback = bg_v or (auxiliary_videos[0] if auxiliary_videos else None)
+            if fallback:
+                self._show_video_frame(fallback)
+            else:
+                self.show_placeholder()
             return
 
         try:
@@ -201,6 +242,13 @@ class PreviewCanvas(QWidget):
                 preview_config.audio_bgm_enabled = False
                 preview_config.audio_voice_enabled = False
                 preview_config.audio_voice_adaptive = False
+                preview_config.audio_voice_mild = False
+                if preview_config.filter_name == "随机":
+                    from engine.color_grade import resolve_preset_name
+                    preview_config.filter_name = (
+                        task.get("filter_name", "") if task
+                        else resolve_preset_name("随机")
+                    ) or resolve_preset_name("随机")
                 cmd = build_ffmpeg_command(
                     preview_config, main_v, bg_v, image,
                     sticker_files=stickers or None,
@@ -209,10 +257,16 @@ class PreviewCanvas(QWidget):
                     mover_files=movers or None,
                     template_window=template_window,
                     mover_layers=mover_layers_for_cmd,
+                    auxiliary_videos=auxiliary_videos,
+                    auxiliary_opacities=auxiliary_opacities,
+                    playback_rate=float(task.get("playback_rate", 1.0)) if task else 1.0,
+                    filter_segments=task.get("filter_segments") if task else None,
+                    video_duration=float(task.get("main_duration", 0.0)) if task else 0.0,
                 )
                 cmd[cmd.index("-map"):] = [
-                    "-map", "[next_v]", "-ss", "0.5",
-                    "-frames:v", "1", str(image),
+                    # 输出端 seek 会让整条复杂滤镜链先渲染约半秒（30 fps
+                    # 就是 15 帧）；预览只需一帧，直接取首帧可避免无谓运算和超时。
+                    "-map", "[next_v]", "-frames:v", "1", str(image),
                 ]
                 subprocess.run(
                     cmd, capture_output=True, timeout=30, check=True,

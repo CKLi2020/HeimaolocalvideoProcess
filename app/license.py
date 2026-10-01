@@ -224,39 +224,39 @@ class LicenseDialog(QDialog):
         self.setWindowTitle(f"{APP_NAME} V{APP_VERSION} - 卡密登录")
         self.setModal(True)
         self.setFixedSize(552, 360)
-        icon = Path(__file__).resolve().parents[1] / "ico" / "feng_logo.ico"
+        icon = Path(__file__).resolve().parents[1] / "ico" / "xinghuo_logo.ico"
         if icon.exists():
             from PySide6.QtGui import QIcon
 
             self.setWindowIcon(QIcon(str(icon)))
         self.setStyleSheet("""
-            QDialog { background: #0b1325; color: #f4f7ff; }
-            QLabel { color: #f4f7ff; font-size: 13px; }
+            QDialog { background: #120b18; color: #fff7f0; }
+            QLabel { color: #fff7f0; font-size: 13px; }
             QLabel#notice {
-                background: #1d2948;
-                color: #ff4057;
-                border: 1px solid #7185bd;
+                background: #24152c;
+                color: #ff7a4d;
+                border: 1px solid #684071;
                 padding: 12px;
             }
             QLineEdit {
-                background: #172442;
+                background: #24152c;
                 color: #ffffff;
-                border: 1px solid #00b7f0;
+                border: 1px solid #ff8a2a;
                 border-radius: 7px;
                 padding: 0 12px;
                 min-height: 34px;
                 font-size: 13px;
             }
-            QCheckBox { color: #dce7ff; spacing: 7px; }
+            QCheckBox { color: #eadde7; spacing: 7px; }
             QPushButton {
-                background: #34477f;
+                background: #6d293f;
                 color: white;
                 border: 0;
                 border-radius: 7px;
                 min-height: 48px;
                 font-weight: 700;
             }
-            QPushButton:hover { background: #425b9c; }
+            QPushButton:hover { background: #ff8a2a; }
         """)
 
         layout = QVBoxLayout(self)

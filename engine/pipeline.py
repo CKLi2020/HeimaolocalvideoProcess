@@ -6,6 +6,7 @@ Phase 3: 真实进度条 —— 解析 ffmpeg time= 输出。
 from __future__ import annotations
 
 import json as _json
+import copy
 import os
 import random
 import re
@@ -27,9 +28,12 @@ from engine.ffmpeg_builder import (
     list_media,
     pick_random,
     build_ffmpeg_command,
+    build_auxiliary_layers,
     build_mover_layers,
 )
 from engine.output_naming import output_name
+from engine.color_grade import resolve_preset_name
+from engine.native_core import core as _native_core
 
 
 def _wrap_subtitles(segments: list[dict], max_chars: int) -> list[dict]:
@@ -121,6 +125,18 @@ def _adaptive_voice_shift(pitch_hz: Optional[float]) -> float:
     if pitch_hz is None:
         return 0.0
     return 2.0 if pitch_hz < 165.0 else -2.0
+
+
+def _pick_playback_rate(config: AppConfig) -> float:
+    """从用户区间为一个输出视频固定一个播放速率。"""
+    return _native_core.playback_rate(
+        config.playback_speed_min, config.playback_speed_max,
+    )
+
+
+def _pick_filter_segments(count: int) -> list[str]:
+    """随机选滤镜，相邻片段尽量不重复。"""
+    return list(_native_core.filter_segments(count))
 
 
 def _run_ffmpeg(
@@ -281,10 +297,6 @@ def process_batch(
             and not templates.has(config.tpl_fixed)
         ):
             log(f"[警告] 固定模板「{config.tpl_fixed}」不在模板库里，改为随机选择")
-    elif config.tpl_pick == "固定" and config.tpl_fixed:
-        if not any(path.name == config.tpl_fixed for path in backgrounds):
-            log(f"[警告] 固定辅助视频「{config.tpl_fixed}」不在素材库里，改为随机选择")
-
     if not mains:
         log("[错误] 主素材文件夹中没有视频文件")
         return False
@@ -309,20 +321,25 @@ def process_batch(
     main_durations: dict[str, float] = {}
     main_audio: dict[str, bool] = {}
     adaptive_pitches: dict[str, tuple[Optional[float], float]] = {}
+    playback_rates: dict[tuple[str, int], float] = {}
     total_duration = 0.0
     for mv in mains:
         dur = _probe_duration(mv)
         main_durations[str(mv)] = max(dur, 0.5)  # 至少 0.5 秒防止除零
+        # 输出映射始终需要知道主视频是否有音轨；否则关闭所有音频效果时，
+        # 无声视频会被误判为有声并生成无效的 `-map 1:a`。
+        main_audio[str(mv)] = _probe_has_audio(mv)
         if (
-            config.audio_bgm_enabled
-            or config.audio_voice_enabled
-            or config.audio_voice_adaptive
+            config.audio_voice_adaptive
+            and not config.audio_voice_mild
+            and main_audio.get(str(mv), False)
         ):
-            main_audio[str(mv)] = _probe_has_audio(mv)
-        if config.audio_voice_adaptive and main_audio.get(str(mv), False):
             detected = _estimate_voice_pitch(mv)
             adaptive_pitches[str(mv)] = (detected, _adaptive_voice_shift(detected))
-        total_duration += main_durations[str(mv)] * config.repeat_count
+        for repeat in range(config.repeat_count):
+            rate = _pick_playback_rate(config)
+            playback_rates[(str(mv), repeat)] = rate
+            total_duration += main_durations[str(mv)] / rate
 
     if total_duration <= 0:
         # 回退：如果 ffprobe 全部失败，用文件数量作为进度单位
@@ -363,6 +380,15 @@ def process_batch(
                 return False
 
             job_index += 1
+            playback_rate = playback_rates[(str(main_video), repeat)]
+            job_dur = main_dur / playback_rate
+            selected_filter = resolve_preset_name(config.filter_name)
+            filter_segments = (
+                _pick_filter_segments(config.filter_segment_count)
+                if config.filter_segment_count > 1 else [selected_filter]
+            )
+            job_config = copy.copy(config)
+            job_config.filter_name = selected_filter
 
             background_audio = None
             if background_audios:
@@ -375,26 +401,47 @@ def process_batch(
             # 随机选择素材
             backgrounds = [p for p in backgrounds if p.exists()]
             template_window = None
+            auxiliary_videos: list[Path] = []
+            auxiliary_opacities: list[float] = []
             if templates is not None:
                 # 模板即背景：替换掉普通背景槽，并按窗口几何落位主视频
                 spec = templates.pick(config.tpl_pick, config.tpl_fixed)
                 template_window = templates.resolve(spec, config)
                 background = spec.path
             else:
-                # 辅助视频是可选的：没配、目录不存在、或已被「删除已用辅助
-                # 视频」消耗完，都不再把整批判失败，余下的条目走纯色画布。
-                # 只在第一次报，免得每条都刷一行。
+                # 辅助视频改为叠在主画面上的低透明图层；底层使用纯色画布。
+                background = None
                 if not backgrounds:
                     if not exhausted_logged:
                         log("  [提示] 没有可用的辅助视频，以纯色画布出片")
                         exhausted_logged = True
-                    background = None
                 else:
-                    fixed = next(
-                        (path for path in backgrounds if path.name == config.tpl_fixed),
-                        None,
-                    ) if config.tpl_pick == "固定" else None
-                    background = fixed or random.choice(backgrounds)
+                    layer_configs = build_auxiliary_layers(
+                        config.aux_overlay_count,
+                        config.aux_layers_json,
+                        config.aux_opacity_min,
+                        config.aux_opacity_max,
+                    )
+                    by_name = {path.name: path for path in backgrounds}
+                    random_used: set[Path] = set()
+                    for layer in layer_configs:
+                        auxiliary = by_name.get(layer["file"])
+                        if auxiliary is not None:
+                            random_used.add(auxiliary)
+                        if auxiliary is None:
+                            choices = [
+                                path for path in backgrounds
+                                if path not in random_used
+                            ] or backgrounds
+                            auxiliary = random.choice(choices)
+                            random_used.add(auxiliary)
+                        auxiliary_videos.append(auxiliary)
+                        opacity_lo, opacity_hi = sorted((
+                            layer["opacity_min"], layer["opacity_max"],
+                        ))
+                        auxiliary_opacities.append(
+                            random.uniform(opacity_lo, opacity_hi) / 100.0
+                        )
 
             sticker_files: list[Path] = []
             if config.sticker_enabled:
@@ -457,7 +504,13 @@ def process_batch(
                     "movers": mover_files,
                     "mover_layers": mover_layers,
                     "template_window": template_window,
+                    "auxiliary_videos": auxiliary_videos,
+                    "auxiliary_opacities": auxiliary_opacities,
                     "background_audio": background_audio,
+                    "filter_name": selected_filter,
+                    "filter_segments": filter_segments,
+                    "main_duration": main_dur,
+                    "playback_rate": playback_rate,
                 })
 
             suffix = f"_{repeat + 1}" if config.repeat_count > 1 else ""
@@ -480,11 +533,11 @@ def process_batch(
 
             # ── 本次 job 的进度回调（0.0~1.0）──
             def _job_progress(frac: float) -> None:
-                _report_progress(main_dur * frac)
+                _report_progress(job_dur * frac)
 
             # ── Pass 1: 视频合成（主要耗时）──
             cmd = build_ffmpeg_command(
-                config,
+                job_config,
                 main_video=main_video,
                 background_video=background,
                 output_path=compose_output,
@@ -498,15 +551,35 @@ def process_batch(
                 main_has_audio=main_audio.get(str(main_video), True),
                 voice_pitch=(
                     adaptive_pitches.get(str(main_video), (None, 0.0))[1]
-                    if config.audio_voice_adaptive else None
+                    if config.audio_voice_adaptive and not config.audio_voice_mild
+                    else None
                 ),
+                auxiliary_videos=auxiliary_videos,
+                auxiliary_opacities=auxiliary_opacities,
+                playback_rate=playback_rate,
+                filter_segments=filter_segments,
+                video_duration=main_dur,
             )
 
             log(f"  [{job_index}/{total_jobs}] {main_video.stem}{suffix}")
+            if config.filter_name == "随机":
+                log(f"    随机滤镜: {selected_filter}")
+            if len(filter_segments) > 1:
+                log(
+                    f"    随机滤镜分段: {len(filter_segments)} 段（"
+                    + " / ".join(filter_segments) + "）"
+                )
+            log(f"    播放速率: {playback_rate:.2f} 倍")
             if background is None:
                 log("    背景: 纯色画布")
             else:
                 log(f"    背景: {background.name}" + ("  [模板]" if template_window else ""))
+            if auxiliary_videos:
+                log(f"    辅助视频叠加: {len(auxiliary_videos)} 层")
+                for i, (auxiliary, opacity) in enumerate(
+                    zip(auxiliary_videos, auxiliary_opacities), start=1
+                ):
+                    log(f"      {i}. {auxiliary.name}（透明度 {opacity * 100:.1f}%）")
             if sticker_files:
                 log(f"    贴纸: {len(sticker_files)} 层")
             if mover_files:
@@ -518,7 +591,13 @@ def process_batch(
                 log(f"    扫光: {scanlight_file.name}")
             if background_audio:
                 log(f"    背景音乐: {background_audio.name} ({config.audio_bgm_volume}%)")
-            if config.audio_voice_adaptive:
+            if config.audio_voice_mild:
+                log(
+                    "    对白轻微增强：10 秒分段微变速 + 音色/EQ/动态/响度随机微调（时长不变）"
+                    if main_audio.get(str(main_video), True)
+                    else "    [提示] 主视频没有原声音轨，跳过对白轻微增强"
+                )
+            elif config.audio_voice_adaptive:
                 detected, shift = adaptive_pitches.get(str(main_video), (None, 0.0))
                 if detected is None:
                     log("    [提示] 未检测到可靠对白基频，跳过智能音色变声")
@@ -532,7 +611,7 @@ def process_batch(
 
             try:
                 result = _run_ffmpeg(
-                    cmd, main_dur,
+                    cmd, job_dur,
                     progress_callback=_job_progress,
                     cancel_check=cancel_check,
                     log=log,
@@ -549,7 +628,7 @@ def process_batch(
                     ]
                     log("  [GPU] 编码失败，自动回退 CPU")
                     result = _run_ffmpeg(
-                        cpu_cmd, main_dur,
+                        cpu_cmd, job_dur,
                         progress_callback=_job_progress,
                         cancel_check=cancel_check,
                         log=log,
@@ -559,7 +638,7 @@ def process_batch(
                         return False
                 if result.returncode != 0:
                     failed_jobs += 1
-                    elapsed_duration += main_dur
+                    elapsed_duration += job_dur
                     log(f"  [失败] ffmpeg 返回码 {result.returncode}")
                     stderr_lines = result.stderr.strip().split("\n")
                     for line in stderr_lines[-15:]:
@@ -596,7 +675,7 @@ def process_batch(
                         log(f"  [人脸] 模糊完成: {blurred_output.name}")
                     else:
                         failed_jobs += 1
-                        elapsed_duration += main_dur
+                        elapsed_duration += job_dur
                         log("  [人脸] 模糊失败，本任务不生成伪成功成品")
                         compose_output.unlink(missing_ok=True)
                         blurred_output.unlink(missing_ok=True)
@@ -632,9 +711,18 @@ def process_batch(
                         )
                         segments, lang = engine.transcribe(audio_file)
                         segments = _wrap_subtitles(segments, config.subtitle_max_chars)
+                        if abs(playback_rate - 1.0) > 0.0001:
+                            segments = [
+                                {
+                                    **segment,
+                                    "start": segment["start"] / playback_rate,
+                                    "end": segment["end"] / playback_rate,
+                                }
+                                for segment in segments
+                            ]
                         if not engine.is_available:
                             failed_jobs += 1
-                            elapsed_duration += main_dur
+                            elapsed_duration += job_dur
                             log("  [字幕] 模型不可用，本任务失败")
                             audio_file.unlink(missing_ok=True)
                             current_video.unlink(missing_ok=True)
@@ -734,20 +822,15 @@ def process_batch(
                         except OSError:
                             pass
 
-                # 模板模式下 background 就是模板文件，但模板是可复用的库而非
-                # 一次性辅助素材 —— 「用完即删」在这里会删光用户的模板库，
-                # 所以模板通道一律跳过该开关。
-                if (
-                    config.delete_used_aux
-                    and template_window is None
-                    and background is not None
-                ):
-                    try:
-                        background.unlink()
-                        backgrounds.remove(background)
-                        log(f"    已删除辅助视频: {background.name}")
-                    except OSError:
-                        pass
+                # 同一素材可能因库数量不足被选中多次，只删除一次。
+                if config.delete_used_aux and template_window is None:
+                    for auxiliary in dict.fromkeys(auxiliary_videos):
+                        try:
+                            auxiliary.unlink()
+                            backgrounds.remove(auxiliary)
+                            log(f"    已删除辅助视频: {auxiliary.name}")
+                        except (OSError, ValueError):
+                            pass
 
             except FileNotFoundError:
                 log("  [错误] 找不到 ffmpeg！请确保 ffmpeg 在系统 PATH 中")
@@ -757,7 +840,7 @@ def process_batch(
                 log(f"  [异常] {e}")
 
             # 本 job 完成，累计时长
-            elapsed_duration += main_dur
+            elapsed_duration += job_dur
             _report_progress(0.0)
 
     ok = failed_jobs == 0

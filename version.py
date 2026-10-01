@@ -1,2 +1,2 @@
-APP_NAME = "月落@苍狼"
+APP_NAME = "星火漫剧"
 APP_VERSION = "1.2.0"

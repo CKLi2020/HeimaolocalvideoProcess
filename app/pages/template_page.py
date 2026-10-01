@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -52,6 +53,7 @@ class TemplatePage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         inner = QWidget()
         root_layout = QVBoxLayout(inner)
@@ -89,6 +91,32 @@ class TemplatePage(QWidget):
         lib_form.addRow("启用来源", self._source_row)
         self._rows["tpl_enabled"] = self._source_row
 
+        aux_group = QGroupBox("辅助视频叠加")
+        self._aux_group = aux_group
+        aux_form = QFormLayout(aux_group)
+        aux_form.setSpacing(10)
+        config.aux_overlay_count = max(1, min(5, config.aux_overlay_count))
+        for label, key, ptype in (
+            ("叠加数量", "aux_overlay_count", "slider:1-5"),
+            ("处理完成后删除", "delete_used_aux", "bool"),
+        ):
+            row = ParamRow(label, ptype, getattr(config, key))
+            if key == "aux_overlay_count":
+                row.value_changed.connect(self._on_aux_count_changed)
+            else:
+                row.value_changed.connect(
+                    lambda v, k=key: self._on_param_changed(k, v)
+                )
+            aux_form.addRow(row)
+            self._rows[key] = row
+
+        self._aux_opacity_row = OpacityRangeRow(
+            config.aux_opacity_min, config.aux_opacity_max,
+        )
+        self._aux_opacity_row.value_changed.connect(self._on_aux_opacity_changed)
+        aux_form.addRow("统一透明度", self._aux_opacity_row)
+        self._rows["aux_opacity_range"] = self._aux_opacity_row
+
         # 两种选法：随机（每条片子换一张）/ 固定（整批都用同一张，自己挑）。
         # 老的「顺序」已去掉；配置里若还留着这个值，下面 _normalize_pick 会把它
         # 归成「随机」，免得下拉显示的和引擎实际做的不是一回事。
@@ -102,6 +130,7 @@ class TemplatePage(QWidget):
             )
             lib_form.addRow(row)
             self._rows[key] = row
+            self._pick_row = row
 
         # 固定素材：从当前启用的模板/辅助视频文件夹里挑。
         self._fixed_row = TemplateChoiceRow(
@@ -123,6 +152,7 @@ class TemplatePage(QWidget):
         lib_form.addRow(self._fixed_hint)
 
         root_layout.addWidget(lib_group)
+        root_layout.addWidget(aux_group)
 
         # ── 中央窗口 ──
         # 全局默认值：所有模板共用这一套窗口几何。
@@ -156,6 +186,8 @@ class TemplatePage(QWidget):
         self.reload_templates()
         self._update_fixed_enabled()
         self._win_group.setEnabled(bool(self.config.tpl_enabled))
+        self._aux_group.setEnabled(not self.config.tpl_enabled)
+        self._pick_row.setEnabled(bool(self.config.tpl_enabled))
 
     # ── 模板目录与固定模板 ──
 
@@ -187,9 +219,18 @@ class TemplatePage(QWidget):
         _setattr(self.config, "background_folder", value)
         self.reload_templates()
 
+    def _on_aux_count_changed(self, value: int) -> None:
+        self.config.aux_overlay_count = max(1, min(5, int(value)))
+
+    def _on_aux_opacity_changed(self, value: tuple[int, int]) -> None:
+        self.config.aux_opacity_min, self.config.aux_opacity_max = value
+
     def _on_source_changed(self, template_enabled: bool) -> None:
         _setattr(self.config, "tpl_enabled", template_enabled)
         self._win_group.setEnabled(template_enabled)
+        self._aux_group.setEnabled(not template_enabled)
+        self._pick_row.setEnabled(template_enabled)
+        self._update_fixed_enabled()
         self.reload_templates()
 
     def _on_param_changed(self, key: str, value) -> None:
@@ -205,12 +246,16 @@ class TemplatePage(QWidget):
     def _update_fixed_enabled(self) -> None:
         # 选了「随机」就把这一行整行置灰：这时挑哪一张都不生效。
         self._fixed_row.setEnabled(
-            getattr(self.config, "tpl_pick", "随机") == "固定"
+            self.config.tpl_enabled
+            and getattr(self.config, "tpl_pick", "随机") == "固定"
         )
         self._refresh_fixed_hint()
 
     def _refresh_fixed_hint(self) -> None:
-        if getattr(self.config, "tpl_pick", "随机") != "固定":
+        if (
+            not self.config.tpl_enabled
+            or getattr(self.config, "tpl_pick", "随机") != "固定"
+        ):
             self._fixed_hint.setText("")
             return
         name = str(getattr(self.config, "tpl_fixed", "") or "")
@@ -268,6 +313,33 @@ class SourceChoiceRow(QWidget):
         self.template.setChecked(template_enabled)
         self.auxiliary.setChecked(not template_enabled)
         self.template.toggled.connect(self.value_changed.emit)
+
+
+class OpacityRangeRow(QWidget):
+    """所有辅助视频共用的随机透明度区间。"""
+
+    value_changed = Signal(object)
+
+    def __init__(self, minimum: int, maximum: int, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self.minimum = QSpinBox()
+        self.maximum = QSpinBox()
+        for spin, value in ((self.minimum, minimum), (self.maximum, maximum)):
+            spin.setRange(0, 100)
+            spin.setSuffix(" %")
+            spin.setValue(value)
+            spin.setFixedWidth(82)
+            spin.valueChanged.connect(self._emit_changed)
+        layout.addWidget(self.minimum)
+        layout.addWidget(QLabel("～"))
+        layout.addWidget(self.maximum)
+        layout.addStretch()
+
+    def _emit_changed(self, _value=None) -> None:
+        self.value_changed.emit((self.minimum.value(), self.maximum.value()))
 
 
 class TemplateChoiceRow(QWidget):
