@@ -119,6 +119,14 @@ class LocalProcessorService:
                 if fell_back:
                     gpu_disabled = True
 
+                finalize_render = getattr(mode, "finalize_render", None)
+                if code == 0 and not self._stop.is_set() and callable(finalize_render):
+                    try:
+                        finalize_render(temporary_base, state)
+                    except Exception as error:
+                        code = -1
+                        log(f"  【失败】产物封装失败：{type(error).__name__}: {error}")
+
                 cleanup_render = getattr(mode, "cleanup_render", None)
                 if callable(cleanup_render):
                     cleanup_render(temporary_base)

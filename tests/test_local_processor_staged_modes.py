@@ -72,6 +72,7 @@ def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypat
     destination = []
     commands = []
     progress_enabled = []
+    finalized = []
     cleaned = []
     completed = []
     logs = []
@@ -89,6 +90,11 @@ def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypat
         steps = ["gpu-stage-1", "gpu-stage-2"] if use_gpu else ["cpu-stage-1", "cpu-stage-2"]
         return steps, use_gpu, ""
 
+    def finalize_render(out_base, state):
+        assert state["use_gpu"] is True
+        assert Path(out_base + ".mp4").is_file()
+        finalized.append(out_base)
+
     mode = SimpleNamespace(
         gpu_supported=True,
         ext="mp4",
@@ -96,6 +102,7 @@ def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypat
         output_naming="source",
         has_gpu_command=lambda: True,
         render_steps=render_steps,
+        finalize_render=finalize_render,
         cleanup_render=lambda out_base: cleaned.append(out_base),
     )
     service = local_processor.LocalProcessorService.__new__(local_processor.LocalProcessorService)
@@ -122,6 +129,7 @@ def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypat
 
     assert commands == ["gpu-stage-1", "cpu-stage-1", "cpu-stage-2"], (completed, logs)
     assert progress_enabled == [False, False, True]
+    assert finalized == [str(output_dir / "input_staged.part")]
     assert cleaned == [str(output_dir / "input_staged.part")]
     assert (output_dir / "input_staged.mp4").is_file()
     assert completed[0][:3] == (1, 0, 1)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -87,6 +88,20 @@ class LocalProcessorPage(QWidget):
         self.processor_status = QLabel()
         processor_row.addWidget(self.processor_status, 1)
         execution_layout.addLayout(processor_row)
+
+        self.mode5_options = QWidget()
+        mode5_layout = QHBoxLayout(self.mode5_options)
+        mode5_layout.setContentsMargins(0, 0, 0, 0)
+        mode5_layout.addWidget(QLabel("栖霞效果："))
+        self.mode5_lasong = QCheckBox("拉松")
+        self.mode5_ronghe = QCheckBox("融合")
+        self.mode5_daoli = QCheckBox("倒立")
+        self.mode5_ronghe.setChecked(True)
+        for checkbox in (self.mode5_lasong, self.mode5_ronghe, self.mode5_daoli):
+            mode5_layout.addWidget(checkbox)
+        mode5_layout.addStretch()
+        self.mode5_options.hide()
+        execution_layout.addWidget(self.mode5_options)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -177,6 +192,9 @@ class LocalProcessorPage(QWidget):
         supports_copies = bool(getattr(self.current_mode, "supports_copies", False))
         self.copies_label.setVisible(supports_copies)
         self.copies_spin.setVisible(supports_copies)
+        self.mode5_options.setVisible(
+            bool(getattr(self.current_mode, "supports_mode5_switches", False))
+        )
         if self.current_mode:
             self.log_received.emit(f"当前模式：{title} · {self.current_mode.name}")
 
@@ -236,6 +254,9 @@ class LocalProcessorPage(QWidget):
             "gpu_profile": self.service.gpu_profile,
             "output_naming": str(self.service.config.get("output_naming") or "hash"),
             "copies": self.copies_spin.value(),
+            "mode5_lasong": self.mode5_lasong.isChecked(),
+            "mode5_ronghe": self.mode5_ronghe.isChecked(),
+            "mode5_daoli": self.mode5_daoli.isChecked(),
         }
         self.progress.setValue(0)
         self.start_button.setEnabled(False)
