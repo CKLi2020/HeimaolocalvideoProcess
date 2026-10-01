@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
         brand_sub.setObjectName("brandSub")
         header_layout.addWidget(brand_sub)
         header_layout.addStretch()
-        self._status_label = QLabel("● 视频处理")
+        self._status_label = QLabel("● 科技板块")
         self._status_label.setObjectName("status")
         header_layout.addWidget(self._status_label)
         root_layout.addWidget(header)
@@ -123,13 +123,13 @@ class MainWindow(QMainWindow):
         # Persistent channel navigation. Every channel routes to a real page.
         channel_panel = QFrame()
         channel_panel.setObjectName("channelBar")
-        channel_panel.setMinimumWidth(170)
-        channel_panel.setMaximumWidth(190)
+        channel_panel.setMinimumWidth(230)
+        channel_panel.setMaximumWidth(250)
         channel_layout = QVBoxLayout(channel_panel)
         channel_layout.setContentsMargins(12, 18, 12, 12)
         channel_layout.setSpacing(9)
         channel_logo = QLabel()
-        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "heimao_logo.ico")).pixmap(120, 120))
+        channel_logo.setPixmap(QIcon(str(self.root_dir / "ico" / "heimao_logo.ico")).pixmap(150, 150))
         channel_logo.setAlignment(Qt.AlignCenter)
         channel_layout.addWidget(channel_logo)
         channel_brand = QLabel(APP_NAME)
@@ -147,8 +147,8 @@ class MainWindow(QMainWindow):
         self._channel_group = QButtonGroup(self)
         self._channel_group.setExclusive(True)
         channels = (
-            ("视频处理", "local_processor"),
-            ("蒙版模式", "hdh"),
+            ("科技板块", "local_processor"),
+            ("蒙版板块", "hdh"),
             ("素材拼接", "concat"),
             ("视频裁剪", "cut"),
             ("蝴蝶AB", "butterfly_ab"),
@@ -365,7 +365,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._workspace_stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([180, 1510])
+        splitter.setSizes([240, 1450])
         root_layout.addWidget(splitter, stretch=1)
         self._select_channel("local_processor")
 
@@ -393,10 +393,10 @@ class MainWindow(QMainWindow):
                 self._resolve(self.config.ab_main_folder)
             )
         status = {
-            "hdh": "● 蒙版模式",
+            "hdh": "● 蒙版板块",
             "butterfly_ab": "● 蝴蝶AB通道",
             "concat": "● 素材拼接",
-            "local_processor": "● 视频处理",
+            "local_processor": "● 科技板块",
             "cut": "● 视频裁剪",
         }[channel]
         self._set_status(
@@ -607,7 +607,7 @@ class MainWindow(QMainWindow):
             self._btn_stop.setEnabled(False)
         if success:
             status = "● 视频裁剪" if cut else "● 素材拼接" if concat else (
-                "● 蝴蝶AB通道" if butterfly else "● 蒙版模式"
+                "● 蝴蝶AB通道" if butterfly else "● 蒙版板块"
             )
             self._set_status(
                 status,

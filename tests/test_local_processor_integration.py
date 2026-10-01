@@ -7,7 +7,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFrame
 
 import engine.local_processor as local_engine
 
@@ -26,6 +26,7 @@ from config import AppConfig
 app = QApplication.instance() or QApplication([])
 window = MainWindow(AppConfig(), Path(__file__).resolve().parents[1])
 page = window._local_processor_page
+assert window.findChild(QFrame, "channelBar").minimumWidth() == 230
 
 assert window._workspace_stack.count() == 5
 assert window._active_channel == "local_processor"
@@ -33,7 +34,7 @@ assert window._workspace_stack.currentWidget() is page
 assert "NVIDIA GeForce RTX TEST" in window._machine_gpu.text()
 assert "不支持 GPU 加速" in window._machine_gpu.text()
 assert [button.text() for button in window._channel_group.buttons()][:4] == [
-    "视频处理", "蒙版模式", "素材拼接", "视频裁剪",
+    "科技板块", "蒙版板块", "素材拼接", "视频裁剪",
 ]
 channel_buttons = {button.text(): button for button in window._channel_group.buttons()}
 assert channel_buttons["素材拼接"].isHidden()
@@ -56,6 +57,8 @@ heimao_index = next(
 )
 shipinhao.setCurrentIndex(heimao_index)
 page._activate("视频号处理")
+assert "#60a5fa" in page._platforms["视频号处理"][0].styleSheet()
+assert "#2c456d" in page._platforms["抖音处理"][0].styleSheet()
 assert not page.aux_edit.isEnabled()
 assert page.aux_edit.text() == "本通道不需要辅助视频"
 assert all(not button.isEnabled() for button in page.aux_edit._path_buttons)

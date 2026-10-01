@@ -147,7 +147,8 @@ class LocalProcessorPage(QWidget):
             frame.setObjectName("localModeCard")
             card = QVBoxLayout(frame)
             caption = QLabel(title)
-            caption.setStyleSheet("font-weight: 700; color: #f3e9ef;")
+            caption.setObjectName("localModeCaption")
+            caption.setStyleSheet("font-weight: 700; color: #d4dff0;")
             caption.setAlignment(Qt.AlignCenter)
             card.addWidget(caption)
             combo = QComboBox()
@@ -167,8 +168,8 @@ class LocalProcessorPage(QWidget):
         for name, (frame, combo) in self._platforms.items():
             active = name == title
             frame.setStyleSheet(
-                "QFrame#localModeCard { background: %s; border: 1px solid %s; border-radius: 8px; }"
-                % (("#5a273d", "#ff9a3c") if active else ("#24152c", "#4b2a55"))
+                "QFrame#localModeCard { background: %s; border: %s solid %s; border-radius: 8px; }"
+                % (("#294267", "2px", "#60a5fa") if active else ("#1b2c49", "1px", "#2c456d"))
             )
             if active:
                 self.current_mode = combo.currentData()
