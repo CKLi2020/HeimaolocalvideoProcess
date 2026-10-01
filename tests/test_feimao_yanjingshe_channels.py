@@ -1,21 +1,42 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-import mode_douyin_feimao_worker as feimao_worker
-import mode_xiaohongshu_yanjingshe_worker as yanjingshe_worker
 from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, verify_output
 from modes import load_modes
+from modes.douyin import mode_douyin_feimao_worker as feimao_worker
 from modes.douyin.mode_feimao09284 import MODE as FEIMAO
+from modes.xiaohongshu import mode_xiaohongshu_yanjingshe_worker as yanjingshe_worker
 from modes.xiaohongshu.mode_yanjingshe0928 import MODE as YANJINGSHE
 
 
 def _platform_modes(platform_title: str) -> dict[str, object]:
     groups = load_modes()
     return {mode.id: mode for mode in groups[platform_title]}
+
+
+def test_feimao_command_uses_mode_local_parameters():
+    mode_dir = Path(__file__).resolve().parents[1] / "modes" / "douyin"
+    filter_path = mode_dir / "filter_complex.txt"
+    ffargs_path = mode_dir / "feimao_ffargs.json"
+    command = feimao_worker.build_command(
+        "ffmpeg", Path("input.mp4"), Path("output.mp4"), feimao_worker.DEFAULT_METADATA_URL
+    )
+    assert feimao_worker.FFARGS_PATH == ffargs_path
+    assert json.loads(ffargs_path.read_text(encoding="utf-8"))["filter_graph_file"] == filter_path.name
+    assert Path(feimao_worker.DEFAULT_METADATA_URL) == mode_dir / "feimao_metadata.txt"
+    assert Path(feimao_worker.DEFAULT_METADATA_URL).is_file()
+    assert command[command.index("-filter_complex") + 1] == filter_path.read_text(encoding="utf-8-sig")
+
+
+def test_yanjingshe_worker_uses_repository_runtime_paths():
+    root = Path(__file__).resolve().parents[1]
+    assert yanjingshe_worker.SCRIPT_DIR == root
+    assert yanjingshe_worker.CAPTURE_DIR == root / "capture_xiaohongshu_yanjingshe"
 
 
 def test_worker_channels_cpu_conversion_and_gpu_commands(tmp_path, monkeypatch):
@@ -36,34 +57,42 @@ def test_worker_channels_cpu_conversion_and_gpu_commands(tmp_path, monkeypatch):
         ],
         check=True,
     )
+    silent_source = tmp_path / "silent.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30:duration=0.25",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(silent_source),
+        ],
+        check=True,
+    )
     metadata = tmp_path / "metadata.txt"
     metadata.write_text(";FFMETADATA1\ntitle=worker channel test\n", encoding="utf-8")
     monkeypatch.setattr(yanjingshe_worker, "DEFAULT_METADATA_URL", str(metadata))
 
-    capture = tmp_path / "feimao_capture"
-    active = capture / "ffargs" / "active"
-    active.mkdir(parents=True)
-    (capture / "filter_complex.txt").write_text(
+    filter_path = tmp_path / "filter_complex.txt"
+    filter_path.write_text(
         "[0:v]null,setfield=tff[vout];[0:a]anull[aout]", encoding="utf-8"
     )
-    response_values = {
-        "a001": "ffmetadata",
-        "a003": "[vout]",
-        "a004": "[aout]",
-        "a005": "libx265",
-        "a006": "hev1",
-        "a007": "yuv420p",
-        "a008": "30",
-        "a009": "aac",
-        "a010": "72k",
-        "a011": "2",
-        "a012": "44100",
-        "a013": "mp4",
+    ffargs = {
+        "metadata_format": "ffmetadata",
+        "filter_graph_file": filter_path.name,
+        "video_map": "[vout]",
+        "audio_map": "[aout]",
+        "captured_video_encoder": "libx265",
+        "video_tag": "hev1",
+        "pixel_format": "yuv420p",
+        "frame_rate": "30",
+        "audio_encoder": "aac",
+        "audio_bitrate": "72k",
+        "audio_channels": "2",
+        "audio_sample_rate": "44100",
+        "container_format": "mp4",
     }
-    for name, value in response_values.items():
-        (active / name).write_text(value, encoding="utf-8")
-    monkeypatch.setattr(feimao_worker, "ACTIVE_RUN", capture)
-    monkeypatch.setattr(feimao_worker, "RESPONSE_DIR", active)
+    ffargs_path = tmp_path / "feimao_ffargs.json"
+    ffargs_path.write_text(json.dumps(ffargs), encoding="utf-8")
+    monkeypatch.setattr(feimao_worker, "FFARGS_PATH", ffargs_path)
 
     loaded_douyin = _platform_modes("抖音处理")
     loaded_xiaohongshu = _platform_modes("小红书处理")
@@ -116,3 +145,17 @@ def test_worker_channels_cpu_conversion_and_gpu_commands(tmp_path, monkeypatch):
         assert verify_output(
             {"ffprobe_path": ffprobe}, str(temporary_base) + ".mp4"
         )[0]
+
+    silent_base = tmp_path / "feimao_silent.part"
+    silent_command, is_gpu, error = FEIMAO.render(
+        {"metadata_url": str(metadata)}, str(silent_source), use_gpu=False,
+        out_base=str(silent_base),
+    )
+    assert not error and not is_gpu
+    assert "anullsrc=channel_layout=stereo:sample_rate=44100" in silent_command
+    assert "[1:a]anull" in silent_command
+    assert "-map_metadata 2" in silent_command
+    assert runner.run(silent_command, on_log=lambda _line: None) == 0, runner.tail()
+    assert verify_output(
+        {"ffprobe_path": ffprobe}, str(silent_base) + ".mp4", expected_audio_tracks=1
+    )[0]

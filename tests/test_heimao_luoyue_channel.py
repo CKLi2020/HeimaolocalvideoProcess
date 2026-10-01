@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -31,11 +32,9 @@ try:
             {"copies": 3, "gpu_profile": {}}, source,
             str(Path(directory) / "source_heimao_luoyue"), "ffmpeg",
         )
-        assert outputs == captured and [path.name for path in outputs] == [
-            "source_heimao_luoyue_1.mp4",
-            "source_heimao_luoyue_2.mp4",
-            "source_heimao_luoyue_3.mp4",
-        ]
+        names = [path.name for path in outputs]
+        assert outputs == captured and len(set(names)) == 3
+        assert all(re.fullmatch(r"source爆闪[a-z0-9]{4}\.mp4", name) for name in names)
 finally:
     worker.run_many = original_run_many
 
