@@ -1,4 +1,4 @@
-"""抖音战斗通道0921。"""
+"""抖音疏影通道0921。"""
 
 import subprocess
 from pathlib import Path
@@ -10,14 +10,14 @@ from modes.douyin.hevc_gpu import select_hevc_encoder
 
 class ModeZhandou0921(BaseMode):
     id = "douyin/zhandou0921"
-    name = "战斗通道0921"
+    name = "疏影通道0921"
     platform = "douyin"
     needs_aux = False
     gpu_supported = True
     output_suffix = "_zhandou0921"
     output_naming = "source"
     ext = "mp4"
-    help_text = "抖音处理 · 战斗通道0921（CPU / NVIDIA / AMD）"
+    help_text = "抖音处理 · 疏影通道0921（CPU / NVIDIA / AMD）"
 
     def has_gpu_command(self):
         return True
@@ -42,7 +42,7 @@ class ModeZhandou0921(BaseMode):
                 encoder, encoder_options,
             )
         except (OSError, ValueError, KeyError, RuntimeError) as error:
-            return "", bool(use_gpu), "战斗通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "疏影通道参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 
