@@ -16,7 +16,7 @@ $ProductNameBase64 = (& $Python -c "import base64,runpy; print(base64.b64encode(
 $ProductName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ProductNameBase64))
 $Release = Join-Path $Dist "${ProductName}_V$Version"
 $LauncherName = "${ProductName}_V$Version.exe"
-$Icon = Join-Path $Root "ico\feng_logo.ico"
+$Icon = Join-Path $Root "ico\xinghuo_logo.ico"
 $Ffmpeg = (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue).Source
 $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 
@@ -24,6 +24,25 @@ if (-not (Test-Path -LiteralPath $Icon)) { throw "Icon not found: $Icon" }
 if (-not $Ffmpeg -or -not $Ffprobe) { throw "ffmpeg.exe and ffprobe.exe are required" }
 if (-not (Test-Path -LiteralPath $NativeBuild)) { throw "Native build script not found: $NativeBuild" }
 
+$DistFull = [IO.Path]::GetFullPath($Dist).TrimEnd('\') + '\'
+$ReleaseFull = [IO.Path]::GetFullPath($Release)
+if (-not $ReleaseFull.StartsWith($DistFull, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Unsafe release path: $ReleaseFull"
+}
+$RunningRelease = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    try {
+        $_.Path -and [IO.Path]::GetFullPath($_.Path).StartsWith(
+            $ReleaseFull + '\', [StringComparison]::OrdinalIgnoreCase
+        )
+    }
+    catch { $false }
+}
+if ($RunningRelease) {
+    throw "Close the running $LauncherName before building again."
+}
+if (Test-Path -LiteralPath $Release) {
+    Remove-Item -LiteralPath $Release -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $Build, $Release | Out-Null
 
 Write-Host "==> Building and VMProtecting native algorithm core" -ForegroundColor Cyan
@@ -84,7 +103,8 @@ $WorkingDirectories = @(
     ((ConvertFrom-CodePoints @(0x8774, 0x8776)) + "AB" + (ConvertFrom-CodePoints @(0x6210, 0x54C1))),
     (ConvertFrom-CodePoints @(0x6A21, 0x677F)),
     (ConvertFrom-CodePoints @(0x62FC, 0x63A5, 0x6210, 0x54C1)),
-    (ConvertFrom-CodePoints @(0x80CC, 0x666F, 0x97F3, 0x4E50))
+    (ConvertFrom-CodePoints @(0x80CC, 0x666F, 0x97F3, 0x4E50)),
+    (ConvertFrom-CodePoints @(0x88C1, 0x526A, 0x6210, 0x54C1))
 )
 foreach ($name in $WorkingDirectories) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Release $name) | Out-Null

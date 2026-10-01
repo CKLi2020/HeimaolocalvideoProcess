@@ -763,6 +763,24 @@ QPushButton#accent:disabled {
     background: #0b1526;
     border-color: #16233c;
 }
+
+QFrame#speedCard {
+    background: #14233c;
+    border: 1px solid #2c456d;
+    border-radius: 10px;
+}
+QLabel#speedCaption { color: #9db9df; font-size: 11px; font-weight: 600; }
+QDoubleSpinBox#speedValue {
+    color: #e4ebf6;
+    background: #0b1324;
+    border: 1px solid #3b82f6;
+    border-radius: 7px;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 5px 20px 5px 8px;
+}
+QLabel#speedArrow { color: #60a5fa; font-size: 22px; font-weight: 700; }
+QLabel#speedHint { color: #7f9bc7; font-size: 11px; padding: 2px 4px 0 4px; }
 """
 
 # Theme aliases

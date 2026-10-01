@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
+from engine.native_core import core as _native_core
+
 
 class ColorPreset:
     """调色预设：一组 ffmpeg 滤镜参数。"""
@@ -172,6 +174,8 @@ PRESETS: Dict[str, ColorPreset] = {
     ),
 }
 
+RANDOM_PRESETS = tuple(name for name in PRESETS if name != "无")
+
 
 def get_preset(name: str) -> Optional[ColorPreset]:
     """获取指定名称的滤镜预设。"""
@@ -181,6 +185,11 @@ def get_preset(name: str) -> Optional[ColorPreset]:
 def list_presets() -> List[str]:
     """列出所有可用预设名称。"""
     return list(PRESETS.keys())
+
+
+def resolve_preset_name(name: str) -> str:
+    """「随机」在每个输出任务开始时固定成一个真实预设。"""
+    return _native_core.filter_segments(1)[0] if name == "随机" else name
 
 
 def apply_color_adjustments(
@@ -208,71 +217,7 @@ def apply_color_adjustments(
     Returns:
         (filter_complex 片段字符串, 输出标签)
     """
-    out_tag = base_tag
-    all_filters = []
-
-    # 应用预设滤镜
-    if filter_name and filter_name != "无":
-        preset = get_preset(filter_name)
-        if preset:
-            strength = filter_strength / 100.0
-
-            # 插值：强度 100 = 全效，0 = 无效果
-            eq_parts = []
-            b = preset.brightness * strength
-            c = 1.0 + (preset.contrast - 1.0) * strength
-            s = 1.0 + (preset.saturation - 1.0) * strength
-            # 色温：向 6500K 方向插值
-            t_base = 6500
-            t = int(t_base + (preset.temperature - t_base) * strength)
-
-            if abs(b) > 0.005:
-                eq_parts.append(f"brightness={b:.2f}")
-            if abs(c - 1.0) > 0.005:
-                eq_parts.append(f"contrast={c:.2f}")
-            if abs(s - 1.0) > 0.005:
-                eq_parts.append(f"saturation={s:.2f}")
-            if eq_parts:
-                all_filters.append(f"eq={':'.join(eq_parts)}")
-            if abs(t - 6500) > 50:
-                shift = max(-1.0, min(1.0, (t - 6500) / 3000))
-                all_filters.append(
-                    f"colorbalance=rh={shift * .12:.3f}:bh={-shift * .12:.3f}"
-                )
-
-            # gamma
-            g_adj = []
-            for ch, base_v in [("r", preset.gamma_r), ("g", preset.gamma_g), ("b", preset.gamma_b)]:
-                val = 1.0 + (base_v - 1.0) * strength
-                if abs(val - 1.0) > 0.005:
-                    g_adj.append(f"{ch}h={val - 1.0:.2f}")
-            if g_adj:
-                all_filters.append(f"colorbalance={':'.join(g_adj)}")
-
-    # 叠加手动调色参数
-    eq_manual = []
-    mb = brightness / 100.0
-    mc = 1.0 + contrast / 100.0
-    ms = 1.0 + saturation / 100.0
-    mt = temperature
-
-    if abs(mb) > 0.005:
-        eq_manual.append(f"brightness={mb:.2f}")
-    if abs(mc - 1.0) > 0.005:
-        eq_manual.append(f"contrast={mc:.2f}")
-    if abs(ms - 1.0) > 0.005:
-        eq_manual.append(f"saturation={ms:.2f}")
-    if eq_manual:
-        all_filters.append(f"eq={':'.join(eq_manual)}")
-    if abs(mt) > 1:
-        shift = mt / 100.0
-        all_filters.append(
-            f"colorbalance=rh={shift * .12:.3f}:bh={-shift * .12:.3f}"
-        )
-
-    if not all_filters:
-        return "", base_tag
-
-    out_tag = f"{base_tag}_colored"
-    filter_str = f"[{base_tag}]{','.join(all_filters)}[{out_tag}]"
-    return filter_str, out_tag
+    return _native_core.color_adjustments_filter(
+        base_tag, brightness, contrast, saturation, temperature,
+        filter_name, filter_strength,
+    )

@@ -34,4 +34,10 @@ preview._label.resize(400, 800)
 preview._pixmap = QPixmap(300, 600)
 assert preview._layer_point({"x": -50, "y": -50}) == (50, 100)
 assert preview._layer_point({"x": 50, "y": 50}) == (350, 700)
+
+preview._show_pixmap(QPixmap(100, 200))
+preview._label.resize(300, 600)
+preview._rescale_pixmap()
+assert preview._pixmap.size().width() == 300
+assert preview._pixmap.size().height() == 600
 print("sticker layer editor: OK")

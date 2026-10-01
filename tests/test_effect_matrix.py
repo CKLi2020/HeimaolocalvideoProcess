@@ -24,6 +24,8 @@ def _frame_digest(video: Path, second: float = 0.5) -> str:
 
 def _render(root: Path, **changes) -> str:
     config = _config(root)
+    # 视觉参数矩阵必须有稳定基线；辅助视频的随机透明度由管线冒烟测试覆盖。
+    config.aux_opacity_min = config.aux_opacity_max = 2
     for key, value in changes.items():
         setattr(config, key, value)
     assert process_batch(config, root)

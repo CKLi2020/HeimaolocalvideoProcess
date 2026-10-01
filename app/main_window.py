@@ -42,6 +42,7 @@ from app.pages.opening_page import OpeningPage
 from app.pages.face_color_page import FaceColorPage
 from app.pages.butterfly_ab_page import ButterflyABPage
 from app.pages.concat_page import ConcatPage
+from app.pages.cut_page import CutPage
 from app.pages.local_processor_page import LocalProcessorPage
 from app.widgets.preview_canvas import PreviewCanvas
 from app.widgets.log_panel import LogPanel
@@ -149,6 +150,7 @@ class MainWindow(QMainWindow):
             ("视频处理", "local_processor"),
             ("蒙版模式", "hdh"),
             ("素材拼接", "concat"),
+            ("视频裁剪", "cut"),
             ("蝴蝶AB", "butterfly_ab"),
         )
         # 「蝴蝶AB」按钮收起。只藏按钮，通道本身一点没动：_select_channel、
@@ -343,6 +345,9 @@ class MainWindow(QMainWindow):
         self._concat_page = ConcatPage(self.config, self.root_dir)
         self._concat_page.start_requested.connect(self._on_start)
         self._concat_page.stop_requested.connect(self._on_stop)
+        self._cut_page = CutPage(self.config, self.root_dir)
+        self._cut_page.start_requested.connect(self._on_start)
+        self._cut_page.stop_requested.connect(self._on_stop)
         self._local_processor_page = LocalProcessorPage(self.root_dir)
         profile = self._local_processor_page.service.gpu_profile
         gpu_name = profile.get("gpu_name")
@@ -359,6 +364,7 @@ class MainWindow(QMainWindow):
         self._workspace_stack.addWidget(self._butterfly_page)
         self._workspace_stack.addWidget(self._concat_page)
         self._workspace_stack.addWidget(self._local_processor_page)
+        self._workspace_stack.addWidget(self._cut_page)
         splitter.addWidget(self._workspace_stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -371,7 +377,9 @@ class MainWindow(QMainWindow):
 
     def _wire_params_to_preview(self) -> None:
         """Connect every parameter row across all pages to live preview refresh."""
-        for page in self._pages.values():
+        for name, page in self._pages.items():
+            if name == "声音处理":
+                continue
             for row in getattr(page, "_rows", {}).values():
                 if hasattr(row, "value_changed"):
                     row.value_changed.connect(self._preview.schedule_refresh)
@@ -381,7 +389,7 @@ class MainWindow(QMainWindow):
     def _select_channel(self, channel: str) -> None:
         self._active_channel = channel
         self._workspace_stack.setCurrentIndex(
-            {"hdh": 0, "butterfly_ab": 1, "concat": 2, "local_processor": 3}[channel]
+            {"hdh": 0, "butterfly_ab": 1, "concat": 2, "local_processor": 3, "cut": 4}[channel]
         )
         if channel == "butterfly_ab":
             self._butterfly_page.show_first_video(
@@ -392,6 +400,7 @@ class MainWindow(QMainWindow):
             "butterfly_ab": "● 蝴蝶AB通道",
             "concat": "● 素材拼接",
             "local_processor": "● 视频处理",
+            "cut": "● 视频裁剪",
         }[channel]
         self._set_status(
             status,
@@ -416,6 +425,9 @@ class MainWindow(QMainWindow):
             return
         if self._active_channel == "concat":
             self._on_start_concat()
+            return
+        if self._active_channel == "cut":
+            self._on_start_cut()
             return
 
         # 基本校验。辅助视频不再是必填项：界面上已经没有它的入口，
@@ -489,6 +501,21 @@ class MainWindow(QMainWindow):
         self._set_status("● 素材拼接中", "#fbbf24", "#1f1a0e", "#4a3a15")
         self._worker.start(self.config, self.root_dir, "concat")
 
+    def _on_start_cut(self) -> None:
+        main_folder = self._resolve(self.config.cut_main_folder)
+        if not main_folder.is_dir():
+            QMessageBox.warning(self, "提示", "请选择有效的长视频文件夹。")
+            return
+        if not self.config.cut_output_folder:
+            QMessageBox.warning(self, "提示", "请选择切片输出文件夹。")
+            return
+        self._save_config()
+        self._running_channel = "cut"
+        self._cut_page.log.clear()
+        self._cut_page.set_running(True)
+        self._set_status("● 视频裁剪中", "#fbbf24", "#1f1a0e", "#4a3a15")
+        self._worker.start(self.config, self.root_dir, "cut")
+
     def _on_stop(self) -> None:
         """停止处理。"""
         if self._active_channel == "local_processor":
@@ -500,6 +527,8 @@ class MainWindow(QMainWindow):
             self._butterfly_page.stop_button.setEnabled(False)
         elif running == "concat":
             self._concat_page.stop_button.setEnabled(False)
+        elif running == "cut":
+            self._cut_page.stop_button.setEnabled(False)
         else:
             self._btn_stop.setEnabled(False)
 
@@ -535,6 +564,8 @@ class MainWindow(QMainWindow):
             self._butterfly_page.log.append(text)
         elif running == "concat":
             self._concat_page.log.append(text)
+        elif running == "cut":
+            self._cut_page.log.append(text)
         else:
             self._log.append(text)
 
@@ -543,6 +574,7 @@ class MainWindow(QMainWindow):
         progress = {
             "butterfly_ab": self._butterfly_page.progress,
             "concat": self._concat_page.progress,
+            "cut": self._cut_page.progress,
         }.get(running, self._progress)
         progress.setRange(0, total)
         progress.setValue(current)
@@ -555,6 +587,9 @@ class MainWindow(QMainWindow):
         if running == "concat":
             self._concat_page.show_task(task)
             return
+        if running == "cut":
+            self._cut_page.show_task(task)
+            return
         self._preview_title.setText(f"● 正在处理：{Path(task['main']).name}")
         self._preview.show_task(task)
 
@@ -562,16 +597,19 @@ class MainWindow(QMainWindow):
         running = getattr(self, "_running_channel", "hdh")
         butterfly = running == "butterfly_ab"
         concat = running == "concat"
+        cut = running == "cut"
         if butterfly:
             self._butterfly_page.set_running(False)
         elif concat:
             self._concat_page.set_running(False)
+        elif cut:
+            self._cut_page.set_running(False)
         else:
             self._progress.hide()
             self._btn_start.setEnabled(True)
             self._btn_stop.setEnabled(False)
         if success:
-            status = "● 素材拼接" if concat else (
+            status = "● 视频裁剪" if cut else "● 素材拼接" if concat else (
                 "● 蝴蝶AB通道" if butterfly else "● 蒙版模式"
             )
             self._set_status(
@@ -580,7 +618,7 @@ class MainWindow(QMainWindow):
             )
         else:
             self._set_status("● " + message, "#f87171", "#1f1518", "#3d1f28")
-        target_log = self._concat_page.log if concat else (
+        target_log = self._cut_page.log if cut else self._concat_page.log if concat else (
             self._butterfly_page.log if butterfly else self._log
         )
         target_log.append("--- " + message + " ---", "#5a7aa5")
