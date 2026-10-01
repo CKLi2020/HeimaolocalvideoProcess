@@ -35,6 +35,7 @@ class PreviewCanvas(QWidget):
         self._config = config
         self._root = root_dir
         self._task: Optional[dict] = None
+        self._source_pixmap: Optional[QPixmap] = None
         self._pixmap: Optional[QPixmap] = None
         self._face_engine = None
         self._sticker_rects: list[QRect] = []  # 贴纸边界框
@@ -65,6 +66,7 @@ class PreviewCanvas(QWidget):
         self.show_placeholder()
 
     def show_placeholder(self) -> None:
+        self._source_pixmap = None
         self._pixmap = None
         self._label.setPixmap(QPixmap())
         self._label.setText(
@@ -302,10 +304,21 @@ class PreviewCanvas(QWidget):
     def _show_pixmap(self, pm: QPixmap) -> None:
         self._draw_subtitle_preview(pm)
         self._label.setToolTip("")
-        self._pixmap = pm.scaled(
+        self._source_pixmap = pm
+        self._rescale_pixmap()
+
+    def _rescale_pixmap(self) -> None:
+        if self._source_pixmap is None or self._source_pixmap.isNull():
+            return
+        self._pixmap = self._source_pixmap.scaled(
             self._label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
         )
         self._label.setPixmap(self._pixmap)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if self._source_pixmap is not None:
+            QTimer.singleShot(0, self._rescale_pixmap)
 
     def _apply_face_blur(self, image: Path) -> None:
         if not self._config.face_blur_enabled:
