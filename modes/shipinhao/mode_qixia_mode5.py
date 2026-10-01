@@ -14,6 +14,7 @@ class ModeQixiaMode5(BaseMode):
     platform = "shipinhao"
     needs_aux = True
     gpu_supported = True
+    supports_copies = True
     supports_mode5_switches = True
     output_suffix = "_qixia_mode5"
     output_naming = "source"
@@ -22,6 +23,10 @@ class ModeQixiaMode5(BaseMode):
 
     def has_gpu_command(self):
         return True
+
+    @staticmethod
+    def output_count(state):
+        return max(1, min(100, int(state.get("copies", 1))))
 
     @staticmethod
     def _paths(out_base):

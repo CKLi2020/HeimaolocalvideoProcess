@@ -83,6 +83,9 @@ page._activate("视频号处理")
 assert page.aux_edit.isEnabled() and not page.aux_edit.text()
 assert all(button.isEnabled() for button in page.aux_edit._path_buttons)
 assert not page.mode5_options.isHidden()
+assert not page.copies_spin.isHidden()
+assert page.copies_label.text() == "裂变个数："
+assert page.copies_spin.value() == 1
 assert page.mode5_ronghe.isChecked()
 assert not page.mode5_lasong.isChecked() and not page.mode5_daoli.isChecked()
 

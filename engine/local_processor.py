@@ -73,8 +73,6 @@ class LocalProcessorService:
                     break
                 source = Path(source)
                 auxiliary = Path(aux_files[index % len(aux_files)]) if aux_files else None
-                final_base = self._output_base(mode, source, output_dir, state)
-                temporary_base = final_base + ".part"
                 duration = probe_duration(self.config, str(source))
                 base_progress = 100.0 * index / source_total
                 progress_span = 100.0 / source_total
@@ -85,6 +83,7 @@ class LocalProcessorService:
                 log(f"[{index + 1}/{source_total}] {source.name}")
                 custom_process = getattr(mode, "process", None)
                 if callable(custom_process):
+                    final_base = self._output_base(mode, source, output_dir, state)
                     try:
                         outputs = custom_process(
                             state,
@@ -112,51 +111,65 @@ class LocalProcessorService:
                     progress(100.0 * (index + 1) / source_total)
                     continue
 
-                code, fell_back = self._run_commands(
-                    state, mode, source, auxiliary, temporary_base,
-                    duration, task_progress, log, gpu_disabled,
-                )
-                if fell_back:
-                    gpu_disabled = True
+                for copy_index in range(copies_per_source):
+                    if self._stop.is_set():
+                        break
+                    final_base = self._output_base(mode, source, output_dir, state)
+                    temporary_base = final_base + ".part"
+                    task_index = index * copies_per_source + copy_index
+                    task_progress_base = 100.0 * task_index / total
+                    task_progress_span = 100.0 / total
 
-                finalize_render = getattr(mode, "finalize_render", None)
-                if code == 0 and not self._stop.is_set() and callable(finalize_render):
-                    try:
-                        finalize_render(temporary_base, state)
-                    except Exception as error:
-                        code = -1
-                        log(f"  【失败】产物封装失败：{type(error).__name__}: {error}")
+                    def copy_progress(value, base=task_progress_base, span=task_progress_span):
+                        progress(base + span * value / 100.0)
 
-                cleanup_render = getattr(mode, "cleanup_render", None)
-                if callable(cleanup_render):
-                    cleanup_render(temporary_base)
+                    if copies_per_source > 1:
+                        log(f"  [输出 {copy_index + 1}/{copies_per_source}]")
+                    code, fell_back = self._run_commands(
+                        state, mode, source, auxiliary, temporary_base,
+                        duration, copy_progress, log, gpu_disabled,
+                    )
+                    if fell_back:
+                        gpu_disabled = True
 
-                if self._stop.is_set():
-                    self._remove(temporary_base, mode.ext)
-                    break
-                if code != 0:
-                    fail_count += 1
-                    log(f"  【失败】处理退出码 {code}")
-                    self._remove(temporary_base, mode.ext)
-                    continue
+                    finalize_render = getattr(mode, "finalize_render", None)
+                    if code == 0 and not self._stop.is_set() and callable(finalize_render):
+                        try:
+                            finalize_render(temporary_base, state)
+                        except Exception as error:
+                            code = -1
+                            log(f"  【失败】产物封装失败：{type(error).__name__}: {error}")
 
-                temporary_file = f"{temporary_base}.{mode.ext}"
-                valid, message = verify_output(
-                    self.config,
-                    temporary_file,
-                    expected_audio_tracks=getattr(mode, "expected_audio_tracks", None),
-                )
-                if not valid:
-                    fail_count += 1
-                    log("  【失败】产物校验未通过：" + message)
-                    self._remove(temporary_base, mode.ext)
-                    continue
+                    cleanup_render = getattr(mode, "cleanup_render", None)
+                    if callable(cleanup_render):
+                        cleanup_render(temporary_base)
 
-                final_file = f"{final_base}.{mode.ext}"
-                os.replace(temporary_file, final_file)
-                ok_count += 1
-                log(f"  【完成】{Path(final_file).name}（{message}）")
-                progress(100.0 * (index + 1) / source_total)
+                    if self._stop.is_set():
+                        self._remove(temporary_base, mode.ext)
+                        break
+                    if code != 0:
+                        fail_count += 1
+                        log(f"  【失败】处理退出码 {code}")
+                        self._remove(temporary_base, mode.ext)
+                        continue
+
+                    temporary_file = f"{temporary_base}.{mode.ext}"
+                    valid, message = verify_output(
+                        self.config,
+                        temporary_file,
+                        expected_audio_tracks=getattr(mode, "expected_audio_tracks", None),
+                    )
+                    if not valid:
+                        fail_count += 1
+                        log("  【失败】产物校验未通过：" + message)
+                        self._remove(temporary_base, mode.ext)
+                        continue
+
+                    final_file = f"{final_base}.{mode.ext}"
+                    os.replace(temporary_file, final_file)
+                    ok_count += 1
+                    log(f"  【完成】{Path(final_file).name}（{message}）")
+                    progress(100.0 * (task_index + 1) / total)
         except Exception as error:
             fail_count += 1
             log(f"【异常】{type(error).__name__}: {error}")

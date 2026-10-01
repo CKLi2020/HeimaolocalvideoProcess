@@ -26,6 +26,8 @@ def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     assert modes[MODE.id] is MODE
     assert MODE.name == "栖霞"
     assert MODE.needs_aux and MODE.gpu_supported and MODE.has_gpu_command()
+    assert MODE.supports_copies and MODE.output_count({}) == 1
+    assert MODE.output_count({"copies": 999}) == 100
     assert MODE.supports_mode5_switches
 
     source = tmp_path / "main.mp4"
