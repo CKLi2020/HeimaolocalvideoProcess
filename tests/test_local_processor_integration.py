@@ -35,6 +35,9 @@ assert "不支持 GPU 加速" in window._machine_gpu.text()
 assert [button.text() for button in window._channel_group.buttons()][:4] == [
     "视频处理", "蒙版模式", "素材拼接", "视频裁剪",
 ]
+channel_buttons = {button.text(): button for button in window._channel_group.buttons()}
+assert channel_buttons["素材拼接"].isHidden()
+assert channel_buttons["视频裁剪"].isHidden()
 assert len(page.service.mode_groups) == 8
 assert page.current_mode is not None
 assert page.start_button.text() == "▶ 开始处理"

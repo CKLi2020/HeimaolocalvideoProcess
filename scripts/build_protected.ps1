@@ -59,7 +59,7 @@ try {
         --standalone --assume-yes-for-downloads `
         --enable-plugin=pyside6 --windows-console-mode=disable `
         --include-module=app._flowcut_core --include-module=app._random_frame_swap_core `
-        --include-package=core --include-package=modes `
+        --include-package=core --include-package=modes --include-package=cryptography `
         --nofollow-import-to=engine.dev_core `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
         --include-data-dir=mode_defs=mode_defs --include-data-dir=client=client `
@@ -87,7 +87,7 @@ function ConvertFrom-CodePoints([int[]]$Codes) {
     return -join ($Codes | ForEach-Object { [char]$_ })
 }
 $ReleaseAssets = @(
-    "resources", "showlight", "startmovie",
+    "resources",
     (ConvertFrom-CodePoints @(0x8D34, 0x7EB8)),
     (ConvertFrom-CodePoints @(0x914D, 0x7F6E, 0x6587, 0x4EF6))
 )
@@ -97,6 +97,7 @@ foreach ($name in $ReleaseAssets) {
     Copy-Item -LiteralPath $source -Destination $Release -Recurse -Force
 }
 $WorkingDirectories = @(
+    "showlight", "startmovie",
     (ConvertFrom-CodePoints @(0x4E3B, 0x89C6, 0x9891)),
     (ConvertFrom-CodePoints @(0x8F85, 0x52A9, 0x89C6, 0x9891)),
     (ConvertFrom-CodePoints @(0x8499, 0x7248, 0x6210, 0x54C1)),
