@@ -50,10 +50,18 @@ PLATFORM_LABELS = {
 
 # 打包后兜底:文件扫描为空时直接导入这些编译进二进制的模块
 _BUILTIN = [
-    ("douyin", "mode_default"), ("douyin", "mode_hd"),
-    ("kuaishou", "mode_default"), ("shipinhao", "mode_default"),
-    ("xiaohongshu", "mode_default"), ("tk", "mode_tk1"),
-    ("baijia", "mode_bj1"), ("bili", "mode_bl1"), ("duoduo", "mode_dd1"),
+    ("douyin", "mode_feimao09284"),
+    ("douyin", "mode_tongyao0921"),
+    ("douyin", "mode_zhandou0921"),
+    ("kuaishou", "mode_binfeng_caishen0923"),
+    ("kuaishou", "mode_silie0921"),
+    ("shipinhao", "mode_heimao_luoyue"),
+    ("shipinhao", "mode_caishen0923"),
+    ("shipinhao", "mode_tianjia0923"),
+    ("xiaohongshu", "mode_caima0924"),
+    ("xiaohongshu", "mode_pianpian0924"),
+    ("xiaohongshu", "mode_shuanggui0924"),
+    ("xiaohongshu", "mode_yanjingshe0928"),
 ]
 
 # mode_defs 的 json 里允许覆盖的字段
@@ -265,6 +273,8 @@ def load_modes():
     loaded_ids = set()
 
     groups = _add_local_modes(errors, loaded_ids)
+    if not groups:
+        groups = _add_builtin_modes(errors, loaded_ids)
     defs = _load_defs(errors)
 
     # 把 json 定义合并进来:同 id 的覆盖字段,缺的补一个通用模式
@@ -293,10 +303,6 @@ def load_modes():
             loaded_ids.add(mode_id)
             by_id[mode_id] = mode
             groups.setdefault(pkey, []).append(mode)
-
-    if not groups:
-        # 本地既没有 mode_*.py 也没有 mode_defs,才退回内置注册表
-        groups = _add_builtin_modes(errors, loaded_ids)
 
     # 组内排序 + 平台排序
     titles = {}

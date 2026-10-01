@@ -21,6 +21,19 @@ local_engine.detect_gpu_profile = lambda _path: {
 
 from app.main_window import MainWindow
 from config import AppConfig
+import modes
+
+
+source_modes_dir = modes.MODES_DIR
+modes.MODES_DIR = str(Path(__file__).resolve().parent / "missing-packaged-modes")
+try:
+    packaged_groups = modes.load_modes()
+finally:
+    modes.MODES_DIR = source_modes_dir
+assert list(packaged_groups) == [
+    "抖音处理", "快手处理", "视频号处理", "小红书处理",
+    "TK处理", "百家处理", "哔哩处理", "多多处理",
+]
 
 
 app = QApplication.instance() or QApplication([])

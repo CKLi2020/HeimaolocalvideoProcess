@@ -23,6 +23,8 @@ $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 if (-not (Test-Path -LiteralPath $Icon)) { throw "Icon not found: $Icon" }
 if (-not $Ffmpeg -or -not $Ffprobe) { throw "ffmpeg.exe and ffprobe.exe are required" }
 if (-not (Test-Path -LiteralPath $NativeBuild)) { throw "Native build script not found: $NativeBuild" }
+& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); assert len(g)==8, list(g)"
+if ($LASTEXITCODE -ne 0) { throw "Packaged mode registry preflight failed" }
 
 $DistFull = [IO.Path]::GetFullPath($Dist).TrimEnd('\') + '\'
 $ReleaseFull = [IO.Path]::GetFullPath($Release)
@@ -39,6 +41,16 @@ $RunningRelease = Get-Process -ErrorAction SilentlyContinue | Where-Object {
 }
 if ($RunningRelease) {
     throw "Close the running $LauncherName before building again."
+}
+$BuildFull = [IO.Path]::GetFullPath($Build).TrimEnd('\') + '\'
+foreach ($name in @("main.build", "main.dist", "main.onefile-build")) {
+    $path = [IO.Path]::GetFullPath((Join-Path $Build $name))
+    if (-not $path.StartsWith($BuildFull, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unsafe Nuitka cleanup path: $path"
+    }
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Recurse -Force
+    }
 }
 if (Test-Path -LiteralPath $Release) {
     Remove-Item -LiteralPath $Release -Recurse -Force
@@ -63,6 +75,9 @@ try {
         --nofollow-import-to=engine.dev_core `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
         --include-data-dir=mode_defs=mode_defs --include-data-dir=client=client `
+        --include-data-files=modes/douyin/feimao_ffargs.json=modes/douyin/feimao_ffargs.json `
+        --include-data-files=modes/douyin/feimao_metadata.txt=modes/douyin/feimao_metadata.txt `
+        --include-data-files=modes/douyin/filter_complex.txt=modes/douyin/filter_complex.txt `
         --windows-icon-from-ico="$Icon" `
         --product-name="$ProductName" `
         --file-description="$ProductName" `

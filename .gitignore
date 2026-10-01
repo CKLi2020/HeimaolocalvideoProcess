@@ -16,6 +16,7 @@ config.json
 拼接成品/
 build/
 dist-protected/
+nuitka-crash-report.xml
 app/_flowcut_core.pyd
 showlight/
 startmovie/

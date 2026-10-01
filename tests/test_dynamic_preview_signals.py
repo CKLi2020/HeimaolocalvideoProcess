@@ -30,6 +30,8 @@ all_rows = [
     (name, key, row)
     for name, page in window._pages.items()
     for key, row in getattr(page, "_rows", {}).items()
+    # 声音参数不改变画面，无需重新生成可视化预览。
+    if name != "声音处理"
     # 文件夹行（FolderRow）不用 _widget，也不走 value_changed，跳过。
     if isinstance(row, ParamRow)
 ]
