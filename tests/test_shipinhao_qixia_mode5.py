@@ -47,6 +47,8 @@ def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     assert command and not is_gpu and not error
     assert "blend=" in command and "vflip" in command
     assert "colorprim=bt709" in command
+    assert command.count("scale=576:1024,pad=576:1248:0:112:black,setsar=1,vflip") == 2
+    assert "force_original_aspect_ratio" not in command and "crop=" not in command
 
 
 def test_qixia_cpu_conversion_and_gpu_commands(tmp_path):

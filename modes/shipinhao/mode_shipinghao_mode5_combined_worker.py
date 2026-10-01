@@ -16,7 +16,7 @@ SWITCH_MODES = {
 }
 CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl"}
 VERTICAL_FLIP_MATRIX = (65536, 0, 0, 0, -65536, 0, 0, 0, 1073741824)
-BASE_FILTER = "[0:v:0]fps=60,scale=576:1024,pad=576:1248:0:112:black,setsar=1"
+BASE_TRANSFORM = "fps=60,scale=576:1024,pad=576:1248:0:112:black,setsar=1"
 BASE_X264_PARAMS = (
     "bframes=3:b-adapt=1:b-pyramid=2:keyint=18:keyint-min=10:scenecut=0:ref=3:me=hex:subme=4:"
     "trellis=0:8x8dct=0:weightp=1:rc-lookahead=20:rc=cbr:vbv-maxrate=9000:vbv-bufsize=18000:nal-hrd=vbr"
@@ -385,15 +385,13 @@ def build_ffmpeg_command(
     ronghe: bool = False,
 ) -> list[str]:
     main_output = "main" if ronghe and auxiliary_path else "v"
-    filters = [BASE_FILTER + (",vflip" if daoli else "") + f"[{main_output}]"]
+    transform = BASE_TRANSFORM + (",vflip" if daoli else "")
+    filters = [f"[0:v:0]{transform}[{main_output}]"]
     inputs = ["-i", str(input_path)]
     if auxiliary_path:
         inputs.extend(["-stream_loop", "-1", "-i", str(auxiliary_path)])
     if ronghe and auxiliary_path:
-        filters.append(
-            "[1:v:0]fps=60,scale=576:1248:force_original_aspect_ratio=increase,"
-            "crop=576:1248,setsar=1[aux]"
-        )
+        filters.append(f"[1:v:0]{transform}[aux]")
         filters.append("[aux][main]blend=all_expr='A*0.18+B*0.82':shortest=1[v]")
     video_filter = ";".join(filters)
     x264_params = BASE_X264_PARAMS + (LASONG_X264_VUI if lasong else "")
