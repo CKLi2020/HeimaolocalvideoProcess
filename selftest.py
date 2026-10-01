@@ -213,18 +213,18 @@ def main():
             print("\n[%s] 通道端到端 (%s)" % (3 if not use_gpu else 3, label))
 
             cases = [
-                ("抖音处理", "战斗通道0921", 720, "720x1280", "hevc_encoder"),
-                ("抖音处理", "童谣0921", 720, "720x1280", "hevc_encoder"),
-                ("快手处理", "撕裂者通道0921", 1024, "1024x576", "h264_encoder"),
-                ("视频号处理", "财神通道0923", 720, "720x1280", "h264_encoder"),
-                ("视频号处理", "天家通道0923", 720, "720x1280", "h264_encoder"),
-                ("快手处理", "冰峰财神通道0923", 720, "720x1280", "h264_encoder"),
+                ("抖音处理", "疏影通道0921", 720, "720x1280", "hevc_encoder"),
+                ("抖音处理", "烟雨0921", 720, "720x1280", "hevc_encoder"),
+                ("快手处理", "长河通道0921", 1024, "1024x576", "h264_encoder"),
+                ("视频号处理", "云水通道0923", 720, "720x1280", "h264_encoder"),
+                ("视频号处理", "青岚通道0923", 720, "720x1280", "h264_encoder"),
+                ("快手处理", "松间明月通道0923", 720, "720x1280", "h264_encoder"),
                 ("哔哩处理", "高清修复", 1920, "1920x1080", "h264_encoder"),
             ]
             for idx, (plat, mode_name, _w, want_size, encoder_key) in enumerate(cases):
                 out_dir = os.path.join(root, "out_%s_%d" % (label, idx))
                 aux = os.path.join(aux_dir, "a1.mp4") if mode_name in (
-                    "童谣0921", "财神通道0923", "天家通道0923", "冰峰财神通道0923"
+                    "烟雨0921", "云水通道0923", "青岚通道0923", "松间明月通道0923"
                 ) else ""
                 text, done = run(app, plat, mode_name, os.path.join(main_dir, "m1.mp4"),
                                  aux, out_dir)
@@ -239,13 +239,13 @@ def main():
         print("\n[5] 批量 + 辅视频循环复用")
         app.var_processor.set("cpu")
         out_dir = os.path.join(root, "out_batch")
-        text, done = run(app, "抖音处理", "童谣0921", main_dir, aux_dir, out_dir)
+        text, done = run(app, "抖音处理", "烟雨0921", main_dir, aux_dir, out_dir)
         check("批量 3 主 / 2 辅 跑完", done and "成功 3 / 失败 0 / 共 3" in text)
         wanted = "提示: 辅视频 2 个,少于主视频 3 个,将循环复用配对"
         check("出现辅视频循环复用提示", wanted in text,
               "" if wanted in text else "日志里的辅视频相关行: %s"
               % [l for l in text.splitlines() if "辅" in l][:4])
-        assert_outputs(app, "批量童谣", out_dir, 3, "720x1280")
+        assert_outputs(app, "批量烟雨", out_dir, 3, "720x1280")
 
         # ---------------------------------------------------------------- 6
         print("\n[6] GPU 回退")

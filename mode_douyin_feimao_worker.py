@@ -167,6 +167,9 @@ def build_command(
     video_tag: str | None = None,
 ) -> list[str]:
     filter_graph = (ACTIVE_RUN / "filter_complex.txt").read_text(encoding="utf-8-sig")
+    if video_encoder != "libx265":
+        # Hardware HEVC encoders reject interlaced-flagged frames.
+        filter_graph = filter_graph.replace(",setfield=tff", "")
     command = [
         ffmpeg,
         "-progress",

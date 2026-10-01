@@ -44,7 +44,7 @@ def test_worker_channels_cpu_conversion_and_gpu_commands(tmp_path, monkeypatch):
     active = capture / "ffargs" / "active"
     active.mkdir(parents=True)
     (capture / "filter_complex.txt").write_text(
-        "[0:v]null[vout];[0:a]anull[aout]", encoding="utf-8"
+        "[0:v]null,setfield=tff[vout];[0:a]anull[aout]", encoding="utf-8"
     )
     response_values = {
         "a001": "ffmetadata",
@@ -88,6 +88,7 @@ def test_worker_channels_cpu_conversion_and_gpu_commands(tmp_path, monkeypatch):
         assert feimao_profile["hevc_encoder"] in feimao_command
         assert all(option not in feimao_command for option in ("-crf", "-x265-params", "-field_order", "+ilme+ildct"))
         assert "-sc_threshold" not in feimao_command
+        assert "setfield=tff" not in feimao_command
         assert "-tag:v hvc1" in feimao_command
         assert str(tmp_path / "gpu_feimao.part.mp4") in feimao_command
 
