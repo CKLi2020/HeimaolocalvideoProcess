@@ -118,12 +118,12 @@ class LocalProcessorPage(QWidget):
         folder_button = QPushButton("选择文件夹" if allow_file else "选择输出目录")
         folder_button.setObjectName("browse")
         folder_button.clicked.connect(lambda: self._choose_folder(edit))
-        layout.addWidget(folder_button, row, 3)
+        layout.addWidget(folder_button, row, 3 if allow_file else 2)
         if not allow_file:
             open_button = QPushButton("打开文件夹")
             open_button.setObjectName("browse")
             open_button.clicked.connect(self._open_output)
-            layout.addWidget(open_button, row, 4)
+            layout.addWidget(open_button, row, 3)
         return edit
 
     def _load_modes(self):
