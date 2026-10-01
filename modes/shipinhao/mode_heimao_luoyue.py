@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from engine.output_naming import channel_output_stem
 from modes.base_mode import BaseMode
 from modes.shipinhao import mode_heimao_luoyue_worker as worker
 
@@ -26,14 +27,11 @@ class ModeHeimaoLuoyue(BaseMode):
     def output_count(state):
         return max(1, min(100, int(state.get("copies", 1))))
 
-    @staticmethod
-    def _next_output(base, copy_number):
-        candidate = Path(f"{base}_{copy_number}.mp4")
-        number = 2
-        while candidate.exists():
-            candidate = Path(f"{base}_{copy_number}_{number}.mp4")
-            number += 1
-        return candidate
+    def _next_output(self, source, output_dir, reserved):
+        while True:
+            candidate = output_dir / f"{channel_output_stem(source, self.name)}.mp4"
+            if candidate not in reserved and not candidate.exists():
+                return candidate
 
     def process(self, state, main_video, output_base, ffmpeg, use_gpu=False,
                 on_log=None, on_progress=None, should_stop=None):
@@ -55,10 +53,10 @@ class ModeHeimaoLuoyue(BaseMode):
                 ratio = min(1.0, current / total)
                 on_progress((ratio * 45.0) if stage == "缓存视频帧" else (45.0 + ratio * 55.0))
 
-        outputs = [
-            self._next_output(output_base, copy_number)
-            for copy_number in range(1, self.output_count(state) + 1)
-        ]
+        output_dir = Path(output_base).parent
+        outputs = []
+        for _ in range(self.output_count(state)):
+            outputs.append(self._next_output(source, output_dir, set(outputs)))
         completed = worker.run_many(
             source,
             outputs,

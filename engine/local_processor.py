@@ -9,6 +9,7 @@ from pathlib import Path
 from core.build_config import load_config, resolve_path
 from core.hardware import detect_gpu_profile
 from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, probe_duration, verify_output
+from engine.output_naming import CHANNEL_FILENAME_PLATFORMS, channel_output_stem
 from modes import load_modes
 from modes.base_mode import VIDEO_EXTS, source_basename, source_stem
 
@@ -209,6 +210,14 @@ class LocalProcessorService:
 
     @staticmethod
     def _output_base(mode, source, output_dir, state):
+        platform = str(getattr(mode, "id", "") or "").partition("/")[0]
+        platform = platform or str(getattr(mode, "platform", "") or "")
+        if platform in CHANNEL_FILENAME_PLATFORMS:
+            extension = str(getattr(mode, "ext", "mp4") or "mp4")
+            while True:
+                base = output_dir / channel_output_stem(source, getattr(mode, "name", ""))
+                if not Path(f"{base}.{extension}").exists() and not Path(f"{base}.part.{extension}").exists():
+                    return str(base)
         naming = getattr(mode, "output_naming", None) or state.get("output_naming") or "hash"
         prefix = source_basename(source) if str(naming).lower() == "source" else source_stem(source)
         return str(output_dir / (prefix + str(mode.output_suffix or "")))

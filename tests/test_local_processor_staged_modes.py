@@ -9,6 +9,61 @@ from types import SimpleNamespace
 import engine.local_processor as local_processor
 
 
+def test_four_platforms_use_source_channel_and_random_token(tmp_path, monkeypatch):
+    tokens = iter(("12mp", "a9z0", "skip"))
+    monkeypatch.setattr(
+        local_processor,
+        "channel_output_stem",
+        lambda source, channel: f"{source.stem}{channel}{next(tokens)}",
+    )
+    source = tmp_path / "2.mp4"
+    output_dir = tmp_path / "output"
+    mode = SimpleNamespace(
+        id="douyin/feimao09284", platform="douyin", name="听雪", ext="mp4",
+        output_suffix="_ignored",
+    )
+
+    assert Path(local_processor.LocalProcessorService._output_base(
+        mode, source, output_dir, {}
+    )).name == "2听雪12mp"
+    assert f"{local_processor.LocalProcessorService._output_base(mode, source, output_dir, {})}.{mode.ext}".endswith(
+        "2听雪a9z0.mp4"
+    )
+
+    (output_dir / "2听雪skip.mp4").parent.mkdir()
+    (output_dir / "2听雪skip.mp4").touch()
+    tokens = iter(("skip", "next"))
+    monkeypatch.setattr(
+        local_processor,
+        "channel_output_stem",
+        lambda source, channel: f"{source.stem}{channel}{next(tokens)}",
+    )
+    assert Path(local_processor.LocalProcessorService._output_base(
+        mode, source, output_dir, {}
+    )).name == "2听雪next"
+
+    mode.ext = "mkv"
+    monkeypatch.setattr(
+        local_processor,
+        "channel_output_stem",
+        lambda source, channel: f"{source.stem}{channel}mkv1",
+    )
+    assert f"{local_processor.LocalProcessorService._output_base(mode, source, output_dir, {})}.{mode.ext}".endswith(
+        ".mkv"
+    )
+
+
+def test_other_platforms_keep_existing_output_naming(tmp_path):
+    mode = SimpleNamespace(
+        id="bili/default", platform="bili", name="默认", ext="mp4",
+        output_suffix="_legacy", output_naming="source",
+    )
+    result = local_processor.LocalProcessorService._output_base(
+        mode, tmp_path / "input.mp4", tmp_path / "output", {}
+    )
+    assert Path(result).name == "input_legacy"
+
+
 def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypatch):
     source = tmp_path / "input.mp4"
     source.write_bytes(b"source")
