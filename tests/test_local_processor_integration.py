@@ -39,5 +39,26 @@ assert len(page.service.mode_groups) == 8
 assert page.current_mode is not None
 assert page.start_button.text() == "▶ 开始处理"
 
+_frame, shipinhao = page._platforms["视频号处理"]
+assert shipinhao.currentText() == "爆闪"
+heimao_index = next(
+    index for index in range(shipinhao.count())
+    if shipinhao.itemData(index).id == "shipinhao/heimao_luoyue"
+)
+shipinhao.setCurrentIndex(heimao_index)
+page._activate("视频号处理")
+assert not page.aux_edit.isEnabled()
+assert page.aux_edit.text() == "本通道不需要辅助视频"
+assert all(not button.isEnabled() for button in page.aux_edit._path_buttons)
+
+needs_aux_index = next(
+    index for index in range(shipinhao.count())
+    if shipinhao.itemData(index).needs_aux
+)
+shipinhao.setCurrentIndex(needs_aux_index)
+page._activate("视频号处理")
+assert page.aux_edit.isEnabled() and not page.aux_edit.text()
+assert all(button.isEnabled() for button in page.aux_edit._path_buttons)
+
 window.close()
 print("local processor integration: OK (8 platforms)")

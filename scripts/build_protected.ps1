@@ -58,7 +58,7 @@ try {
     & $Python -m nuitka `
         --standalone --assume-yes-for-downloads `
         --enable-plugin=pyside6 --windows-console-mode=disable `
-        --include-module=app._flowcut_core `
+        --include-module=app._flowcut_core --include-module=app._random_frame_swap_core `
         --include-package=core --include-package=modes `
         --nofollow-import-to=engine.dev_core `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
