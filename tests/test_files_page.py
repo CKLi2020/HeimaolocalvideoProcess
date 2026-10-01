@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 window = MainWindow(AppConfig(), ROOT)
 window.resize(1600, 950)
 window.show()
+window._select_channel("hdh")
 app.processEvents()
 
 page = window._files_page

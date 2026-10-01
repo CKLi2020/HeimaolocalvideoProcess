@@ -5,7 +5,7 @@
 这里仅保留稳定、纯计算的核心步骤，文件遍历和进程调度仍由 Python 负责。
 """
 
-from libc.math cimport round
+import builtins
 import math
 import random
 
@@ -169,7 +169,7 @@ def mask_alpha(w, h, feather, margin_tb, margin_lr):
     cdef str part
     cdef str result
     VMProtectBeginUltra(b"FCALGO:mask.alpha")
-    d = max(1, <int>round(feather * min(w, h) / 1080.0))
+    d = max(1, <int>builtins.round(feather * min(w, h) / 1080.0))
     offset = d / 2.0
     parts = []
     if margin_lr > 0:
@@ -205,8 +205,8 @@ def butterfly_plan(double duration, double head, object hidden=None, int fps=30)
         return {
             "hidden": hidden_value,
             "chunks": chunks,
-            "jump_frame": round((head + hidden_value) * fps),
-            "main_frames": round(duration * fps),
+            "jump_frame": builtins.round((head + hidden_value) * fps),
+            "main_frames": builtins.round(duration * fps),
         }
     finally:
         VMProtectEnd()
@@ -232,16 +232,16 @@ def window_matte_chain(
 
     VMProtectBeginUltra(b"FCALGO:template.window")
     try:
-        d = max(1, <int>round(feather * min(canvas_width, canvas_height) / 1080.0))
+        d = max(1, <int>builtins.round(feather * min(canvas_width, canvas_height) / 1080.0))
         left = canvas_width * (center_x - window_width / 2.0) / 100.0
         top = canvas_height * (center_y - window_height / 2.0) / 100.0
-        box_width = max(1, <int>round(canvas_width * window_width / 100.0))
-        box_height = max(1, <int>round(canvas_height * window_height / 100.0))
+        box_width = max(1, <int>builtins.round(canvas_width * window_width / 100.0))
+        box_height = max(1, <int>builtins.round(canvas_height * window_height / 100.0))
         left -= canvas_width / 2.0
         top -= canvas_height / 2.0
         x_expr = "iw/2%s%g" % ("+" if left >= 0 else "-", abs(left))
         y_expr = "ih/2%s%g" % ("+" if top >= 0 else "-", abs(top))
-        blur = max(1, <int>round((d - 1) / 2.0))
+        blur = max(1, <int>builtins.round((d - 1) / 2.0))
         return (
             "format=gray,lutyuv=y=0,"
             "drawbox=x=%s:y=%s:w=%d:h=%d:color=white:t=fill,"
