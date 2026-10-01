@@ -1,4 +1,4 @@
-"""抖音烟雨0921通道。"""
+"""抖音烟雨通道。"""
 
 import subprocess
 from pathlib import Path
@@ -10,14 +10,14 @@ from modes.douyin.hevc_gpu import select_hevc_encoder
 
 class ModeTongyao0921(BaseMode):
     id = "douyin/tongyao0921"
-    name = "烟雨0921"
+    name = "烟雨"
     platform = "douyin"
     needs_aux = True
     gpu_supported = True
     output_suffix = "_tongyao0921"
     output_naming = "source"
     ext = "mp4"
-    help_text = "抖音处理 · 烟雨0921（主视频 + 辅助特效视频，CPU / NVIDIA / AMD）"
+    help_text = "抖音处理 · 烟雨（主视频 + 辅助特效视频，CPU / NVIDIA / AMD）"
 
     def has_gpu_command(self):
         return True
@@ -45,7 +45,7 @@ class ModeTongyao0921(BaseMode):
                 encoder, encoder_options,
             )
         except (OSError, ValueError, KeyError, RuntimeError) as error:
-            return "", bool(use_gpu), "童谣通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "烟雨参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 

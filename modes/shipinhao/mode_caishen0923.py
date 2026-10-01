@@ -1,4 +1,4 @@
-"""视频号云水通道0923。"""
+"""视频号云水通道。"""
 
 import subprocess
 from pathlib import Path
@@ -10,14 +10,14 @@ from modes.shipinhao.h264_gpu import select_h264_encoder
 
 class ModeCaishen0923(BaseMode):
     id = "shipinhao/caishen0923"
-    name = "云水通道0923"
+    name = "云水"
     platform = "shipinhao"
     needs_aux = True
     gpu_supported = True
     output_suffix = "_caishen0923"
     output_naming = "source"
     ext = "mp4"
-    help_text = "视频号处理 · 云水通道0923（主视频 + 辅助视频，CPU / NVIDIA / AMD）"
+    help_text = "视频号处理 · 云水（主视频 + 辅助视频，CPU / NVIDIA / AMD）"
 
     def has_gpu_command(self):
         return True
@@ -45,7 +45,7 @@ class ModeCaishen0923(BaseMode):
                 encoder, encoder_options, "yuv420p" if use_gpu else None,
             )
         except (OSError, ValueError, KeyError, RuntimeError) as error:
-            return "", bool(use_gpu), "云水通道参数生成失败: %s" % error
+            return "", bool(use_gpu), "云水参数生成失败: %s" % error
         return subprocess.list2cmdline(command), bool(use_gpu), ""
 
 

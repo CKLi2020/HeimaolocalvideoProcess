@@ -8,7 +8,7 @@
 
 覆盖:
   1  无卡密直达主界面 / 平台与模式加载 / ffmpeg 定位
-  2  三通道(默认通道 · 默认混剪 · 高清修复) CPU 端到端
+  2  三通道(默认 · 混剪 · 修复) CPU 端到端
   3  三通道 GPU 端到端(无显卡则跳过)
   4  产物断言:恰好 1 视频 + 1 音频、时长为正、分辨率达标
   5  批量 + 辅视频少于主视频时的循环复用
@@ -213,18 +213,18 @@ def main():
             print("\n[%s] 通道端到端 (%s)" % (3 if not use_gpu else 3, label))
 
             cases = [
-                ("抖音处理", "疏影通道0921", 720, "720x1280", "hevc_encoder"),
-                ("抖音处理", "烟雨0921", 720, "720x1280", "hevc_encoder"),
-                ("快手处理", "长河通道0921", 1024, "1024x576", "h264_encoder"),
-                ("视频号处理", "云水通道0923", 720, "720x1280", "h264_encoder"),
-                ("视频号处理", "青岚通道0923", 720, "720x1280", "h264_encoder"),
-                ("快手处理", "松间明月通道0923", 720, "720x1280", "h264_encoder"),
-                ("哔哩处理", "高清修复", 1920, "1920x1080", "h264_encoder"),
+                ("抖音处理", "疏影", 720, "720x1280", "hevc_encoder"),
+                ("抖音处理", "烟雨", 720, "720x1280", "hevc_encoder"),
+                ("快手处理", "长河", 1024, "1024x576", "h264_encoder"),
+                ("视频号处理", "云水", 720, "720x1280", "h264_encoder"),
+                ("视频号处理", "青岚", 720, "720x1280", "h264_encoder"),
+                ("快手处理", "松月", 720, "720x1280", "h264_encoder"),
+                ("哔哩处理", "修复", 1920, "1920x1080", "h264_encoder"),
             ]
             for idx, (plat, mode_name, _w, want_size, encoder_key) in enumerate(cases):
                 out_dir = os.path.join(root, "out_%s_%d" % (label, idx))
                 aux = os.path.join(aux_dir, "a1.mp4") if mode_name in (
-                    "烟雨0921", "云水通道0923", "青岚通道0923", "松间明月通道0923"
+                    "烟雨", "云水", "青岚", "松月"
                 ) else ""
                 text, done = run(app, plat, mode_name, os.path.join(main_dir, "m1.mp4"),
                                  aux, out_dir)
@@ -239,7 +239,7 @@ def main():
         print("\n[5] 批量 + 辅视频循环复用")
         app.var_processor.set("cpu")
         out_dir = os.path.join(root, "out_batch")
-        text, done = run(app, "抖音处理", "烟雨0921", main_dir, aux_dir, out_dir)
+        text, done = run(app, "抖音处理", "烟雨", main_dir, aux_dir, out_dir)
         check("批量 3 主 / 2 辅 跑完", done and "成功 3 / 失败 0 / 共 3" in text)
         wanted = "提示: 辅视频 2 个,少于主视频 3 个,将循环复用配对"
         check("出现辅视频循环复用提示", wanted in text,

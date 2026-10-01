@@ -141,6 +141,7 @@ class LocalProcessorPage(QWidget):
         return edit
 
     def _load_modes(self):
+        unavailable = {"TK处理", "百家处理", "哔哩处理", "多多处理"}
         for index, (title, modes) in enumerate(self.service.mode_groups.items()):
             frame = QFrame()
             frame.setObjectName("localModeCard")
@@ -152,6 +153,7 @@ class LocalProcessorPage(QWidget):
             combo = QComboBox()
             for mode in modes:
                 combo.addItem(mode.name, mode)
+            combo.setEnabled(title not in unavailable)
             combo.activated.connect(lambda _=0, name=title: self._activate(name))
             card.addWidget(combo)
             self.mode_grid.addWidget(frame, index // 4, index % 4)

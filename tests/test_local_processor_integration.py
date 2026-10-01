@@ -38,6 +38,12 @@ assert [button.text() for button in window._channel_group.buttons()][:4] == [
 assert len(page.service.mode_groups) == 8
 assert page.current_mode is not None
 assert page.start_button.text() == "▶ 开始处理"
+assert all(not page._platforms[title][1].isEnabled() for title in (
+    "TK处理", "百家处理", "哔哩处理", "多多处理",
+))
+assert all(page._platforms[title][1].isEnabled() for title in (
+    "抖音处理", "快手处理", "视频号处理", "小红书处理",
+))
 
 _frame, shipinhao = page._platforms["视频号处理"]
 assert shipinhao.currentText() == "爆闪"
