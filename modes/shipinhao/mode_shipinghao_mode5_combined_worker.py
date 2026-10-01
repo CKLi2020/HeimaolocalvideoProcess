@@ -6,7 +6,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 
 SWITCH_MODES = {
@@ -90,7 +90,7 @@ def run(command: list[str], capture_output: bool = False) -> subprocess.Complete
     )
 
 
-def iter_boxes(data: bytes, start: int = 0, end: int | None = None):
+def iter_boxes(data: bytes, start: int = 0, end: Optional[int] = None):
     end = len(data) if end is None else end
     offset = start
     while offset + 8 <= end:
@@ -118,7 +118,7 @@ def make_box(kind: bytes, payload: bytes) -> bytes:
     return struct.pack(">I4s", size, kind) + payload
 
 
-def find_descendant(data: bytes, wanted: bytes) -> tuple[int, int, int] | None:
+def find_descendant(data: bytes, wanted: bytes) -> Optional[tuple[int, int, int]]:
     for kind, offset, size, header_size in iter_boxes(data):
         if kind == wanted:
             return offset, size, header_size
@@ -244,7 +244,7 @@ def rewrite_container(
     container: bytes,
     chunk_shift: int,
     flip: bool,
-    video_timing: dict[bytes, bytes] | None = None,
+    video_timing: Optional[dict[bytes, bytes]] = None,
 ) -> bytes:
     size32, kind = struct.unpack_from(">I4s", container, 0)
     header_size = 16 if size32 == 1 else 8
@@ -376,7 +376,7 @@ def build_ffmpeg_command(
     input_path: Path,
     output_path: Path,
     *,
-    auxiliary_path: Path | None = None,
+    auxiliary_path: Optional[Path] = None,
     video_encoder: str = "libx264",
     encoder_options: Sequence[str] = (),
     threads: int = 6,
