@@ -14,6 +14,11 @@ _REQUIRED = (
     "filter_segments",
     "color_adjustments_filter",
     "mild_voice_filters",
+    "liuying_video_filter",
+    "liuying_perspective_filter",
+    "liuying_flash_filter",
+    "liuying_base_filter",
+    "liuying_seed",
 )
 
 try:
