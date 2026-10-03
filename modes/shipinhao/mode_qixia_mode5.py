@@ -11,6 +11,7 @@ from modes.shipinhao.h264_gpu import select_h264_encoder
 class ModeQixiaMode5(BaseMode):
     id = "shipinhao/qixia_mode5"
     name = "栖霞"
+    sort_priority = -150
     platform = "shipinhao"
     needs_aux = True
     gpu_supported = True

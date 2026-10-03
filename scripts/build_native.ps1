@@ -51,7 +51,12 @@ $markers = @(
     "FCALGO:random.playback",
     "FCALGO:random.filter",
     "FCALGO:color.adjust",
-    "FCALGO:audio.mild"
+    "FCALGO:audio.mild",
+    "FCALGO:liuying.1003.video",
+    "FCALGO:liuying.1003.branch",
+    "FCALGO:liuying.1003.flash",
+    "FCALGO:liuying.1003.base",
+    "FCALGO:liuying.1003.seed"
 ) | ForEach-Object {
     "      <Procedure MapAddress=`"VMProtectMarker &quot;$_&quot;`" IncludedInCompilation=`"true`" Options=`"1`" CompilationType=`"2`"/>"
 }
@@ -74,7 +79,7 @@ $xml = (@(
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Protected)) {
     throw "VMProtect native protection failed"
 }
-& $Python -c "import importlib.util; p=r'$Protected'; s=importlib.util.spec_from_file_location('_flowcut_core',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert m.mask_alpha(1080,1920,20,.05,0); assert m.butterfly_plan(60,2)['main_frames']==1800; assert 'drawbox=' in m.window_matte_chain(1080,1920,50,50,80,100,200); assert len(m.concat_filter_segment(0,1,False,1080,1920,30))==2; assert .9 < m.playback_rate(.93,1.15,1) < 1.2; assert len(m.filter_segments(5,1)) == 5; assert 'eq=' in m.color_adjustments_filter('x',10,0,0,0,'',100)[0]; assert any('afftdn=' in x for x in m.mild_voice_filters('1:a',25,1)[0])"
+& $Python -c "import importlib.util; p=r'$Protected'; s=importlib.util.spec_from_file_location('_flowcut_core',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); assert m.mask_alpha(1080,1920,20,.05,0); assert m.butterfly_plan(60,2)['main_frames']==1800; assert 'drawbox=' in m.window_matte_chain(1080,1920,50,50,80,100,200); assert len(m.concat_filter_segment(0,1,False,1080,1920,30))==2; assert .9 < m.playback_rate(.93,1.15,1) < 1.2; assert len(m.filter_segments(5,1)) == 5; assert 'eq=' in m.color_adjustments_filter('x',10,0,0,0,'',100)[0]; assert any('afftdn=' in x for x in m.mild_voice_filters('1:a',25,1)[0]); assert m.liuying_video_filter(1003).count('perspective=')==1; assert m.liuying_video_filter(1003,True).count('perspective=')==2; assert m.liuying_perspective_filter(1003).startswith('perspective='); assert m.liuying_flash_filter(1003).startswith('perspective='); assert m.liuying_base_filter().startswith('fps=60'); assert m.liuying_seed(1003,2)==210461"
 if ($LASTEXITCODE -ne 0) { throw "Protected native module import test failed" }
 try {
     Copy-Item -LiteralPath $Protected -Destination $Output -Force

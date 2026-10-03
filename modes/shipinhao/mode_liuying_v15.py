@@ -5,6 +5,7 @@ import secrets
 import subprocess
 from pathlib import Path
 
+from engine.native_core import core as _native_core
 from modes.base_mode import BaseMode
 from modes.shipinhao import mode_shipinghao_chuanshanjia_v15_worker as worker
 from modes.shipinhao.h264_gpu import select_h264_encoder
@@ -12,7 +13,7 @@ from modes.shipinhao.h264_gpu import select_h264_encoder
 
 class ModeLiuyingV15(BaseMode):
     id = "shipinhao/liuying_v15"
-    name = "流萤"
+    name = "流萤1003"
     sort_priority = -200
     platform = "shipinhao"
     needs_aux = False
@@ -48,8 +49,8 @@ class ModeLiuyingV15(BaseMode):
     @staticmethod
     def state_for_copy(state, task_index):
         copy_state = dict(state)
-        copy_state["random_seed"] = (
-            int(state["random_seed"]) + task_index * worker.RANDOM_SEED_STEP
+        copy_state["random_seed"] = _native_core.liuying_seed(
+            state["random_seed"], task_index
         )
         return copy_state
 
