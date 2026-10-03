@@ -28,7 +28,10 @@ VIDEO_FILTER = (
     "pad=576:1248:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
 )
 RANDOM_FILTER_INPUTS = "random(0);" * 8
+FLASH_RANDOM_FRAME_INDEX = "ceil(in/12)"
 DECLARED_VIDEO_FPS = 30
+# The captured FFmpeg build used 1000; newer builds default to an automatic movie timescale.
+MOVIE_TIMESCALE = 1000
 MP4_CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"dinf", b"udta"}
 X264_PARAMS = (
     "bframes=3:b-adapt=1:b-pyramid=2:keyint=18:keyint-min=10:"
@@ -262,13 +265,13 @@ def build_command(
     filters += "," + perspective_filter(
         seed,
         enabled_expr="gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)",
-        random_frame_index="ceil(in/12)-1",
+        random_frame_index=FLASH_RANDOM_FRAME_INDEX,
     )
     if random_enhance:
         filters += "," + perspective_filter(
             seed + RANDOM_SEED_STEP,
             enabled_expr="gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)",
-            random_frame_index="ceil(in/12)-1",
+            random_frame_index=FLASH_RANDOM_FRAME_INDEX,
             subtle=True,
         )
 
@@ -331,6 +334,8 @@ def build_command(
             "2",
             "-video_track_timescale",
             "15360",
+            "-movie_timescale",
+            str(MOVIE_TIMESCALE),
             "-movflags",
             "+faststart",
             str(output),
@@ -748,7 +753,7 @@ def encode(
         + perspective_filter(
             random_seed,
             enabled_expr="gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)",
-            random_frame_index="ceil(in/12)-1",
+            random_frame_index=FLASH_RANDOM_FRAME_INDEX,
         ),
         "-map",
         "0:v:0",
@@ -762,6 +767,8 @@ def encode(
         "44100",
         "-ac",
         "2",
+        "-movie_timescale",
+        str(MOVIE_TIMESCALE),
         "-movflags",
         "+faststart",
         str(output),

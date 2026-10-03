@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -62,7 +63,33 @@ assert all(page._platforms[title][1].isEnabled() for title in (
 ))
 
 _frame, shipinhao = page._platforms["视频号处理"]
-assert shipinhao.currentText() == "爆闪"
+assert shipinhao.currentText() == "流萤"
+page._activate("视频号处理")
+assert page.current_mode.id == "shipinhao/liuying_v15"
+assert not hasattr(page, "random_enhance")
+assert not page.copies_spin.isHidden()
+assert not page.copies_label.isHidden()
+assert page.copies_spin.value() == 1
+assert page.copies_spin.minimum() == 1 and page.copies_spin.maximum() == 100
+assert not page.aux_edit.isEnabled()
+assert page.aux_edit.text() == "本通道不需要辅助视频"
+assert all(not button.isEnabled() for button in page.aux_edit._path_buttons)
+assert not page.current_mode.needs_aux
+page.copies_spin.setValue(3)
+assert page.current_mode.output_count({"copies": page.copies_spin.value()}) == 3
+page.main_edit.setText("main.mp4")
+with patch.object(page, "_files", return_value=[Path("main.mp4")]) as files:
+    with patch.object(page.service, "start", return_value=True) as start:
+        page.start()
+assert start.call_count == 1
+submitted = start.call_args.args
+assert submitted[0]["copies"] == 3
+assert "random_enhance" not in submitted[0]
+assert submitted[1].id == "shipinhao/liuying_v15"
+assert submitted[2:4] == ([Path("main.mp4")], [])
+assert files.call_count == 1
+page._on_done(0, 0, 0, "", False)
+page.copies_spin.setValue(1)
 heimao_index = next(
     index for index in range(shipinhao.count())
     if shipinhao.itemData(index).id == "shipinhao/heimao_luoyue"
@@ -92,6 +119,16 @@ assert not page.mode5_lasong.isChecked() and not page.mode5_daoli.isChecked()
 shipinhao.setCurrentIndex(heimao_index)
 page._activate("视频号处理")
 assert page.mode5_options.isHidden()
+
+caishen_index = next(
+    index for index in range(shipinhao.count())
+    if shipinhao.itemData(index).id == "shipinhao/caishen0923"
+)
+shipinhao.setCurrentIndex(caishen_index)
+page._activate("视频号处理")
+assert page.copies_spin.isHidden()
+assert page.copies_label.isHidden()
+assert not hasattr(page, "random_enhance")
 
 window.close()
 print("local processor integration: OK (8 platforms)")

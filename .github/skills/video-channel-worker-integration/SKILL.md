@@ -165,7 +165,7 @@ Use these files as the local pattern:
 - `modes/shipinhao/h264_gpu.py`: NVIDIA/AMD H.264 selection for auxiliary-input workers.
 - `modes/shipinhao/mode_caishen0923.py`: 财神主视频 + 辅助视频 adapter.
 - `modes/shipinhao/mode_tianjia0923.py`: 天家主视频 + 辅助视频 adapter.
-- `modes/shipinhao/mode_liuying_v15.py`: 流萤主视频 + 辅助校验视频 adapter with always-on 5-fps sampled perspective flashes and a separate channel-only subtle-enhancement switch gated to those flash frames.
+- `modes/shipinhao/mode_liuying_v15.py`: 流萤 needs only the main video; the adapter probes it as its own reference, so the user does not select an auxiliary video. It has always-on fixed perspective flash positions; additional random enhancement is disabled with no UI switch. Supports 1–100 copies via `supports_copies` and `output_count(state)`: the service independently builds and runs the worker command for each copy of each input, rather than duplicating an existing output. Provide `prepare_batch_state` / `state_for_copy` hooks when per-copy random seeds must differ, and test actual rendered frames rather than command strings alone. The original tool's cross-time source-frame sampling is not yet fully reproduced.
 - `modes/shipinhao/mode_shipinghao_chuanshanjia_v15_worker.py`: reusable worker command builder and captured workflow.
 - `test_shipinhao_0923.py`: CPU execution plus NVIDIA/AMD command assertions.
 - `modes/kuaishou/mode_binfeng_caishen0923.py`: 冰峰财神主视频 + 辅助视频 adapter.

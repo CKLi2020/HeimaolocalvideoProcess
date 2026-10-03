@@ -1,6 +1,7 @@
 """视频号流萤通道。"""
 
 import os
+import secrets
 import subprocess
 from pathlib import Path
 
@@ -14,14 +15,15 @@ class ModeLiuyingV15(BaseMode):
     name = "流萤"
     sort_priority = -200
     platform = "shipinhao"
-    needs_aux = True
+    needs_aux = False
     gpu_supported = True
-    supports_random_enhance = True
+    supports_copies = True
     output_suffix = "_liuying_v15"
     output_naming = "source"
     ext = "mp4"
     help_text = (
-        "视频号处理 · 流萤（固定随机闪帧；主视频 + 辅助校验视频，CPU / NVIDIA / AMD）"
+        "视频号处理 · 流萤（固定随机闪帧；仅需主视频，"
+        "CPU / NVIDIA / AMD；裂变每份独立处理，额外随机画面增强关闭）"
     )
 
     def __init__(self):
@@ -30,14 +32,33 @@ class ModeLiuyingV15(BaseMode):
     def has_gpu_command(self):
         return True
 
+    @staticmethod
+    def output_count(state):
+        return max(1, min(100, int(state.get("copies", 1))))
+
+    @staticmethod
+    def prepare_batch_state(state):
+        batch_state = dict(state)
+        if batch_state.get("random_seed") is None:
+            batch_state["random_seed"] = secrets.randbits(48)
+        else:
+            batch_state["random_seed"] = int(batch_state["random_seed"])
+        return batch_state
+
+    @staticmethod
+    def state_for_copy(state, task_index):
+        copy_state = dict(state)
+        copy_state["random_seed"] = (
+            int(state["random_seed"]) + task_index * worker.RANDOM_SEED_STEP
+        )
+        return copy_state
+
     def render(self, state, main_video=None, aux_video=None, use_gpu=None, out_base=None):
         state = state or {}
         source = Path(main_video or state.get("main_video") or "")
-        reference = Path(aux_video or state.get("aux_video") or "")
+        reference = source
         if not source.is_file():
             return "", False, "输入视频不存在: %s" % source
-        if not reference.is_file():
-            return "", False, "辅助校验视频不存在: %s" % reference
 
         if use_gpu is None:
             use_gpu = bool(state.get("use_gpu"))
@@ -45,18 +66,15 @@ class ModeLiuyingV15(BaseMode):
             root = Path(__file__).resolve().parents[2]
             ffprobe = worker.resolve_tool("ffprobe", root)
             source_probe = worker.run_probe(ffprobe, source)
-            reference_probe = worker.run_probe(ffprobe, reference)
             if not any(s.get("codec_type") == "video" for s in source_probe.get("streams", [])):
                 raise ValueError("主视频没有视频流")
             if not any(s.get("codec_type") == "audio" for s in source_probe.get("streams", [])):
                 raise ValueError("主视频没有音频流")
-            if not any(s.get("codec_type") == "video" for s in reference_probe.get("streams", [])):
-                raise ValueError("辅助校验视频没有视频流")
 
             encoder, encoder_options, gpu_error = select_h264_encoder(state, use_gpu)
             if gpu_error:
                 return "", bool(use_gpu), gpu_error
-            params = self.build_params(state, str(source), str(reference))
+            params = self.build_params(state, str(source), str(source))
             base = str(out_base or params["output"])
             encoded = Path(base + ".encoding.mp4")
             command = worker.build_command(
@@ -66,7 +84,7 @@ class ModeLiuyingV15(BaseMode):
                 int(params["threads"]),
                 encoder,
                 encoder_options,
-                bool(state.get("random_enhance")),
+                False,
                 (
                     int(state["random_seed"])
                     if state.get("random_seed") is not None
@@ -84,7 +102,7 @@ class ModeLiuyingV15(BaseMode):
         output = Path(base + ".mp4")
         reference = self._references.get(base)
         if reference is None:
-            raise RuntimeError("未找到流萤辅助校验视频")
+            raise RuntimeError("未找到流萤主视频校验参考")
 
         worker.retime_video_track(encoded, worker.DECLARED_VIDEO_FPS)
         os.replace(encoded, output)
