@@ -56,6 +56,7 @@ _BUILTIN = [
     ("kuaishou", "mode_binfeng_caishen0923"),
     ("kuaishou", "mode_silie0921"),
     ("shipinhao", "mode_heimao_luoyue"),
+    ("shipinhao", "mode_qixia_mode5"),
     ("shipinhao", "mode_caishen0923"),
     ("shipinhao", "mode_tianjia0923"),
     ("xiaohongshu", "mode_caima0924"),

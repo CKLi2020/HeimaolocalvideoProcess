@@ -72,15 +72,26 @@ page._activate("视频号处理")
 assert not page.aux_edit.isEnabled()
 assert page.aux_edit.text() == "本通道不需要辅助视频"
 assert all(not button.isEnabled() for button in page.aux_edit._path_buttons)
+assert page.mode5_options.isHidden()
 
-needs_aux_index = next(
+qixia_index = next(
     index for index in range(shipinhao.count())
-    if shipinhao.itemData(index).needs_aux
+    if shipinhao.itemData(index).id == "shipinhao/qixia_mode5"
 )
-shipinhao.setCurrentIndex(needs_aux_index)
+shipinhao.setCurrentIndex(qixia_index)
 page._activate("视频号处理")
 assert page.aux_edit.isEnabled() and not page.aux_edit.text()
 assert all(button.isEnabled() for button in page.aux_edit._path_buttons)
+assert not page.mode5_options.isHidden()
+assert not page.copies_spin.isHidden()
+assert page.copies_label.text() == "裂变个数："
+assert page.copies_spin.value() == 1
+assert page.mode5_ronghe.isChecked()
+assert not page.mode5_lasong.isChecked() and not page.mode5_daoli.isChecked()
+
+shipinhao.setCurrentIndex(heimao_index)
+page._activate("视频号处理")
+assert page.mode5_options.isHidden()
 
 window.close()
 print("local processor integration: OK (8 platforms)")

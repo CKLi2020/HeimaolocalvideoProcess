@@ -23,7 +23,7 @@ $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 if (-not (Test-Path -LiteralPath $Icon)) { throw "Icon not found: $Icon" }
 if (-not $Ffmpeg -or -not $Ffprobe) { throw "ffmpeg.exe and ffprobe.exe are required" }
 if (-not (Test-Path -LiteralPath $NativeBuild)) { throw "Native build script not found: $NativeBuild" }
-& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); assert len(g)==8, list(g)"
+& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); ids={m.id for ms in g.values() for m in ms}; assert len(g)==8, list(g); assert 'shipinhao/qixia_mode5' in ids, (sorted(ids), modes.load_modes.errors)"
 if ($LASTEXITCODE -ne 0) { throw "Packaged mode registry preflight failed" }
 
 $DistFull = [IO.Path]::GetFullPath($Dist).TrimEnd('\') + '\'

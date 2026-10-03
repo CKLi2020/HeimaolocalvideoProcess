@@ -13,6 +13,8 @@ def main():
     assert {
         mode.id for mode in groups["视频号处理"]
     } == {
+        "shipinhao/heimao_luoyue",
+        "shipinhao/qixia_mode5",
         "shipinhao/caishen0923",
         "shipinhao/tianjia0923",
     }
