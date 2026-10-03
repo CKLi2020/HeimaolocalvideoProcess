@@ -113,9 +113,9 @@ class ModeLiuyingV15(BaseMode):
         actual = worker.run_probe(ffprobe, output)
         expected_layout = [stream.get("codec_type") for stream in expected.get("streams", [])]
         actual_layout = [stream.get("codec_type") for stream in actual.get("streams", [])]
-        if expected_layout != actual_layout:
+        if sorted(expected_layout) != sorted(actual_layout):
             raise RuntimeError(
-                "辅助校验视频与成片的流类型/顺序不匹配: "
+                "辅助校验视频与成片的流类型/数量不匹配: "
                 f"expected {expected_layout!r}, got {actual_layout!r}"
             )
 

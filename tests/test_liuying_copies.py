@@ -26,11 +26,16 @@ def test_liuying_independently_processes_each_copy_of_each_input(tmp_path, copie
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
             "-f", "lavfi", "-i", "testsrc2=size=96x160:rate=60:duration=0.5",
             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=0.5",
-            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+            "-shortest", "-map", "1:a:0", "-map", "0:v:0",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
             str(source),
         ],
         check=True,
     )
+    assert [
+        stream.get("codec_type")
+        for stream in worker.run_probe(Path(ffprobe), source).get("streams", [])
+    ] == ["audio", "video"]
     second_source = tmp_path / "second.mp4"
     second_source.write_bytes(source.read_bytes())
     mode = ModeLiuyingV15()
