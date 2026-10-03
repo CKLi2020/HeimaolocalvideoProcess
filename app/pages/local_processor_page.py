@@ -103,6 +103,10 @@ class LocalProcessorPage(QWidget):
         self.mode5_options.hide()
         execution_layout.addWidget(self.mode5_options)
 
+        self.random_enhance = QCheckBox("随机画面增强")
+        self.random_enhance.hide()
+        execution_layout.addWidget(self.random_enhance)
+
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -195,6 +199,9 @@ class LocalProcessorPage(QWidget):
         self.mode5_options.setVisible(
             bool(getattr(self.current_mode, "supports_mode5_switches", False))
         )
+        self.random_enhance.setVisible(
+            bool(getattr(self.current_mode, "supports_random_enhance", False))
+        )
         if self.current_mode:
             self.log_received.emit(f"当前模式：{title} · {self.current_mode.name}")
 
@@ -257,6 +264,11 @@ class LocalProcessorPage(QWidget):
             "mode5_lasong": self.mode5_lasong.isChecked(),
             "mode5_ronghe": self.mode5_ronghe.isChecked(),
             "mode5_daoli": self.mode5_daoli.isChecked(),
+            "random_enhance": (
+                self.random_enhance.isChecked()
+                if getattr(self.current_mode, "supports_random_enhance", False)
+                else False
+            ),
         }
         self.progress.setValue(0)
         self.start_button.setEnabled(False)

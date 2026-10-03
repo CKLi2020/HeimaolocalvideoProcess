@@ -13,10 +13,12 @@ Use this workflow to turn one or more standalone Python video workers into selec
 Identify before editing:
 
 - Worker script and its current CLI arguments.
-- Target platform key, channel ID, display name, suffix, and output extension.
+- Target platform key, channel ID, a distinctive literary Chinese display name, suffix, and output extension.
 - Meaning of the main and auxiliary video inputs.
 - Existing channels that must be removed or replaced.
 - Output codec. Choose GPU encoders for the same codec, not merely the same container.
+
+For each new integration, choose a fresh, distinctive, literary Chinese channel name rather than a generic technical label or a name already used by another channel. Make the name consistent across the UI, help text, and tests.
 
 If the worker requires more input roles than the UI exposes, define an explicit mapping. Do not silently require a hidden file. A reference used only to derive stream settings should normally be probed from the main input.
 
@@ -84,7 +86,7 @@ Create `modes/<platform>/mode_<channel>.py` and expose `MODE`.
 The mode must define:
 
 - Stable `id` in `<platform>/<channel>` form.
-- User-facing `name`.
+- A distinctive literary Chinese user-facing `name`.
 - Correct `needs_aux` value.
 - `gpu_supported = True` when both rendering paths are implemented.
 - Output suffix, naming policy, extension, and help text.
@@ -145,6 +147,8 @@ Run checks in this order:
 
 If the full self-test cannot finish in the tool environment, report exactly which focused paths passed and what remains unverified.
 
+When a requested channel must appear first in its platform list, set an appropriate `sort_priority` (lower values sort earlier) and add a focused assertion for the first channel ID.
+
 ## Current Reference Implementation
 
 Use these files as the local pattern:
@@ -161,6 +165,8 @@ Use these files as the local pattern:
 - `modes/shipinhao/h264_gpu.py`: NVIDIA/AMD H.264 selection for auxiliary-input workers.
 - `modes/shipinhao/mode_caishen0923.py`: 财神主视频 + 辅助视频 adapter.
 - `modes/shipinhao/mode_tianjia0923.py`: 天家主视频 + 辅助视频 adapter.
+- `modes/shipinhao/mode_liuying_v15.py`: 流萤主视频 + 辅助校验视频 adapter with always-on 5-fps sampled perspective flashes and a separate channel-only subtle-enhancement switch gated to those flash frames.
+- `modes/shipinhao/mode_shipinghao_chuanshanjia_v15_worker.py`: reusable worker command builder and captured workflow.
 - `test_shipinhao_0923.py`: CPU execution plus NVIDIA/AMD command assertions.
 - `modes/kuaishou/mode_binfeng_caishen0923.py`: 冰峰财神主视频 + 辅助视频 adapter.
 - `test_kuaishou_binfeng_0923.py`: CPU execution plus NVIDIA/AMD command assertions.
