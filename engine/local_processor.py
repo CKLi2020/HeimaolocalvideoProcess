@@ -62,6 +62,8 @@ class LocalProcessorService:
         source_total = len(files)
         output_count = getattr(mode, "output_count", lambda _state: 1)
         copies_per_source = max(1, int(output_count(state)))
+        prepare_batch_state = getattr(mode, "prepare_batch_state", None)
+        batch_state = prepare_batch_state(state) if callable(prepare_batch_state) else state
         total = source_total * copies_per_source
         gpu_disabled = False
         output_dir = Path(resolve_path(state["output_dir"]))
@@ -123,10 +125,16 @@ class LocalProcessorService:
                     def copy_progress(value, base=task_progress_base, span=task_progress_span):
                         progress(base + span * value / 100.0)
 
+                    state_for_copy = getattr(mode, "state_for_copy", None)
+                    task_state = (
+                        state_for_copy(batch_state, task_index)
+                        if callable(state_for_copy)
+                        else batch_state
+                    )
                     if copies_per_source > 1:
                         log(f"  [输出 {copy_index + 1}/{copies_per_source}]")
                     code, fell_back = self._run_commands(
-                        state, mode, source, auxiliary, temporary_base,
+                        task_state, mode, source, auxiliary, temporary_base,
                         duration, copy_progress, log, gpu_disabled,
                     )
                     if fell_back:
@@ -135,7 +143,7 @@ class LocalProcessorService:
                     finalize_render = getattr(mode, "finalize_render", None)
                     if code == 0 and not self._stop.is_set() and callable(finalize_render):
                         try:
-                            finalize_render(temporary_base, state)
+                            finalize_render(temporary_base, task_state)
                         except Exception as error:
                             code = -1
                             log(f"  【失败】产物封装失败：{type(error).__name__}: {error}")
