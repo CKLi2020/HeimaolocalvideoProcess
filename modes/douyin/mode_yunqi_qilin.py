@@ -10,7 +10,7 @@ from modes.douyin.hevc_gpu import select_hevc_encoder
 
 class ModeYunqiQilin(BaseMode):
     id = "douyin/yunqi_qilin"
-    name = "云麒"
+    name = "云麒1004"
     sort_priority = -200
     platform = "douyin"
     needs_aux = False
@@ -18,7 +18,7 @@ class ModeYunqiQilin(BaseMode):
     output_suffix = "_yunqi"
     output_naming = "source"
     ext = "mp4"
-    help_text = "抖音处理 · 云麒（主视频输入，CPU / NVIDIA / AMD）"
+    help_text = "抖音处理 · 云麒1004（主视频输入，CPU / NVIDIA / AMD）"
 
     def __init__(self):
         self._work_dirs = {}

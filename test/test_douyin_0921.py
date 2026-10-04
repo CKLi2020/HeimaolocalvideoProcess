@@ -78,6 +78,7 @@ def main():
             assert "libx265" not in gpu_command and "x265-params" not in gpu_command
 
         qilin = modes["douyin/yunqi_qilin"]
+        assert qilin.name == "云麒1004"
         assert not qilin.needs_aux and qilin.gpu_supported and qilin.has_gpu_command()
         qilin_source = folder / "qilin_input.mp4"
         make_qilin_source = (

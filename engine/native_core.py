@@ -14,6 +14,7 @@ _REQUIRED = (
     "filter_segments",
     "color_adjustments_filter",
     "mild_voice_filters",
+    "qilin_pipeline_plan",
 )
 
 try:

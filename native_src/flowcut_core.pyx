@@ -8,6 +8,7 @@
 import builtins
 import math
 import random
+from datetime import datetime, timedelta, timezone
 
 
 cdef extern from "VMProtectSDK.h":
@@ -159,6 +160,127 @@ def mild_voice_filters(input_tag, duration, seed=None):
     result = (filters, "dialogue")
     VMProtectEnd()
     return result
+
+
+def _qilin_partition(total, count, rng):
+    minimum = 8
+    while True:
+        cuts = sorted(rng.sample(range(minimum, total - minimum), count - 1))
+        points = [0, *cuts, total]
+        if all(right - left >= minimum for left, right in zip(points, points[1:])):
+            return list(zip(points, points[1:]))
+
+
+def _qilin_random_color(rng):
+    return "0x%02x%02x%02x" % tuple(rng.randint(30, 250) for _ in range(3))
+
+
+def _qilin_mosaic_source(columns, rows, rng):
+    width, height = 198, 188
+    filters = ["color=c=black:s=%dx%d:r=1" % (width, height), "format=rgb24"]
+    vertical_cells = _qilin_partition(height, rows, rng)
+    for left, right in _qilin_partition(width, columns, rng):
+        for top, bottom in vertical_cells:
+            filters.append(
+                "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill"
+                % (left, top, right - left, bottom - top, _qilin_random_color(rng))
+            )
+    return ",".join(filters)
+
+
+def _qilin_grid_graph(rng):
+    lines = [
+        "[0:v]split=9[a_0][a_1][a_2][a_3][a_4][a_5][a_6][a_7][a_8];",
+        "[1:v]split=8[g_0][g_1][g_2][g_3][g_4][g_5][g_6][g_7];",
+        (
+            "[2:v]fps=30,scale=198:188:flags=lanczos,setsar=1,format=yuv420p,"
+            "rotate='%.3f*t':ow=198:oh=188:c=black,crop=190:180:4:4,"
+            "setsar=1,format=yuv420p,split=3[r0][r1][r2];"
+        )
+        % rng.uniform(0.2, 0.3),
+    ]
+    for index in range(17):
+        source = "a" if index < 9 else "g"
+        source_index = index if index < 9 else index - 9
+        saturation = rng.uniform(0.9, 1.15)
+        lines.append(
+            (
+                "[%s_%d]fps=30,scale=198:188:flags=lanczos,setsar=1,format=yuv420p,"
+                "hue=h='%.6f*t+%.3f':s=%.3f,"
+                "eq=brightness=%.3f:contrast=%.3f:saturation=%.3f,"
+                "rotate='%.3f*sin(2*PI*%.3f*t)':ow=198:oh=188:c=black,"
+                "crop=190:180:4:4,setsar=1,format=yuv420p[c%d];"
+            )
+            % (
+                source, source_index, rng.uniform(25, 55), rng.uniform(0, 360),
+                saturation, rng.uniform(-0.01, 0.04), rng.uniform(0.95, 1.06),
+                saturation, rng.uniform(0.03, 0.06), rng.uniform(0.3, 1.0), index,
+            )
+        )
+    inputs = "".join("[c%d]" % index for index in range(17)) + "[r0][r1][r2]"
+    layout = "|".join(
+        "%d_%d" % (column * 190, row * 180)
+        for row in range(4) for column in range(5)
+    )
+    lines.append(
+        "%sxstack=inputs=20:layout=%s,gblur=sigma=%.3f,"
+        "setsar=1,format=yuv420p[grid]"
+        % (inputs, layout, rng.uniform(0.8, 1.0))
+    )
+    return "\n".join(lines)
+
+
+def _qilin_blend_graph(width, height, rng):
+    tempo = rng.uniform(1.004, 1.006)
+    return (
+        "[0:v]fps=30,scale=%d:%d:flags=lanczos,setsar=1,"
+        "format=yuv420p,setpts=PTS/%.4f[main];"
+        "[1:v]fps=30,scale=%d:%d:flags=lanczos,setsar=1,"
+        "format=yuv420p[grid];"
+        "[main][grid]blend=all_expr='if(lt(N\\,3)\\,A\\,"
+        "if(eq(mod(Y\\,2)\\,0)\\,A\\,B))':shortest=1,"
+        "setfield=tff,format=yuv420p[vout];"
+        "anoisesrc=color=pink:amplitude=%.6f:sample_rate=44100,"
+        "aformat=channel_layouts=stereo[bg_noise];"
+        "[0:a]aresample=44100,aformat=channel_layouts=stereo,"
+        "atempo=%.4f,vibrato=f=%.3f:d=%.3f,volume=%.3f[a_mod];"
+        "[a_mod][bg_noise]amix=inputs=2:duration=first,"
+        "aformat=channel_layouts=stereo,alimiter=limit=-0.5dB,"
+        "asetpts=PTS-STARTPTS[aout]"
+    ) % (
+        width, height, tempo, width, height, rng.uniform(0.0008, 0.001),
+        tempo, rng.uniform(0.3, 0.4), rng.uniform(0.04, 0.05),
+        rng.uniform(1.05, 1.1),
+    )
+
+
+def qilin_pipeline_plan(int width, int height, seed=None):
+    cdef object rng
+    cdef object creation_time
+    cdef double frame_seek
+    cdef str keyframes
+
+    VMProtectBeginUltra(b"FCALGO:qilin.1004.pipeline")
+    try:
+        rng = random.SystemRandom() if seed is None else random.Random(seed)
+        grid_graph = _qilin_grid_graph(rng)
+        blend_graph = _qilin_blend_graph(width, height, rng)
+        frame_seek = rng.uniform(0.5, 2.0)
+        keyframes = "0,%.3f,%.3f" % (rng.uniform(5.5, 6.0), rng.uniform(6.6, 7.0))
+        creation_time = datetime.now(timezone.utc) - timedelta(
+            days=rng.randint(7, 24), seconds=rng.randint(0, 86399)
+        )
+        return {
+            "grid_graph": grid_graph,
+            "blend_graph": blend_graph,
+            "frame_seek": "%.2f" % frame_seek,
+            "keyframes": keyframes,
+            "creation_time": creation_time.strftime("%Y-%m-%dT%H:%M:%S.000000Z"),
+            "geo_source": _qilin_mosaic_source(6, 6, rng),
+            "rotation_source": _qilin_mosaic_source(4, 6, rng),
+        }
+    finally:
+        VMProtectEnd()
 
 
 def mask_alpha(w, h, feather, margin_tb, margin_lr):

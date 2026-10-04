@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from engine.native_core import core as _native_core
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -229,106 +230,6 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[dict[str, 
     return changes
 
 
-def _partition(total: int, count: int, rng: random.Random) -> list[tuple[int, int]]:
-    minimum = 8
-    while True:
-        cuts = sorted(rng.sample(range(minimum, total - minimum), count - 1))
-        points = [0, *cuts, total]
-        if all(right - left >= minimum for left, right in zip(points, points[1:])):
-            return list(zip(points, points[1:]))
-
-
-def _random_color(rng: random.Random) -> str:
-    return "0x%02x%02x%02x" % tuple(rng.randint(30, 250) for _ in range(3))
-
-
-def _mosaic_source(columns: int, rows: int, rng: random.Random) -> str:
-    width, height = 198, 188
-    filters = [f"color=c=black:s={width}x{height}:r=1", "format=rgb24"]
-    vertical_cells = _partition(height, rows, rng)
-    for left, right in _partition(width, columns, rng):
-        for top, bottom in vertical_cells:
-            filters.append(
-                "drawbox=x=%d:y=%d:w=%d:h=%d:color=%s:t=fill"
-                % (left, top, right - left, bottom - top, _random_color(rng))
-            )
-    return ",".join(filters)
-
-
-def _build_grid_graph(rng: random.Random) -> str:
-    lines = [
-        "[0:v]split=9[a_0][a_1][a_2][a_3][a_4][a_5][a_6][a_7][a_8];",
-        "[1:v]split=8[g_0][g_1][g_2][g_3][g_4][g_5][g_6][g_7];",
-        (
-            "[2:v]fps=30,scale=198:188:flags=lanczos,setsar=1,format=yuv420p,"
-            "rotate='%.3f*t':ow=198:oh=188:c=black,crop=190:180:4:4,"
-            "setsar=1,format=yuv420p,split=3[r0][r1][r2];"
-        )
-        % rng.uniform(0.2, 0.3),
-    ]
-    for index in range(17):
-        source = "a" if index < 9 else "g"
-        source_index = index if index < 9 else index - 9
-        saturation = rng.uniform(0.9, 1.15)
-        lines.append(
-            (
-                "[%s_%d]fps=30,scale=198:188:flags=lanczos,setsar=1,format=yuv420p,"
-                "hue=h='%.6f*t+%.3f':s=%.3f,"
-                "eq=brightness=%.3f:contrast=%.3f:saturation=%.3f,"
-                "rotate='%.3f*sin(2*PI*%.3f*t)':ow=198:oh=188:c=black,"
-                "crop=190:180:4:4,setsar=1,format=yuv420p[c%d];"
-            )
-            % (
-                source,
-                source_index,
-                rng.uniform(25, 55),
-                rng.uniform(0, 360),
-                saturation,
-                rng.uniform(-0.01, 0.04),
-                rng.uniform(0.95, 1.06),
-                saturation,
-                rng.uniform(0.03, 0.06),
-                rng.uniform(0.3, 1.0),
-                index,
-            )
-        )
-    inputs = "".join(f"[c{index}]" for index in range(17)) + "[r0][r1][r2]"
-    layout = "|".join(f"{column * 190}_{row * 180}" for row in range(4) for column in range(5))
-    lines.append(
-        f"{inputs}xstack=inputs=20:layout={layout},"
-        f"gblur=sigma={rng.uniform(0.8, 1.0):.3f},setsar=1,format=yuv420p[grid]"
-    )
-    return "\n".join(lines)
-
-
-def _build_blend_graph(width: int, height: int, rng: random.Random) -> str:
-    tempo = rng.uniform(1.004, 1.006)
-    return (
-        f"[0:v]fps=30,scale={width}:{height}:flags=lanczos,setsar=1,"
-        f"format=yuv420p,setpts=PTS/{tempo:.4f}[main];"
-        f"[1:v]fps=30,scale={width}:{height}:flags=lanczos,setsar=1,"
-        "format=yuv420p[grid];"
-        "[main][grid]blend=all_expr='if(lt(N\\,3)\\,A\\,"
-        "if(eq(mod(Y\\,2)\\,0)\\,A\\,B))':shortest=1,"
-        "setfield=tff,format=yuv420p[vout];"
-        f"anoisesrc=color=pink:amplitude={rng.uniform(0.0008, 0.001):.6f}:"
-        "sample_rate=44100,aformat=channel_layouts=stereo[bg_noise];"
-        "[0:a]aresample=44100,aformat=channel_layouts=stereo,"
-        f"atempo={tempo:.4f},vibrato=f={rng.uniform(0.3, 0.4):.3f}:"
-        f"d={rng.uniform(0.04, 0.05):.3f},volume={rng.uniform(1.05, 1.1):.3f}[a_mod];"
-        "[a_mod][bg_noise]amix=inputs=2:duration=first,"
-        "aformat=channel_layouts=stereo,alimiter=limit=-0.5dB,"
-        "asetpts=PTS-STARTPTS[aout]"
-    )
-
-
-def _creation_time(rng: random.Random) -> str:
-    value = datetime.now(timezone.utc) - timedelta(
-        days=rng.randint(7, 24), seconds=rng.randint(0, 86399)
-    )
-    return value.strftime("%Y-%m-%dT%H:%M:%S.000000Z")
-
-
 def build_commands(
     ffmpeg: str,
     input_path: Path,
@@ -341,9 +242,7 @@ def build_commands(
     encoder_options: tuple[str, ...] = (),
     seed: int | None = None,
 ) -> list[list[str]]:
-    rng = random.Random(seed) if seed is not None else random.Random(
-        random.SystemRandom().getrandbits(64)
-    )
+    plan = _native_core.qilin_pipeline_plan(width, height, seed)
     work.mkdir(parents=True, exist_ok=True)
     frame = work / "frame.jpg"
     geo = work / "geo.png"
@@ -352,26 +251,23 @@ def build_commands(
     blend_graph_file = work / "blend_filter.txt"
     grid = work / "grid.mkv"
     blend = work / "blend.mkv"
-    grid_graph_file.write_text(_build_grid_graph(rng), encoding="utf-8")
-    blend_graph_file.write_text(_build_blend_graph(width, height, rng), encoding="utf-8")
-    frame_seek = rng.uniform(0.5, 2.0)
-    keyframes = "0,%.3f,%.3f" % (rng.uniform(5.5, 6.0), rng.uniform(6.6, 7.0))
-    creation_time = _creation_time(rng)
+    grid_graph_file.write_text(plan["grid_graph"], encoding="utf-8")
+    blend_graph_file.write_text(plan["blend_graph"], encoding="utf-8")
 
     commands = [
         [
             ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-            "-ss", f"{frame_seek:.2f}",
+            "-ss", plan["frame_seek"],
             "-i", str(input_path), "-frames:v", "1", "-q:v", "2", str(frame),
         ],
         [
             ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", _mosaic_source(6, 6, rng),
+            "-f", "lavfi", "-i", plan["geo_source"],
             "-frames:v", "1", str(geo),
         ],
         [
             ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", _mosaic_source(4, 6, rng),
+            "-f", "lavfi", "-i", plan["rotation_source"],
             "-frames:v", "1", str(rotation),
         ],
         [
@@ -397,7 +293,7 @@ def build_commands(
     else:
         blend_command.extend(encoder_options)
     blend_command.extend([
-        "-tag:v", "hvc1", "-force_key_frames", keyframes,
+        "-tag:v", "hvc1", "-force_key_frames", plan["keyframes"],
         "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-colorspace", "bt709",
         "-color_trc", "bt709", "-color_primaries", "bt709", "-color_range", "tv",
         "-r", "30", "-fps_mode", "cfr", "-field_order", "tb",
@@ -407,7 +303,7 @@ def build_commands(
     blend_command.extend([
         "-video_track_timescale", "15360", "-c:a", "aac", "-b:a", "72k",
         "-ac", "2", "-ar", "44100", "-metadata",
-        f"creation_time={creation_time}", "-metadata", "encoder=vcodec2",
+        f"creation_time={plan['creation_time']}", "-metadata", "encoder=vcodec2",
         "-f", "matroska", str(blend),
     ])
     commands.extend([
