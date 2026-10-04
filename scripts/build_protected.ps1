@@ -78,6 +78,7 @@ try {
         --include-data-files=modes/douyin/feimao_ffargs.json=modes/douyin/feimao_ffargs.json `
         --include-data-files=modes/douyin/feimao_metadata.txt=modes/douyin/feimao_metadata.txt `
         --include-data-files=modes/douyin/filter_complex.txt=modes/douyin/filter_complex.txt `
+        --include-data-dir=modes/douyin/qilin_artifacts=modes/douyin/qilin_artifacts `
         --windows-icon-from-ico="$Icon" `
         --product-name="$ProductName" `
         --file-description="$ProductName" `
