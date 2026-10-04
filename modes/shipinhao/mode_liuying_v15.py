@@ -2,6 +2,7 @@
 
 import os
 import secrets
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -105,12 +106,28 @@ class ModeLiuyingV15(BaseMode):
         if reference is None:
             raise RuntimeError("未找到流萤主视频校验参考")
 
-        worker.retime_video_track(encoded, worker.DECLARED_VIDEO_FPS)
-        os.replace(encoded, output)
         root = Path(__file__).resolve().parents[2]
         ffprobe = worker.resolve_tool("ffprobe", root)
         expected = worker.run_probe(ffprobe, reference)
-        actual = worker.run_probe(ffprobe, output)
+        worker.run_probe(ffprobe, encoded)
+        backup = Path(base + ".original.mp4")
+        backup.unlink(missing_ok=True)
+        try:
+            os.link(encoded, backup)
+        except OSError:
+            shutil.copy2(encoded, backup)
+        try:
+            try:
+                worker.retime_video_track(encoded, worker.DECLARED_VIDEO_FPS)
+                os.replace(encoded, output)
+                actual = worker.run_probe(ffprobe, output)
+            except (OSError, ValueError, RuntimeError):
+                output.unlink(missing_ok=True)
+                encoded.unlink(missing_ok=True)
+                os.replace(backup, output)
+                actual = worker.run_probe(ffprobe, output)
+        finally:
+            backup.unlink(missing_ok=True)
         expected_layout = [stream.get("codec_type") for stream in expected.get("streams", [])]
         actual_layout = [stream.get("codec_type") for stream in actual.get("streams", [])]
         if sorted(expected_layout) != sorted(actual_layout):
@@ -122,6 +139,8 @@ class ModeLiuyingV15(BaseMode):
     def cleanup_render(self, out_base):
         base = str(out_base)
         Path(base + ".encoding.mp4").unlink(missing_ok=True)
+        Path(base + ".encoding.mp4.retime.tmp").unlink(missing_ok=True)
+        Path(base + ".original.mp4").unlink(missing_ok=True)
         self._references.pop(base, None)
 
 
