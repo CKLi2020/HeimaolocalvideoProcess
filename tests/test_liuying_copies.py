@@ -99,3 +99,37 @@ def test_liuying_independently_processes_each_copy_of_each_input(tmp_path, copie
     assert not list(output_dir.glob("*.part*"))
     assert not mode._references
     assert progress[-1] == 100.0
+
+
+def test_liuying_restores_valid_encode_when_retime_corrupts_output(tmp_path):
+    ffmpeg = find_ffmpeg({})
+    ffprobe = find_ffprobe({})
+    if not ffmpeg or not ffprobe:
+        pytest.skip("ffmpeg and ffprobe are required")
+    source = tmp_path / "main.mp4"
+    subprocess.run(
+        [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=96x160:rate=60:duration=0.2",
+            "-f", "lavfi", "-i", "sine=duration=0.2", "-shortest",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(source),
+        ],
+        check=True,
+    )
+    base = tmp_path / "result.part"
+    encoded = Path(str(base) + ".encoding.mp4")
+    encoded.write_bytes(source.read_bytes())
+    mode = ModeLiuyingV15()
+    mode._references[str(base)] = source
+
+    def corrupt(path, _fps):
+        temporary = path.with_name(path.name + ".retime.tmp")
+        temporary.write_bytes(b"broken")
+        temporary.replace(path)
+
+    with patch.object(worker, "retime_video_track", side_effect=corrupt):
+        mode.finalize_render(str(base), {})
+
+    output = Path(str(base) + ".mp4")
+    assert verify_output({"ffprobe_path": ffprobe}, output)[0]
+    assert not Path(str(base) + ".original.mp4").exists()
