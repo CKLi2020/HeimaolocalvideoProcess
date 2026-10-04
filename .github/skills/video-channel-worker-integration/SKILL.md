@@ -13,10 +13,16 @@ Use this workflow to turn one or more standalone Python video workers into selec
 Identify before editing:
 
 - Worker script and its current CLI arguments.
-- Target platform key, channel ID, display name, suffix, and output extension.
+- Target platform key, channel ID, a distinctive literary Chinese display name, suffix, and output extension.
 - Meaning of the main and auxiliary video inputs.
 - Existing channels that must be removed or replaced.
 - Output codec. Choose GPU encoders for the same codec, not merely the same container.
+
+For each new integration, choose a fresh, distinctive, literary Chinese channel name rather than a generic technical label or a name already used by another channel. Make the name consistent across the UI, help text, and tests.
+
+When a channel is moved into the protected native core, append the integration date in `MMDD` form to its user-facing name (for example `云麒1004`) while keeping its stable channel ID unchanged. Follow the protected-core pattern end to end: add a development-equivalent API in `engine/dev_core.py`, the matching VMProtect-wrapped Cython API in `native_src/flowcut_core.pyx`, register it in `engine/native_core.py`, add its marker and import smoke assertion to `scripts/build_native.ps1`, make the worker consume only the core API, and add a focused deterministic core test.
+
+Every newly integrated channel must be placed first in its platform's channel list, even when the user does not repeat this requirement. Give it a `sort_priority` lower than all existing channels in that platform, and add or update a focused assertion that the new channel ID is first. If several channels are integrated together, order the newly integrated channels ahead of all pre-existing channels and assert the intended order.
 
 If the worker requires more input roles than the UI exposes, define an explicit mapping. Do not silently require a hidden file. A reference used only to derive stream settings should normally be probed from the main input.
 
@@ -84,7 +90,7 @@ Create `modes/<platform>/mode_<channel>.py` and expose `MODE`.
 The mode must define:
 
 - Stable `id` in `<platform>/<channel>` form.
-- User-facing `name`.
+- A distinctive literary Chinese user-facing `name`.
 - Correct `needs_aux` value.
 - `gpu_supported = True` when both rendering paths are implemented.
 - Output suffix, naming policy, extension, and help text.
@@ -145,6 +151,8 @@ Run checks in this order:
 
 If the full self-test cannot finish in the tool environment, report exactly which focused paths passed and what remains unverified.
 
+Always set an appropriate `sort_priority` (lower values sort earlier) so the newly integrated channel appears first in its platform list, and add a focused assertion for the first channel ID.
+
 ## Current Reference Implementation
 
 Use these files as the local pattern:
@@ -153,6 +161,10 @@ Use these files as the local pattern:
 - `mode_douyin_tongyao_worker.py`: main plus auxiliary-effect worker.
 - `modes/douyin/hevc_gpu.py`: NVIDIA/AMD HEVC selection and options.
 - `modes/douyin/mode_zhandou0921.py`: no-aux custom channel adapter.
+- `modes/douyin/mode_yunqi_qilin.py`: 云麒1004 single-input adapter for the multi-stage 麒麟 worker, with HEVC CPU/NVIDIA/AMD encoding and staged runner execution.
+- 云麒1004 is an example of the first-in-platform ordering rule (`sort_priority = -200`); apply the same rule to every subsequently integrated channel, not just 云麒1004.
+- `modes/douyin/mode_douyin_qilin_worker.py`: reusable Qilin pipeline command builder. The original tool generates randomized 198x188 6x6/4x6 color mosaics plus randomized grid, audio, seek, keyframe, and metadata values on every run. Preserve those behavioral classes instead of substituting solid-color assets or freezing one captured graph. The 云麒1004 worker obtains this complete random pipeline plan from `native_core.qilin_pipeline_plan`; do not move the protected implementation back into the worker. Captured graphs in `modes/douyin/qilin_artifacts/` are evidence for ranges, not production templates.
+- For captured multi-stage modes, a stable ffprobe signature is not visual equivalence. Preserve transient assets whenever possible and add assertions for their dimensions, content diversity, and per-run randomness.
 - `modes/douyin/mode_tongyao0921.py`: auxiliary-input custom channel adapter.
 - `test_douyin_0921.py`: CPU execution plus NVIDIA/AMD command assertions.
 - `modes/kuaishou/h264_gpu.py`: NVIDIA/AMD H.264 selection and options.
@@ -161,6 +173,8 @@ Use these files as the local pattern:
 - `modes/shipinhao/h264_gpu.py`: NVIDIA/AMD H.264 selection for auxiliary-input workers.
 - `modes/shipinhao/mode_caishen0923.py`: 财神主视频 + 辅助视频 adapter.
 - `modes/shipinhao/mode_tianjia0923.py`: 天家主视频 + 辅助视频 adapter.
+- `modes/shipinhao/mode_liuying_v15.py`: 流萤 needs only the main video; the adapter probes it as its own reference, so the user does not select an auxiliary video. It has always-on fixed perspective flash positions; additional random enhancement is disabled with no UI switch. Supports 1–100 copies via `supports_copies` and `output_count(state)`: the service independently builds and runs the worker command for each copy of each input, rather than duplicating an existing output. Provide `prepare_batch_state` / `state_for_copy` hooks when per-copy random seeds must differ, and test actual rendered frames rather than command strings alone. The original tool's cross-time source-frame sampling is not yet fully reproduced.
+- `modes/shipinhao/mode_shipinghao_chuanshanjia_v15_worker.py`: reusable worker command builder and captured workflow.
 - `test_shipinhao_0923.py`: CPU execution plus NVIDIA/AMD command assertions.
 - `modes/kuaishou/mode_binfeng_caishen0923.py`: 冰峰财神主视频 + 辅助视频 adapter.
 - `test_kuaishou_binfeng_0923.py`: CPU execution plus NVIDIA/AMD command assertions.

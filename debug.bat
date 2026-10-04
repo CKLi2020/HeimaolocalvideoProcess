@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" goto no_venv
 
-".venv\Scripts\python.exe" -c "import PySide6, av, numpy, cv2" >nul 2>&1
+".venv\Scripts\python.exe" -c "import PySide6, av, numpy, cv2, cryptography" >nul 2>&1
 if errorlevel 1 goto no_dependencies
 
 rem 保留控制台:出错时堆栈直接印在窗口里,不会一闪而过
