@@ -63,7 +63,10 @@ assert all(page._platforms[title][1].isEnabled() for title in (
 ))
 
 _frame, shipinhao = page._platforms["视频号处理"]
-assert shipinhao.currentText() == "流萤"
+assert [shipinhao.itemText(i) for i in range(shipinhao.count())] == [
+    "流萤1003", "栖霞", "爆闪", "云水", "青岚",
+]
+assert shipinhao.currentText() == "流萤1003"
 page._activate("视频号处理")
 assert page.current_mode.id == "shipinhao/liuying_v15"
 assert not hasattr(page, "random_enhance")

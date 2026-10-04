@@ -9,6 +9,7 @@ import pytest
 
 from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, verify_output
 from engine.local_processor import LocalProcessorService
+from engine.native_core import core as native_core
 from modes.shipinhao import mode_shipinghao_chuanshanjia_v15_worker as worker
 from modes.shipinhao.mode_liuying_v15 import ModeLiuyingV15
 
@@ -25,11 +26,16 @@ def test_liuying_independently_processes_each_copy_of_each_input(tmp_path, copie
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
             "-f", "lavfi", "-i", "testsrc2=size=96x160:rate=60:duration=0.5",
             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=0.5",
-            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+            "-shortest", "-map", "1:a:0", "-map", "0:v:0",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
             str(source),
         ],
         check=True,
     )
+    assert [
+        stream.get("codec_type")
+        for stream in worker.run_probe(Path(ffprobe), source).get("streams", [])
+    ] == ["audio", "video"]
     second_source = tmp_path / "second.mp4"
     second_source.write_bytes(source.read_bytes())
     mode = ModeLiuyingV15()
@@ -63,7 +69,7 @@ def test_liuying_independently_processes_each_copy_of_each_input(tmp_path, copie
         assert all(call.args[6] is False for call in builder.call_args_list)
         seeds = [call.args[7] for call in builder.call_args_list]
         assert seeds == [
-            4000 + index * worker.RANDOM_SEED_STEP for index in range(2 * copies)
+            native_core.liuying_seed(4000, index) for index in range(2 * copies)
         ]
         commands = [call.args[0] for call in runner.call_args_list]
         assert len(set(commands)) == 2 * copies

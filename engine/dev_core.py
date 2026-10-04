@@ -249,6 +249,98 @@ def qilin_pipeline_plan(width, height, seed=None):
         "rotation_source": _qilin_mosaic_source(4, 6, rng),
     }
 
+_LIUYING_BASE_FILTER = (
+    "fps=60,scale=576:1248:force_original_aspect_ratio=decrease,"
+    "pad=576:1248:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
+)
+_LIUYING_SEED_STEP = 104729
+_LIUYING_RANDOM_INPUTS = "random(0);" * 8
+_LIUYING_FLASH_ENABLE = "gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)"
+_LIUYING_FLASH_INDEX = "ceil(in/12)"
+
+
+def _liuying_perspective(seed, enabled_expr=None, random_frame_index="in", subtle=False):
+    if subtle:
+        geometry = (
+            "st(1,0.49+0.02*random(0));"
+            "st(2,0.49+0.02*random(0));"
+            "st(3,1);"
+            "st(4,0);"
+            "st(5,(PI/180)*(1+4*random(0)));"
+        )
+    else:
+        geometry = (
+            "st(1,0.5+0.3*random(0));"
+            "st(2,0.5+0.3*random(0));"
+            "st(3,if(lt(random(0),0.5),-1,1));"
+            "st(4,lt(random(0),0.5));"
+            "st(5,(PI/4+PI/4*random(0))*ld(4));"
+        )
+    state = (
+        f"st(0,{int(seed)}+({random_frame_index})*{_LIUYING_SEED_STEP});"
+        f"{_LIUYING_RANDOM_INPUTS}{geometry}"
+        "st(6,cos(ld(5)));"
+        "st(7,sin(ld(5)));"
+        "st(8,min("
+        "max(0.5,W*ld(1)-2)/(abs(ld(6))*(W-1)+abs(ld(7))*(H-1)),"
+        "max(0.5,H*ld(2)-2)/(abs(ld(7))*(W-1)+abs(ld(6))*(H-1))"
+        "));"
+    )
+    if enabled_expr:
+        state += f"st(9,{enabled_expr});"
+    corners = {
+        "x0": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(0-(W-1)/2)+ld(7)*(0-(H-1)/2))",
+        "y0": "(H-1)/2+ld(8)*(-ld(7)*(0-(W-1)/2)+ld(6)*(0-(H-1)/2))",
+        "x1": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(W-(W-1)/2)+ld(7)*(0-(H-1)/2))",
+        "y1": "(H-1)/2+ld(8)*(-ld(7)*(W-(W-1)/2)+ld(6)*(0-(H-1)/2))",
+        "x2": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(0-(W-1)/2)+ld(7)*(H-(H-1)/2))",
+        "y2": "(H-1)/2+ld(8)*(-ld(7)*(0-(W-1)/2)+ld(6)*(H-(H-1)/2))",
+        "x3": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(W-(W-1)/2)+ld(7)*(H-(H-1)/2))",
+        "y3": "(H-1)/2+ld(8)*(-ld(7)*(W-(W-1)/2)+ld(6)*(H-(H-1)/2))",
+    }
+    if enabled_expr:
+        identities = {
+            "x0": "0", "y0": "0", "x1": "W", "y1": "0",
+            "x2": "0", "y2": "H", "x3": "W", "y3": "H",
+        }
+        corners = {
+            name: f"if(ld(9),{value},{identities[name]})"
+            for name, value in corners.items()
+        }
+    coordinates = ":".join(f"{name}='{state}{value}'" for name, value in corners.items())
+    return f"perspective={coordinates}:sense=source:interpolation=linear:eval=frame"
+
+
+
+def liuying_video_filter(seed, random_enhance=False):
+    result = _LIUYING_BASE_FILTER + "," + _liuying_perspective(
+        seed, _LIUYING_FLASH_ENABLE, _LIUYING_FLASH_INDEX
+    )
+    if random_enhance:
+        result += "," + _liuying_perspective(
+            int(seed) + _LIUYING_SEED_STEP,
+            _LIUYING_FLASH_ENABLE,
+            _LIUYING_FLASH_INDEX,
+            True,
+        )
+    return result
+
+
+def liuying_perspective_filter(seed):
+    return _liuying_perspective(seed)
+
+
+def liuying_flash_filter(seed):
+    return _liuying_perspective(seed, _LIUYING_FLASH_ENABLE, _LIUYING_FLASH_INDEX)
+
+
+def liuying_base_filter():
+    return _LIUYING_BASE_FILTER
+
+
+def liuying_seed(base_seed, task_index):
+    return int(base_seed) + int(task_index) * _LIUYING_SEED_STEP
+
 
 def mask_alpha(w, h, feather, margin_tb, margin_lr):
     d = max(1, round(feather * min(w, h) / 1080.0))

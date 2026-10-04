@@ -15,6 +15,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
+from engine.native_core import core as _native_core
+
 
 MODE_WIDTH = 576
 MODE_HEIGHT = 1248
@@ -22,13 +24,6 @@ MODE_FPS = 60
 THREADS = 12
 RANDOM_BRANCH_FPS = 5
 CAPTURED_RANDOM_SEED = 84106055771035
-RANDOM_SEED_STEP = 104729
-VIDEO_FILTER = (
-    "fps=60,scale=576:1248:force_original_aspect_ratio=decrease,"
-    "pad=576:1248:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
-)
-RANDOM_FILTER_INPUTS = "random(0);" * 8
-FLASH_RANDOM_FRAME_INDEX = "ceil(in/12)"
 DECLARED_VIDEO_FPS = 30
 # The captured FFmpeg build used 1000; newer builds default to an automatic movie timescale.
 MOVIE_TIMESCALE = 1000
@@ -193,61 +188,6 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def perspective_filter(
-    seed: int,
-    enabled_expr: str | None = None,
-    random_frame_index: str = "in",
-    subtle: bool = False,
-) -> str:
-    if subtle:
-        geometry = (
-            "st(1,0.49+0.02*random(0));"
-            "st(2,0.49+0.02*random(0));"
-            "st(3,1);"
-            "st(4,0);"
-            "st(5,(PI/180)*(1+4*random(0)));"
-        )
-    else:
-        geometry = (
-            "st(1,0.5+0.3*random(0));"
-            "st(2,0.5+0.3*random(0));"
-            "st(3,if(lt(random(0),0.5),-1,1));"
-            "st(4,lt(random(0),0.5));"
-            "st(5,(PI/4+PI/4*random(0))*ld(4));"
-        )
-    state = (
-        f"st(0,{seed}+({random_frame_index})*{RANDOM_SEED_STEP});"
-        f"{RANDOM_FILTER_INPUTS}"
-        f"{geometry}"
-        "st(6,cos(ld(5)));"
-        "st(7,sin(ld(5)));"
-        "st(8,min("
-        "max(0.5,W*ld(1)-2)/(abs(ld(6))*(W-1)+abs(ld(7))*(H-1)),"
-        "max(0.5,H*ld(2)-2)/(abs(ld(7))*(W-1)+abs(ld(6))*(H-1))"
-        "));"
-    )
-    if enabled_expr:
-        state += f"st(9,{enabled_expr});"
-    corners = {
-        "x0": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(0-(W-1)/2)+ld(7)*(0-(H-1)/2))",
-        "y0": "(H-1)/2+ld(8)*(-ld(7)*(0-(W-1)/2)+ld(6)*(0-(H-1)/2))",
-        "x1": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(W-(W-1)/2)+ld(7)*(0-(H-1)/2))",
-        "y1": "(H-1)/2+ld(8)*(-ld(7)*(W-(W-1)/2)+ld(6)*(0-(H-1)/2))",
-        "x2": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(0-(W-1)/2)+ld(7)*(H-(H-1)/2))",
-        "y2": "(H-1)/2+ld(8)*(-ld(7)*(0-(W-1)/2)+ld(6)*(H-(H-1)/2))",
-        "x3": "(W-1)/2+ld(3)*ld(8)*(ld(6)*(W-(W-1)/2)+ld(7)*(H-(H-1)/2))",
-        "y3": "(H-1)/2+ld(8)*(-ld(7)*(W-(W-1)/2)+ld(6)*(H-(H-1)/2))",
-    }
-    if enabled_expr:
-        identities = {"x0": "0", "y0": "0", "x1": "W", "y1": "0", "x2": "0", "y2": "H", "x3": "W", "y3": "H"}
-        corners = {
-            name: f"if(ld(9),{value},{identities[name]})"
-            for name, value in corners.items()
-        }
-    coordinates = ":".join(f"{name}='{state}{value}'" for name, value in corners.items())
-    return f"perspective={coordinates}:sense=source:interpolation=linear:eval=frame"
-
-
 def build_command(
     ffmpeg: str,
     source: Path,
@@ -260,20 +200,7 @@ def build_command(
 ) -> list[str]:
     """Build the channel's FFmpeg command without starting a subprocess."""
     seed = random_seed if random_seed is not None else secrets.randbits(48)
-    filters = VIDEO_FILTER
-    # The captured 5-fps branch changes frames 10, 20, ... 50 in each 60-frame second.
-    filters += "," + perspective_filter(
-        seed,
-        enabled_expr="gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)",
-        random_frame_index=FLASH_RANDOM_FRAME_INDEX,
-    )
-    if random_enhance:
-        filters += "," + perspective_filter(
-            seed + RANDOM_SEED_STEP,
-            enabled_expr="gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)",
-            random_frame_index=FLASH_RANDOM_FRAME_INDEX,
-            subtle=True,
-        )
+    filters = _native_core.liuying_video_filter(seed, random_enhance)
 
     command = [
         ffmpeg,
@@ -372,7 +299,7 @@ def run_random_perspective_branch(
         "-sn",
         "-dn",
         "-vf",
-        VIDEO_FILTER + ",fps=5",
+        _native_core.liuying_base_filter() + ",fps=5",
         "-fps_mode",
         "passthrough",
         "-pix_fmt",
@@ -407,7 +334,7 @@ def run_random_perspective_branch(
         "-sn",
         "-dn",
         "-vf",
-        perspective_filter(seed),
+        _native_core.liuying_perspective_filter(seed),
         "-frames:v",
         str(frame_count),
         "-fps_mode",
@@ -683,7 +610,7 @@ def encode(
         "-sn",
         "-dn",
         "-vf",
-        VIDEO_FILTER,
+        _native_core.liuying_base_filter(),
         "-fps_mode",
         "passthrough",
         "-pix_fmt",
@@ -749,12 +676,7 @@ def encode(
         "-video_track_timescale",
         "15360",
         "-vf",
-        "setsar=1,"
-        + perspective_filter(
-            random_seed,
-            enabled_expr="gte(mod(in,60),10)*lte(mod(in,60),50)*eq(mod(in,10),0)",
-            random_frame_index=FLASH_RANDOM_FRAME_INDEX,
-        ),
+        "setsar=1," + _native_core.liuying_flash_filter(random_seed),
         "-map",
         "0:v:0",
         "-map",
@@ -866,7 +788,7 @@ def main() -> int:
         ),
         "random_perspective": {
             "base_seed": args.random_seed,
-            "seed_per_input_frame": f"{args.random_seed} + in * {RANDOM_SEED_STEP}",
+            "seed_per_input_frame": "protected native-core schedule",
             "input_fps": RANDOM_BRANCH_FPS,
             "frame_limit": None,
             "branch_consumer": "unknown; secure core's raw-pipe synchronization/composition was not captured",
@@ -955,7 +877,7 @@ def main() -> int:
         duration = float(input_video.get("duration") or input_probe.get("format", {}).get("duration"))
         random_frame_count = round(duration * RANDOM_BRANCH_FPS)
         report["random_perspective"]["frame_limit"] = random_frame_count
-        report["random_perspective"]["filter"] = perspective_filter(args.random_seed)
+        report["random_perspective"]["filter"] = _native_core.liuying_perspective_filter(args.random_seed)
         random_branch_output = (
             args.random_branch_output.resolve()
             if args.random_branch_output

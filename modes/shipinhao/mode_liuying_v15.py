@@ -5,6 +5,7 @@ import secrets
 import subprocess
 from pathlib import Path
 
+from engine.native_core import core as _native_core
 from modes.base_mode import BaseMode
 from modes.shipinhao import mode_shipinghao_chuanshanjia_v15_worker as worker
 from modes.shipinhao.h264_gpu import select_h264_encoder
@@ -12,7 +13,7 @@ from modes.shipinhao.h264_gpu import select_h264_encoder
 
 class ModeLiuyingV15(BaseMode):
     id = "shipinhao/liuying_v15"
-    name = "流萤"
+    name = "流萤1003"
     sort_priority = -200
     platform = "shipinhao"
     needs_aux = False
@@ -48,8 +49,8 @@ class ModeLiuyingV15(BaseMode):
     @staticmethod
     def state_for_copy(state, task_index):
         copy_state = dict(state)
-        copy_state["random_seed"] = (
-            int(state["random_seed"]) + task_index * worker.RANDOM_SEED_STEP
+        copy_state["random_seed"] = _native_core.liuying_seed(
+            state["random_seed"], task_index
         )
         return copy_state
 
@@ -112,9 +113,9 @@ class ModeLiuyingV15(BaseMode):
         actual = worker.run_probe(ffprobe, output)
         expected_layout = [stream.get("codec_type") for stream in expected.get("streams", [])]
         actual_layout = [stream.get("codec_type") for stream in actual.get("streams", [])]
-        if expected_layout != actual_layout:
+        if sorted(expected_layout) != sorted(actual_layout):
             raise RuntimeError(
-                "辅助校验视频与成片的流类型/顺序不匹配: "
+                "辅助校验视频与成片的流类型/数量不匹配: "
                 f"expected {expected_layout!r}, got {actual_layout!r}"
             )
 
