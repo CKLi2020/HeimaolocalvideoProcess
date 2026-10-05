@@ -23,7 +23,7 @@ app/_flowcut_core.pyd                    app/_random_frame_swap_core.pyd
 核心源码位于：
 
 ```text
-native_src/flowcut_core.pyx            主算法（14 个 FCALGO 标记）
+native_src/flowcut_core.pyx            主算法（17 个 FCALGO 标记）
 native_src/random_frame_swap_core.pyx  爆闪帧序交换（3 个 RFCORE 标记）
 ```
 
@@ -45,8 +45,7 @@ native_src/random_frame_swap_core.pyx  爆闪帧序交换（3 个 RFCORE 标记�
 | `RFCORE:shuffle` | 帧序洗牌 |
 | `RFCORE:offsets` | ctts 时间戳偏移重算 |
 
-`FCALGO:*` 固定在 14 个：实测虚拟化区域达到 15 个之后，模块内的 Python 异常路径
-会跑飞（详见 SECURITY.md）。爆闪核心只有 3 个标记，离这个上限很远。
+主核心当前包含 17 个 `FCALGO:*` 标记，覆盖云麒 SPS 兼容与两条星轮管线；爆闪核心另有 3 个 `RFCORE:*` 标记。宿主门禁本身不增加 VMProtect 区域。
 
 `scripts/build_native.ps1` 对两颗核心各完成以下工作：
 

@@ -104,13 +104,8 @@ cdef extern from *:
 #
 # 拒绝为什么是「结束进程」而不是抛 Python 异常：见上面 fc_host_deny() 的说明。
 # 2026-10-05 实测，同一份源码，未加壳时抛任何异常都干净；VMProtect Ultra 虚拟化
-# 区域一多（14 个以上），异常路径就会跑飞——要么访问越界，要么在
-# mild_voice_filters 的字符串拼接里触发断点断言。PermissionError、ValueError、
-# RuntimeError、自定义异常类、从无标记的辅助函数里抛，全部失败。所以拒绝整个放在
-# C 侧完成：不构造异常对象、不写 traceback、不碰模块全局变量。
-#
-# 判定本身**不加** VMProtect 标记：加了就凑成 15 个虚拟化区域，实测必崩；
-# 保持原来的 14 个，模块行为与加固前完全一致。
+# 区域较多时异常路径曾出现访问越界和断言失败，所以拒绝整个放在 C 侧完成：
+# 不构造异常对象、不写 traceback、不碰模块全局变量。判定本身不加 VMProtect 标记。
 
 
 cdef void _ensure_host():

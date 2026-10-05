@@ -9,7 +9,7 @@
 >
 > 1. **启动器**：SProtect 加壳 + 联网 `NetVerify`（到期、设备），管 EXE 本身。
 > 2. **算法**：两颗 `.pyd` 都经 VMProtect Ultra 虚拟化并挂上同一道宿主门禁 ——
->    `app/_flowcut_core.pyd`（14 个 `FCALGO:*` 标记）与
+>    `app/_flowcut_core.pyd`（17 个 `FCALGO:*` 标记）与
 >    `app/_random_frame_swap_core.pyd`（3 个 `RFCORE:*` 标记）。每个导出函数入口
 >    先确认自己运行在**发布启动器进程内**：宿主可执行文件必须与该 `.pyd` 同处一个
 >    发布根目录。从任意 CPython 3.9 旁加载这些 `.pyd` 只能 import，**一调用就直接
@@ -90,21 +90,16 @@ auth.set_gate(lambda engine, job: None)   # 返回 False 或抛异常即拒绝
 **整个拒绝过程不经过 Python**。
 
 **为什么是结束进程而不是抛异常**（2026-10-05 实测，这条踩过坑）：同一份源码，
-未加壳时 `raise` 任何异常都干净；一旦 VMProtect Ultra 虚拟化区域达到 14 个以上，
-模块内的 Python 异常路径就会跑飞——要么访问越界，要么在 `mild_voice_filters`
-的 f-string 拼接里触发 `PyUnicode_IS_READY` 断言。`PermissionError`、`ValueError`、
-`RuntimeError`、自定义异常类、把 `raise` 挪到无标记的辅助函数里，全部失败；只有
-2 个虚拟化区域时偶尔能过。所以拒绝改成纯 C 的 `ExitProcess`：不构造异常对象、
-不写 traceback、不碰模块全局变量。也因此 `FCALGO:host.check` 这个标记被去掉了——
-加上它正好凑成 15 个区域，必崩；现在是加固前的 14 个。爆闪核心只有 3 个区域，
-离这个上限很远，但它的门禁同样不标记，两颗核心保持一致。
+加壳后的 Python 异常路径存在不稳定风险，曾出现访问越界以及 `PyUnicode_IS_READY`
+断言。因此拒绝改成纯 C 的 `ExitProcess`：不构造异常对象、不写 traceback、不碰模块
+全局变量。宿主判定本身不增加 VMProtect 标记，两颗核心保持一致。
 
 **不用 VMProtect 授权系统**，所以工程里没有 `<LicenseManager>`、没有 `PrivateExp`、
 没有每客户序列号；`build_native.ps1` 也就不再需要任何密钥参数。
 
 **能挡什么**：实测的攻击形态——拿系统里任意 CPython 3.9 把 `sys.path` 指到发布
 目录，`import` 后直接调算法。现在 import 仍然成功（导出集检查依赖这一点），
-但两颗核心共 17 个导出函数（14 + 3）**任意一个**被调用，进程立即以退出码
+但两颗核心共 20 个导出函数（17 + 3）**任意一个**被调用，进程立即以退出码
 `0x46434731` 结束，无 traceback、无部分输出。
 
 **挡不住什么**：把 `.pyd` 拷进自己的程序，并在程序自己的目录下摆一个可执行文件，

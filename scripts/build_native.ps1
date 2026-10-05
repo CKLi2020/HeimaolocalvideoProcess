@@ -39,10 +39,8 @@ if ($LicenseGate) { $LicenseDefine = @("-DFC_LICENSE_GATE") }
 
 # Both protected cores. ``Markers`` must list exactly the strings the source
 # passes to VMProtectBeginUltra, and the count is load-bearing: flowcut_core was
-# measured on 2026-10-05 to run off into other code on any Python exception path
-# once 15 or more regions are virtualized, so it stays at 14. Its host gate is
-# therefore deliberately unmarked and refuses from C with ExitProcess instead of
-# raising (see native_src/flowcut_core.pyx).
+# keeps the host gate deliberately unmarked; refusal happens in C with ExitProcess
+# instead of unwinding a Python exception through virtualized code.
 $Modules = @(
     @{
         Module        = "app._flowcut_core"
