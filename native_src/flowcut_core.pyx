@@ -396,6 +396,48 @@ def liuying_seed(base_seed, task_index):
         VMProtectEnd()
 
 
+def motianxinglun_pipeline_plan(duration):
+    VMProtectBeginUltra(b"FCALGO:motianxinglun.1005.pipeline")
+    try:
+        return {
+            "duration": "%.3f" % max(0.001, float(duration)),
+            "image_size": "720x1280",
+            "image_fps": "120",
+        }
+    finally:
+        VMProtectEnd()
+
+
+def tianbaixinglun_pipeline_plan(duration):
+    VMProtectBeginUltra(b"FCALGO:tianbaixinglun.1005.pipeline")
+    try:
+        return {
+            "duration": "%.3f" % max(0.001, float(duration)),
+            "main_filter": (
+                "scale=720:1280:force_original_aspect_ratio=disable,"
+                "setsar=1:1,fps=60"
+            ),
+            "geometry_filter": (
+                "scale=848:1510:flags=lanczos,"
+                "zoompan=z='1.04+0.055*sin(on/17)*sin(on/17)':"
+                "x='iw/2-(iw/zoom/2)+18*sin(on/5)':"
+                "y='ih/2-(ih/zoom/2)+32*cos(on/7)':d=1:s=720x1280:fps=60,"
+                "rotate='0.11*sin(2*PI*t/2.8)+0.028*t':ow=720:oh=1280:c=black,"
+                "hue=h='18*t',setsar=1:1,format=yuv420p"
+            ),
+            "blend_filter": (
+                "[0:v]scale=720:1280,setsar=1,fps=60,setpts=PTS-STARTPTS,"
+                "format=yuv420p[main];"
+                "[1:v]scale=720:1280,setsar=1,fps=60,setpts=PTS-STARTPTS,"
+                "format=yuv420p[geo];"
+                "[main][geo]blend=all_mode=screen:all_opacity=0.070:shortest=1,"
+                "format=yuv420p[v]"
+            ),
+        }
+    finally:
+        VMProtectEnd()
+
+
 def mask_alpha(w, h, feather, margin_tb, margin_lr):
     cdef int d
     cdef double offset

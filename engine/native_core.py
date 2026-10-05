@@ -20,6 +20,8 @@ _REQUIRED = (
     "liuying_flash_filter",
     "liuying_base_filter",
     "liuying_seed",
+    "motianxinglun_pipeline_plan",
+    "tianbaixinglun_pipeline_plan",
 )
 
 try:

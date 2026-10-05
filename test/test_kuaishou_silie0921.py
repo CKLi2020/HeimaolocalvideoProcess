@@ -11,9 +11,15 @@ def main():
     groups = load_modes()
     modes = {mode.id: mode for items in groups.values() for mode in items}
     assert set(mode.id for mode in groups["快手处理"]) == {
+        "kuaishou/motianxinglun",
+        "kuaishou/tianbaixinglun",
         "kuaishou/silie0921",
         "kuaishou/binfeng_caishen0923",
     }
+    assert [mode.id for mode in groups["快手处理"][:2]] == [
+        "kuaishou/motianxinglun",
+        "kuaishou/tianbaixinglun",
+    ]
     mode = modes["kuaishou/silie0921"]
     assert mode.gpu_supported and mode.has_gpu_command()
     assert mode.ext == "mkv" and not mode.needs_aux
