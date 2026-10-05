@@ -149,8 +149,8 @@ def probe_duration(cfg, media_path):
         return None
 
 
-def verify_output(cfg, media_path, expected_audio_tracks=None):
-    """收尾校验:一条视频轨、音轨数符合通道声明、时长为正。
+def verify_output(cfg, media_path, expected_audio_tracks=None, expected_video_tracks=1):
+    """收尾校验:视频/音频轨数符合通道声明、时长为正。
 
     这是本地重写自身的完整性保障，不代表原版曾生成过多轨坏文件。
     返回 (ok: bool, message: str)。ok=False 时调用方应删掉产物并记为失败 ——
@@ -172,8 +172,9 @@ def verify_output(cfg, media_path, expected_audio_tracks=None):
     videos = [s for s in streams if isinstance(s, dict) and s.get("codec_type") == "video"]
     audios = [s for s in streams if isinstance(s, dict) and s.get("codec_type") == "audio"]
 
-    if len(videos) != 1:
-        return False, "视频轨数量异常: %d 条(应为 1 条)" % len(videos)
+    if len(videos) != int(expected_video_tracks):
+        return False, "视频轨数量异常: %d 条(应为 %d 条)" % (
+            len(videos), int(expected_video_tracks))
     if expected_audio_tracks is None and len(audios) > 1:
         return False, "音频轨数量异常: %d 条(应不超过 1 条)" % len(audios)
     if expected_audio_tracks is not None and len(audios) != int(expected_audio_tracks):

@@ -162,10 +162,14 @@ class LocalProcessorService:
                         continue
 
                     temporary_file = f"{temporary_base}.{mode.ext}"
+                    verify_options = {
+                        "expected_audio_tracks": getattr(mode, "expected_audio_tracks", None),
+                    }
+                    expected_video_tracks = getattr(mode, "expected_video_tracks", None)
+                    if expected_video_tracks is not None:
+                        verify_options["expected_video_tracks"] = expected_video_tracks
                     valid, message = verify_output(
-                        self.config,
-                        temporary_file,
-                        expected_audio_tracks=getattr(mode, "expected_audio_tracks", None),
+                        self.config, temporary_file, **verify_options
                     )
                     if not valid:
                         fail_count += 1

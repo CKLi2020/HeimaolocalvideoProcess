@@ -82,7 +82,9 @@ assert m.liuying_perspective_filter(1003).startswith('perspective=')
 assert m.liuying_flash_filter(1003).startswith('perspective=')
 assert m.liuying_base_filter().startswith('fps=60')
 assert m.liuying_seed(1003,2)==210461
-print('smoke test ok: 14 algorithm exports exercised')
+assert m.motianxinglun_pipeline_plan(1.25)['image_fps']=='120'
+assert 'all_mode=screen' in m.tianbaixinglun_pipeline_plan(1.25)['blend_filter']
+print('smoke test ok: 16 algorithm exports exercised')
 '@
         Markers       = @(
             "FCALGO:mask.alpha",
@@ -98,7 +100,9 @@ print('smoke test ok: 14 algorithm exports exercised')
             "FCALGO:liuying.1003.branch",
             "FCALGO:liuying.1003.flash",
             "FCALGO:liuying.1003.base",
-            "FCALGO:liuying.1003.seed"
+            "FCALGO:liuying.1003.seed",
+            "FCALGO:motianxinglun.1005.pipeline",
+            "FCALGO:tianbaixinglun.1005.pipeline"
         )
     },
     @{
@@ -143,6 +147,7 @@ print('smoke test ok: 3 random-swap exports exercised')
 # which is exactly the case during a build, hence the AST read instead of import.
 $ExportCheck = @'
 import ast, importlib.util, os, sys
+
 
 core_path, required_path, const_name, module_name = sys.argv[1:5]
 core_path = os.path.abspath(core_path)

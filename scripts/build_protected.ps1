@@ -82,6 +82,8 @@ try {
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
         --include-data-dir=mode_defs=mode_defs --include-data-dir=client=client `
         --include-data-files=modes/douyin/feimao_metadata.txt=modes/douyin/feimao_metadata.txt `
+        --include-data-dir=modes/douyin/qilin_artifacts=modes/douyin/qilin_artifacts `
+        --include-data-dir=modes/kuaishou/tianbaixinglun_artifacts=modes/kuaishou/tianbaixinglun_artifacts `
         --windows-icon-from-ico="$Icon" `
         --product-name="$ProductName" `
         --file-description="$ProductName" `
