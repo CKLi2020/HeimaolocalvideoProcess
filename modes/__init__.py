@@ -54,6 +54,8 @@ _BUILTIN = [
     ("douyin", "mode_tongyao0921"),
     ("douyin", "mode_zhandou0921"),
     ("douyin", "mode_yunqi_qilin"),
+    ("kuaishou", "mode_motianxinglun"),
+    ("kuaishou", "mode_tianbaixinglun"),
     ("kuaishou", "mode_binfeng_caishen0923"),
     ("kuaishou", "mode_silie0921"),
     ("shipinhao", "mode_heimao_luoyue"),
