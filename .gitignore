@@ -18,6 +18,7 @@ build/
 dist-protected/
 nuitka-crash-report.xml
 app/_flowcut_core.pyd
+app/_random_frame_swap_core.pyd
 showlight/
 startmovie/
 output/

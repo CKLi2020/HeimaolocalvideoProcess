@@ -1,4 +1,12 @@
-"""一次性校准脚本：抓取编译模块 app._flowcut_core 的真实输出，供本地重写对齐。
+"""【已归档，勿运行】一次性校准脚本：抓取编译模块 app._flowcut_core 的真实输出，供本地重写对齐。
+
+2026-10-05 归档。两个前提都已不成立：它依赖的 ``app.license``（已一并归档）
+和旧授权服务器 ``https://yizhixiangsi.cn`` 都已下线，因此这个脚本现在跑不起来，
+也没有跑的必要 —— ``docs/calibration/`` 下的基准数据早已生成并随仓库提交，
+``tests/test_local_mask_alpha.py`` / ``tests/test_butterfly_plan_parity.py``
+直接读那些 JSON，不需要本脚本。
+
+原说明保留如下，仅供追溯：
 
 必须在本机卡密仍有效、旧授权服务器仍可达时运行 —— 这是去授权之前唯一
 不可事后补做的步骤。

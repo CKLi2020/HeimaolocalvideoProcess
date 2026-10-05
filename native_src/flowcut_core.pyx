@@ -7,13 +7,113 @@
 
 import builtins
 import math
+import os
 import random
+import sys
 from datetime import datetime, timedelta, timezone
 
 
 cdef extern from "VMProtectSDK.h":
     void VMProtectBeginUltra(const char *name)
     void VMProtectEnd()
+
+
+cdef extern from *:
+    """
+    #ifdef FC_LICENSE_GATE
+    #include <windows.h>
+
+    static int fc_host_gate_enabled(void) { return 1; }
+
+    /* Only run inside the release launcher. Both paths come from the OS, so
+       monkeypatching sys/os in Python cannot influence the answer: this
+       module's own path is resolved from its code address, the running
+       process image from GetModuleFileNameW(NULL). 92 is the backslash. */
+    static int fc_host_ok(void) {
+        static wchar_t self[32768];
+        static wchar_t exe[32768];
+        HMODULE module = NULL;
+        DWORD n;
+        wchar_t *sep;
+
+        if (!GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                (LPCWSTR)(const void *)&fc_host_ok, &module)) {
+            return 0;
+        }
+        n = GetModuleFileNameW(module, self, 32767);
+        if (n == 0 || n >= 32767) { return 0; }
+        self[n] = 0;
+
+        n = GetModuleFileNameW(NULL, exe, 32767);
+        if (n == 0 || n >= 32767) { return 0; }
+        exe[n] = 0;
+
+        /* <release>\\app\\_flowcut_core.pyd -> <release> */
+        sep = wcsrchr(self, 92);
+        if (sep == NULL) { return 0; }
+        *sep = 0;
+        sep = wcsrchr(self, 92);
+        if (sep == NULL) { return 0; }
+        *sep = 0;
+
+        /* <release>\\<launcher>.exe -> <release> */
+        sep = wcsrchr(exe, 92);
+        if (sep == NULL) { return 0; }
+        *sep = 0;
+
+        return _wcsicmp(self, exe) == 0;
+    }
+    /* Deny: end the process outright, never touching Python.
+
+       Why not raise an exception: measured 2026-10-05, this module does not
+       survive a Python exception path once VMProtect Ultra has virtualized its
+       regions. The same source unprotected gives a clean `raise`; packed, the
+       call runs off into another function's code and dies (access violation,
+       or an assert firing inside mild_voice_filters' f-string join). Tried
+       PermissionError, ValueError, RuntimeError, a custom exception class, and
+       raising from an unmarked helper function. With 2 virtualized regions it
+       sometimes worked; with 14 and 15 it never did. So the refusal happens
+       entirely in C: no exception object, no traceback, no module globals.
+       0x46434731 is "FCG1". */
+    static void fc_host_deny(void) {
+        ExitProcess(0x46434731u);
+    }
+    #else
+    static int fc_host_gate_enabled(void) { return 0; }
+    static int fc_host_ok(void) { return 1; }
+    static void fc_host_deny(void) { }
+    #endif
+    """
+    int fc_host_gate_enabled()
+    int fc_host_ok()
+    void fc_host_deny()
+
+
+# ── 算法宿主机门禁 ──────────────────────────────────────────────────────
+# 发布构建（gcc 加 -DFC_LICENSE_GATE）时，每个算法入口先确认自己确实运行在
+# 发布启动器进程里：宿主可执行文件必须与本扩展模块处于同一个发布根目录
+# （<发布根>\app\_flowcut_core.pyd 与 <发布根>\<启动器>.exe）。
+# 拿系统里任意 CPython 3.9 旁加载本模块、或把它嵌进别人的程序，都在这里被拒。
+# 未定义该宏时一切放行，源码调试与旧构建完全不受影响。
+#
+# 这一层挡的是实测到的攻击形态（裸解释器旁加载 .pyd），不是密码学证明：把本模块
+# 拷进自己的程序、再补一个同名目录结构的可执行文件仍可绕过。整个发布目录被拷走
+# 的情况不靠这里，由启动器自身的 SProtect 联网授权负责。
+#
+# 拒绝为什么是「结束进程」而不是抛 Python 异常：见上面 fc_host_deny() 的说明。
+# 2026-10-05 实测，同一份源码，未加壳时抛任何异常都干净；VMProtect Ultra 虚拟化
+# 区域较多时异常路径曾出现访问越界和断言失败，所以拒绝整个放在 C 侧完成：
+# 不构造异常对象、不写 traceback、不碰模块全局变量。判定本身不加 VMProtect 标记。
+
+
+cdef void _ensure_host():
+    """每个算法入口的第一道闸：不在发布启动器进程内就直接终止进程。"""
+    if fc_host_gate_enabled() == 0:
+        return
+    if fc_host_ok() == 0:
+        fc_host_deny()
 
 
 FILTER_PRESETS = {
@@ -29,6 +129,7 @@ FILTER_PRESETS = {
 
 
 def playback_rate(minimum, maximum, seed=None):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:random.playback")
     rng = random.SystemRandom() if seed is None else random.Random(seed)
     lo, hi = sorted((max(0.5, min(2.0, float(minimum))),
@@ -39,6 +140,7 @@ def playback_rate(minimum, maximum, seed=None):
 
 
 def filter_segments(count, seed=None):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:random.filter")
     rng = random.SystemRandom() if seed is None else random.Random(seed)
     names = tuple(FILTER_PRESETS)
@@ -52,6 +154,7 @@ def filter_segments(count, seed=None):
 
 def color_adjustments_filter(base_tag, brightness=0, contrast=0, saturation=0,
                              temperature=0, filter_name="", filter_strength=100):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:color.adjust")
     filters = []
     preset = FILTER_PRESETS.get(filter_name)
@@ -104,6 +207,7 @@ def color_adjustments_filter(base_tag, brightness=0, contrast=0, saturation=0,
 
 
 def mild_voice_filters(input_tag, duration, seed=None):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:audio.mild")
     rng = random.SystemRandom() if seed is None else random.Random(seed)
     p = {
@@ -260,6 +364,7 @@ def qilin_pipeline_plan(int width, int height, seed=None):
     cdef double frame_seek
     cdef str keyframes
 
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:qilin.1004.pipeline")
     try:
         rng = random.SystemRandom() if seed is None else random.Random(seed)
@@ -290,6 +395,7 @@ def qilin_sps_compat_byte(tail):
     cdef int before
     cdef int stop
 
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:qilin.1004.sps")
     try:
         raw = bytes(tail)
@@ -382,6 +488,7 @@ def _liuying_perspective(seed, enabled_expr=None, random_frame_index="in", subtl
 
 def liuying_video_filter(seed, random_enhance=False):
     cdef str result
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:liuying.1003.video")
     try:
         result = _LIUYING_BASE_FILTER + "," + _liuying_perspective(
@@ -400,6 +507,7 @@ def liuying_video_filter(seed, random_enhance=False):
 
 
 def liuying_perspective_filter(seed):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:liuying.1003.branch")
     try:
         return _liuying_perspective(seed)
@@ -408,6 +516,7 @@ def liuying_perspective_filter(seed):
 
 
 def liuying_flash_filter(seed):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:liuying.1003.flash")
     try:
         return _liuying_perspective(seed, _LIUYING_FLASH_ENABLE, _LIUYING_FLASH_INDEX)
@@ -416,6 +525,7 @@ def liuying_flash_filter(seed):
 
 
 def liuying_base_filter():
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:liuying.1003.base")
     try:
         return _LIUYING_BASE_FILTER
@@ -424,6 +534,7 @@ def liuying_base_filter():
 
 
 def liuying_seed(base_seed, task_index):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:liuying.1003.seed")
     try:
         return int(base_seed) + int(task_index) * _LIUYING_SEED_STEP
@@ -432,6 +543,7 @@ def liuying_seed(base_seed, task_index):
 
 
 def motianxinglun_pipeline_plan(duration):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:motianxinglun.1005.pipeline")
     try:
         return {
@@ -444,6 +556,7 @@ def motianxinglun_pipeline_plan(duration):
 
 
 def tianbaixinglun_pipeline_plan(duration):
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:tianbaixinglun.1005.pipeline")
     try:
         return {
@@ -480,6 +593,7 @@ def mask_alpha(w, h, feather, margin_tb, margin_lr):
     cdef str inner
     cdef str part
     cdef str result
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:mask.alpha")
     d = max(1, <int>builtins.round(feather * min(w, h) / 1080.0))
     offset = d / 2.0
@@ -507,6 +621,7 @@ def butterfly_plan(double duration, double head, object hidden=None, int fps=30)
     cdef double chunk
     cdef list chunks = []
 
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:butterfly.plan")
     try:
         hidden_value = duration + 0.0667 if hidden is None else float(hidden)
@@ -542,6 +657,7 @@ def window_matte_chain(
     cdef str x_expr
     cdef str y_expr
 
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:template.window")
     try:
         d = max(1, <int>builtins.round(feather * min(canvas_width, canvas_height) / 1080.0))
@@ -574,6 +690,7 @@ def concat_filter_segment(
     cdef str video_filter
     cdef str audio_filter
 
+    _ensure_host()
     VMProtectBeginUltra(b"FCALGO:concat.segment")
     try:
         video_filter = (

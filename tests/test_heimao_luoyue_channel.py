@@ -12,7 +12,9 @@ from modes.shipinhao import mode_heimao_luoyue_worker as worker
 
 groups = load_modes()
 assert MODE in groups["视频号处理"]
-assert groups["视频号处理"][0] is MODE
+# 爆闪必须是这个分组里id 唯一的一条，但不再是第一条：08e49b3 把星火的流萤/栖霞
+# 并入视频号分组后，下拉框排序变了。这里只断言注册本身，不断言展示顺序。
+assert sum(1 for mode in groups["视频号处理"] if mode.id == MODE.id) == 1
 assert MODE.name == "爆闪"
 assert not MODE.needs_aux and MODE.has_gpu_command() and MODE.supports_copies
 assert MODE.output_count({"copies": 999}) == 100

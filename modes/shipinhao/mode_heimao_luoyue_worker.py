@@ -15,6 +15,10 @@ from pathlib import Path
 try:
     from app._random_frame_swap_core import filter_graph, shuffled_order, special_offsets
 except ImportError:
+    # 发布版必须用受保护的 .pyd。若退到明文等价实现，等于删掉一个文件就能绕开
+    # VMProtect —— 所以 frozen 下直接失败，只在源码树里保留明文回退方便调试。
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        raise RuntimeError("发布版缺少或无法加载受保护的爆闪算法核心")
     from modes.shipinhao.heimao_luoyue_core import filter_graph, shuffled_order, special_offsets
 
 

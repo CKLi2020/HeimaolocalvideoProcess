@@ -7,12 +7,12 @@
 整体流程如下：
 
 ```text
-核心算法 flowcut_core.pyx
-        ↓ Cython 编译
-_flowcut_core.raw.pyd
-        ↓ VMProtect Ultra 虚拟化
-app/_flowcut_core.pyd
-        ↓ Nuitka standalone 打包
+核心算法 flowcut_core.pyx                核心算法 random_frame_swap_core.pyx
+        ↓ Cython 编译                            ↓ Cython 编译
+_flowcut_core.raw.pyd                    _random_frame_swap_core.raw.pyd
+        ↓ VMProtect Ultra 虚拟化                 ↓ VMProtect Ultra 虚拟化
+app/_flowcut_core.pyd                    app/_random_frame_swap_core.pyd
+        ↓ Nuitka standalone 打包（两颗核心一起收进 app/）
 月落@苍狼_V版本.exe + 运行依赖
         ↓ 手工使用 SProtect
 最终发布 EXE
@@ -23,7 +23,8 @@ app/_flowcut_core.pyd
 核心源码位于：
 
 ```text
-native_src/flowcut_core.pyx
+native_src/flowcut_core.pyx            主算法（17 个 FCALGO 标记）
+native_src/random_frame_swap_core.pyx  爆闪帧序交换（3 个 RFCORE 标记）
 ```
 
 当前放入原生核心的内容：
@@ -34,16 +35,30 @@ native_src/flowcut_core.pyx
 | `FCALGO:butterfly.plan` | 蝴蝶 AB 分段计划 |
 | `FCALGO:template.window` | 模板中央窗口计算 |
 | `FCALGO:concat.segment` | 素材拼接滤镜参数 |
+| `FCALGO:random.playback` | 随机播放速率 |
+| `FCALGO:random.filter` | 随机滤镜分段 |
+| `FCALGO:color.adjust` | 调色参数 |
+| `FCALGO:audio.mild` | 人声柔化滤镜 |
+| `FCALGO:qilin.1004.pipeline` | 云麒 1004 合成管线 |
+| `FCALGO:liuying.1003.*` | 流影 1003 的五段（video / branch / flash / base / seed） |
+| `RFCORE:graph` | 爆闪拼接滤镜图 |
+| `RFCORE:shuffle` | 帧序洗牌 |
+| `RFCORE:offsets` | ctts 时间戳偏移重算 |
 
-`scripts/build_native.ps1` 会完成以下工作：
+星火漫剧主核心当前包含 17 个 `FCALGO:*` 标记，覆盖云麒 SPS 兼容与两条星轮管线；爆闪核心另有 3 个 `RFCORE:*` 标记。宿主门禁本身不增加 VMProtect 区域。
+
+`scripts/build_native.ps1` 对两颗核心各完成以下工作：
 
 1. 用 Cython 把 `.pyx` 转为 C；
-2. 用 64 位 MinGW GCC 编译成 `.pyd`；
-3. 用 VMProtect Ultimate 对上述四个标记区域进行 Ultra 虚拟化；
-4. 导入保护后的 `.pyd` 并调用四组算法做冒烟测试；
-5. 测试通过后复制到 `app/_flowcut_core.pyd`。
+2. 用 64 位 MinGW GCC 编译成 `.pyd`（发布构建额外定义 `FC_LICENSE_GATE`，
+   打开宿主机门禁，详见 SECURITY.md）；
+3. 用 VMProtect Ultimate 虚拟化该核心的标记区域；
+4. 按 `engine/native_core.py` 声明的导出清单（`_REQUIRED` / `RANDOM_SWAP_REQUIRED`）
+   校验保护后的 `.pyd` 导出齐全；
+5. 导入保护后的 `.pyd` 并调用算法做冒烟测试；
+6. 测试通过后复制到 `app/`。
 
-只要编译、VMProtect 或冒烟测试中任意一步失败，正式打包就会停止。
+只要编译、VMProtect、导出校验或冒烟测试中任意一步失败，正式打包就会停止。
 
 ### 2. 调试版与发布版的区别
 
@@ -56,6 +71,27 @@ native_src/flowcut_core.pyx
 ```
 
 因此调试算法不会被放进发布目录。发布版如果找不到正确版本的 `_flowcut_core.pyd`，会直接报错，不会退回 Python 明文算法。
+
+### 2.1 通道配方也必须编译进产物
+
+除核心算法外，各通道自己的 ffmpeg 配方（滤镜图、编码参数）同样属于要保密的内容。
+
+**硬规则：通道配方只能是编译进 `modes` 包的 Python 模块常量，不得用
+`--include-data-files` 送进发布包。** 后者等于把配方明文交给任何解压发布包的人。
+
+以飞猫／听雪为例，它的配方放在：
+
+```text
+modes/douyin/feimao_recipe.py      FILTER_GRAPH（滤镜图）+ FFARGS（编码参数）
+```
+
+由 `--include-package=modes` 自动编译进启动器。原先的 `modes/douyin/filter_complex.txt`
+与 `modes/douyin/feimao_ffargs.json` 两个数据文件已删除，**不要**把它们加回
+`build_protected.ps1`：`build_release_manifest.py` 与 `verify_release.py` 都把它们列为
+禁止项，一旦重新出现在发布包就会中止构建或自检失败。
+
+例外只有 `modes/douyin/feimao_metadata.txt`：ffmpeg 必须从真实路径读它，且它的
+`title` 会写进成品 MP4，所以保持文件形态。
 
 ### 3. 外层程序
 

@@ -57,8 +57,13 @@ if (Test-Path -LiteralPath $Release) {
 }
 New-Item -ItemType Directory -Force -Path $Build, $Release | Out-Null
 
-Write-Host "==> Building and VMProtecting native algorithm core" -ForegroundColor Cyan
-& $NativeBuild -Python $Python -VmProtectDir $VmProtectDir
+Write-Host "==> Building and VMProtecting native algorithm core (host gate ON)" -ForegroundColor Cyan
+$NativeArgs = @{
+    Python       = $Python
+    VmProtectDir = $VmProtectDir
+    LicenseGate  = $true
+}
+& $NativeBuild @NativeArgs
 if ($LASTEXITCODE -ne 0) { throw "Protected native core build failed" }
 
 & $Python -m nuitka --version
@@ -73,11 +78,10 @@ try {
         --include-module=app._flowcut_core --include-module=app._random_frame_swap_core `
         --include-package=core --include-package=modes --include-package=cryptography `
         --nofollow-import-to=engine.dev_core `
+        --nofollow-import-to=modes.shipinhao.heimao_luoyue_core `
         --include-data-dir=ico=ico --include-data-dir=resources=resources `
         --include-data-dir=mode_defs=mode_defs --include-data-dir=client=client `
-        --include-data-files=modes/douyin/feimao_ffargs.json=modes/douyin/feimao_ffargs.json `
         --include-data-files=modes/douyin/feimao_metadata.txt=modes/douyin/feimao_metadata.txt `
-        --include-data-files=modes/douyin/filter_complex.txt=modes/douyin/filter_complex.txt `
         --include-data-dir=modes/douyin/qilin_artifacts=modes/douyin/qilin_artifacts `
         --include-data-dir=modes/kuaishou/tianbaixinglun_artifacts=modes/kuaishou/tianbaixinglun_artifacts `
         --windows-icon-from-ico="$Icon" `
