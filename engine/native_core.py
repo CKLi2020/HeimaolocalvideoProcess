@@ -15,6 +15,7 @@ _REQUIRED = (
     "color_adjustments_filter",
     "mild_voice_filters",
     "qilin_pipeline_plan",
+    "qilin_sps_compat_byte",
     "liuying_video_filter",
     "liuying_perspective_filter",
     "liuying_flash_filter",

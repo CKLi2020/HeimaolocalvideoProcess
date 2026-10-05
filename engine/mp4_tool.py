@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import struct
 import random
+from mmap import mmap
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple
 
 
 # Box types we care about
@@ -37,6 +38,30 @@ STCO = b"stco"
 CO64 = b"co64"
 
 CONTAINER_BOXES = {MOOV, TRAK, MDIA, STBL, EDTS}
+
+
+def iter_mp4_boxes(
+    data: bytes | bytearray | mmap, start: int, end: int
+) -> Iterator[tuple[bytes, int, int, int]]:
+    if not 0 <= start <= end <= len(data):
+        raise ValueError("Invalid MP4 box bounds")
+    position = start
+    while position < end:
+        if end - position < 8:
+            raise ValueError(f"Truncated MP4 box header at byte {position}")
+        size, kind = struct.unpack_from(">I4s", data, position)
+        header = 8
+        if size == 1:
+            if end - position < 16:
+                raise ValueError(f"Truncated extended MP4 box header at byte {position}")
+            size = struct.unpack_from(">Q", data, position + 8)[0]
+            header = 16
+        elif size == 0:
+            size = end - position
+        if size < header or position + size > end:
+            raise ValueError(f"Invalid MP4 box {kind!r} at byte {position}")
+        yield kind, position, header, size
+        position += size
 
 
 def _read_box_header(data: bytes, offset: int) -> Tuple[bytes, int, int, int]:
