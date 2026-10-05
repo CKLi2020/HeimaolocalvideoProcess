@@ -18,6 +18,10 @@ MCowBQYDK2VwAyEAQKOZna9f3CiWIQvYgKyZGlN/9eZAYci833gQSc8RwMk=
 -----END PUBLIC KEY-----
 """
 
+# product_id 取值集合。构建侧从 version.py 的 APP_ID 派生，两侧都改这一处即可。
+# 兼容早期的星火漫剧发布。
+_KNOWN_PRODUCT_IDS = frozenset({"heimao", "xinghu-juchang"})
+
 
 def _canonical(value: dict) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -47,7 +51,7 @@ def verify_release_manifest(root: Path, required: bool | None = None) -> dict:
         serialization.load_pem_public_key(_PUBLIC_KEY).verify(signature, _canonical(manifest))
     except Exception as exc:
         raise RuntimeError("发布包签名无效") from exc
-    if manifest.get("product_id") != "heimao" or int(manifest.get("schema") or 0) != 1:
+    if manifest.get("product_id") not in _KNOWN_PRODUCT_IDS or int(manifest.get("schema") or 0) != 1:
         raise RuntimeError("发布包产品或版本无效")
     for item in manifest.get("files") or []:
         relative = Path(str(item.get("path") or ""))

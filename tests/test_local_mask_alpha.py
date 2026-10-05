@@ -1,7 +1,8 @@
 """验证 engine.auth.mask_alpha 与编译版 app._flowcut_core.mask_alpha 等价。
 
-基准数据来自 docs/calibration/mask_alpha.json（由 scripts/calibrate_flowcut_core.py
-在去授权之前抓取）。用它而非实时调用编译版，好处是去掉 .pyd 依赖后仍可回归。
+基准数据来自 docs/calibration/mask_alpha.json（由 docs/archive/calibrate_flowcut_core.py
+在去授权之前抓取，该脚本与旧授权服务器一并下线后已归档）。用它而非实时调用编译版，
+好处是去掉 .pyd 依赖后仍可回归。
 
 用法：python tests\\test_local_mask_alpha.py
 """
@@ -58,7 +59,7 @@ def check_against_compiled() -> None:
 def check_against_dump() -> int:
     if not DUMP.exists():
         print(f"  基准文件不存在：{DUMP}")
-        print("  跳过（去授权之前运行 scripts/calibrate_flowcut_core.py 生成）")
+        print("  跳过（基准由 docs/archive/calibrate_flowcut_core.py 生成，已归档）")
         return 0
 
     data = json.loads(DUMP.read_text(encoding="utf-8"))

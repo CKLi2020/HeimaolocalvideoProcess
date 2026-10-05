@@ -1,7 +1,7 @@
 """验证 engine.auth.butterfly_plan 与编译版 authorized_butterfly_plan 等价。
 
-基准数据来自 docs/calibration/butterfly_plan.json（由 scripts/calibrate_flowcut_core.py
-在去授权之前、用真卡密换真令牌抓取）。编译版没有免授权的 butterfly_plan，
+基准数据来自 docs/calibration/butterfly_plan.json（由 docs/archive/calibrate_flowcut_core.py
+在去授权之前、用真卡密换真令牌抓取；该脚本与旧授权服务器一并下线后已归档）。编译版没有免授权的 butterfly_plan，
 所以只能对基准回归，无法像 mask_alpha 那样实时比对。
 
 判定比 mask_alpha 严：不仅 hidden/jump_frame/main_frames 要一致，chunks 列表
@@ -76,7 +76,7 @@ def check_edge_cases() -> int:
 def check_against_dump() -> int:
     if not DUMP.exists():
         print(f"  基准文件不存在：{DUMP}")
-        print("  跳过（去授权之前运行 scripts/calibrate_flowcut_core.py 生成）")
+        print("  跳过（基准由 docs/archive/calibrate_flowcut_core.py 生成，已归档）")
         return 0
 
     data = json.loads(DUMP.read_text(encoding="utf-8"))

@@ -1,4 +1,16 @@
-"""FlowCut 卡密授权：HMAC 请求、Ed25519 响应验签和设备绑定。"""
+"""【已归档，勿导入】FlowCut 卡密授权：HMAC 请求、Ed25519 响应验签和设备绑定。
+
+2026-10-05 归档。原因：
+
+* 产品代码已无任何导入（原唯一的引用者 ``scripts/calibrate_flowcut_core.py``
+  也已一并归档到本目录）。
+* 下面硬编码的 ``REQUEST_SECRET`` 属于已下线的 ``https://yizhixiangsi.cn``，
+  密钥既已随源码公开就没有保密价值，恢复这套流程等于用一把烧过的密钥。
+* 现在生效的授权是启动器侧的 SProtect NetVerify，以及 ``_flowcut_core.pyd``
+  内部的宿主机门禁（只认发布启动器进程，不发序列号）；本地不再需要 HMAC 令牌。
+
+保留只为追溯历史。不要把它接回产品，也不要复用其中的密钥。
+"""
 
 from __future__ import annotations
 

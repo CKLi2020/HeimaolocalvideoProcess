@@ -7,27 +7,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from modes.douyin.feimao_recipe import FFARGS, FILTER_GRAPH
+
 
 SCRIPT_DIR = Path(__file__).resolve().parents[2]
-FFARGS_PATH = Path(__file__).resolve().parent / "feimao_ffargs.json"
+# feimao_metadata.txt stays a real file: ffmpeg reads it with
+# "-f ffmetadata -i <path>", so it cannot become a module constant.
 DEFAULT_METADATA_PATH = Path(__file__).resolve().parent / "feimao_metadata.txt"
 CAPTURE_DIR = SCRIPT_DIR / "capture_douyin_feimao"
 DEFAULT_METADATA_URL = str(DEFAULT_METADATA_PATH)
-REQUIRED_FFARGS = (
-    "metadata_format",
-    "filter_graph_file",
-    "video_map",
-    "audio_map",
-    "captured_video_encoder",
-    "video_tag",
-    "pixel_format",
-    "frame_rate",
-    "audio_encoder",
-    "audio_bitrate",
-    "audio_channels",
-    "audio_sample_rate",
-    "container_format",
-)
 STREAM_FIELDS = (
     "index",
     "codec_type",
@@ -75,17 +63,6 @@ def find_tool(name: str) -> str:
     if found:
         return found
     raise WorkerError(f"Unable to find {name} in bin/, the script directory, or PATH")
-
-
-def load_ffargs() -> dict[str, str]:
-    try:
-        data = json.loads(FFARGS_PATH.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise WorkerError(f"Unable to load FFmpeg parameters from {FFARGS_PATH}: {error}") from error
-    invalid = [name for name in REQUIRED_FFARGS if not isinstance(data.get(name), str) or not data[name]]
-    if invalid:
-        raise WorkerError(f"Invalid or missing FFmpeg parameters in {FFARGS_PATH}: {', '.join(invalid)}")
-    return {name: data[name] for name in REQUIRED_FFARGS}
 
 
 def probe(ffprobe: str, media_path: Path) -> dict:
@@ -185,15 +162,13 @@ def build_command(
     video_tag: str | None = None,
     has_audio: bool = True,
 ) -> list[str]:
-    ffargs = load_ffargs()
-    filter_graph_path = FFARGS_PATH.parent / ffargs["filter_graph_file"]
-    try:
-        filter_graph = filter_graph_path.read_text(encoding="utf-8-sig")
-    except OSError as error:
-        raise WorkerError(f"Unable to read filter graph {filter_graph_path}: {error}") from error
+    # Both names are read from the module globals at call time so tests can
+    # monkeypatch them; the values themselves are compiled into the launcher.
+    ffargs = FFARGS
+    filter_graph = FILTER_GRAPH
     if not has_audio:
         if "[0:a]" not in filter_graph:
-            raise WorkerError(f"Filter graph has no input audio stream: {filter_graph_path}")
+            raise WorkerError("Filter graph has no input audio stream")
         filter_graph = filter_graph.replace("[0:a]", "[1:a]")
     if video_encoder != "libx265":
         # Hardware HEVC encoders reject interlaced-flagged frames.

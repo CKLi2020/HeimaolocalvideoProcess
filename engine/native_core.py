@@ -22,6 +22,16 @@ _REQUIRED = (
     "liuying_seed",
 )
 
+# 第二颗受保护核心 app/_random_frame_swap_core.pyd 的导出清单。它不从这里加载
+# （爆闪频道自己 import，见 modes/shipinhao/mode_heimao_luoyue_worker.py），但这
+# 里是「发布版必须导出哪些原生符号」的唯一声明处：build_native.ps1 和
+# verify_release.py 都读这一个元组，避免源码和已打包的 pyd 版本走散。
+RANDOM_SWAP_REQUIRED = (
+    "filter_graph",
+    "shuffled_order",
+    "special_offsets",
+)
+
 try:
     from app import _flowcut_core as core
 except ImportError:
