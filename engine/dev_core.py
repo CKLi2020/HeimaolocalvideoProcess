@@ -249,6 +249,30 @@ def qilin_pipeline_plan(width, height, seed=None):
         "rotation_source": _qilin_mosaic_source(4, 6, rng),
     }
 
+
+def qilin_sps_compat_byte(tail):
+    raw = bytes(tail)
+    if len(raw) != 8:
+        raise ValueError("Qilin SPS tail must contain exactly 8 bytes")
+    significant = "".join(f"{byte:08b}" for byte in raw).rstrip("0")
+    vui_tails = tuple(
+        "110101" + f"{primaries:08b}{transfer:08b}00000001" + "00000000"
+        for primaries in (1, 2)
+        for transfer in (1, 2)
+    )
+    before = raw[-1]
+    if before == 0:
+        raise ValueError("Qilin SPS has an unexpected zero terminal byte")
+    if any(significant.endswith(vui + "01") for vui in vui_tails):
+        return before
+    if not any(significant.endswith(vui + "1") for vui in vui_tails):
+        raise ValueError("SPS VUI tail does not match the validated Qilin layout")
+    stop = before & -before
+    if stop <= 1:
+        raise ValueError("SPS has no alignment space for Qilin compatibility")
+    return (before & ~stop) | (stop >> 1)
+
+
 _LIUYING_BASE_FILTER = (
     "fps=60,scale=576:1248:force_original_aspect_ratio=decrease,"
     "pad=576:1248:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"

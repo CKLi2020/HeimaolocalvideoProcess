@@ -6,6 +6,7 @@ from pathlib import Path
 from modes.base_mode import BaseMode
 from modes.douyin import mode_douyin_qilin_worker as worker
 from modes.douyin.hevc_gpu import select_hevc_encoder
+from modes.douyin.qilin_sps_compat import apply_qilin_sps_compatibility
 
 
 class ModeYunqiQilin(BaseMode):
@@ -18,7 +19,7 @@ class ModeYunqiQilin(BaseMode):
     output_suffix = "_yunqi"
     output_naming = "source"
     ext = "mp4"
-    help_text = "抖音处理 · 云麒1004（主视频输入，CPU / NVIDIA / AMD）"
+    help_text = "抖音处理 · 云麒1004（主视频输入，CPU / NVIDIA / AMD；启用平台 SPS 兼容，本地可能闪烁）"
 
     def __init__(self):
         self._work_dirs = {}
@@ -75,6 +76,13 @@ class ModeYunqiQilin(BaseMode):
     def render(self, state, main_video=None, aux_video=None, use_gpu=None, out_base=None):
         gpu_requested = use_gpu if use_gpu is not None else (state or {}).get("use_gpu")
         return "", bool(gpu_requested), "云麒为多阶段通道，请由本地处理服务调用 render_steps"
+
+    def finalize_render(self, out_base, state):
+        result = apply_qilin_sps_compatibility(Path(str(out_base) + "." + self.ext))
+        return (
+            "云麒平台 SPS 兼容（非标准尾部，本地播放可能闪烁）："
+            f"偏移 {result.offset}，0x{result.before:02x} → 0x{result.after:02x}"
+        )
 
     def cleanup_render(self, out_base):
         base = str(out_base)

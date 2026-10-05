@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import engine.local_processor as local_processor
 
 
@@ -190,3 +192,69 @@ def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypat
     assert cleaned == [str(output_dir / "input_staged.part")]
     assert (output_dir / "input_staged.mp4").is_file()
     assert completed[0][:3] == (1, 0, 1)
+
+
+@pytest.mark.parametrize("gpu_requested", [False, True])
+def test_finalize_failure_is_logged_and_gpu_retries_cpu(tmp_path, monkeypatch, gpu_requested):
+    sources = [tmp_path / "first.mp4", tmp_path / "second.mp4"]
+    for source in sources:
+        source.write_bytes(b"source")
+    commands = []
+    finalized = []
+    cleaned = []
+    completed = []
+    logs = []
+    active = {}
+
+    class Runner:
+        def run(self, command, **_kwargs):
+            commands.append(command)
+            Path(active["base"] + ".mp4").write_bytes(b"encoded")
+            return 0
+
+    def render_steps(_state, _main_video, _aux_video, use_gpu, out_base):
+        active.update(base=out_base, gpu=use_gpu)
+        return ["gpu" if use_gpu else "cpu"], use_gpu, ""
+
+    def finalize_render(out_base, _state):
+        finalized.append(active["gpu"])
+        if active["gpu"] or not gpu_requested:
+            raise ValueError("Unsupported SPS layout")
+        Path(out_base + ".mp4").write_bytes(b"compatible")
+        return "SPS compatibility applied"
+
+    mode = SimpleNamespace(
+        gpu_supported=True, ext="mp4", output_suffix="_compat", output_naming="source",
+        has_gpu_command=lambda: True, render_steps=render_steps,
+        finalize_render=finalize_render,
+        cleanup_render=cleaned.append,
+    )
+    service = local_processor.LocalProcessorService.__new__(local_processor.LocalProcessorService)
+    service.config = {}
+    service.runner = Runner()
+    service._stop = threading.Event()
+    monkeypatch.setattr(local_processor, "probe_duration", lambda *_args: 1.0)
+    monkeypatch.setattr(
+        local_processor, "verify_output",
+        lambda _config, path, **_kwargs: (Path(path).read_bytes() == b"compatible", "ok"),
+    )
+    output_dir = tmp_path / "output"
+    service._run(
+        {"use_gpu": gpu_requested, "output_dir": str(output_dir), "output_naming": "source"},
+        mode, sources, [], logs.append, lambda _value: None,
+        lambda *result: completed.append(result),
+    )
+    assert len(cleaned) == 2
+    assert any("Unsupported SPS layout" in line for line in logs)
+    assert not list(output_dir.glob("*.part.mp4"))
+    if gpu_requested:
+        assert commands == ["gpu", "cpu", "cpu"]
+        assert finalized == [True, False, False]
+        assert completed[0][:3] == (2, 0, 2)
+        assert any("自动改用 CPU" in line for line in logs)
+        assert logs.count("  SPS compatibility applied") == 2
+    else:
+        assert commands == ["cpu", "cpu"]
+        assert finalized == [False, False]
+        assert completed[0][:3] == (0, 2, 2)
+        assert not list(output_dir.glob("*.mp4"))

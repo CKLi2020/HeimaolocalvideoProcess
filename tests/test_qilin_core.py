@@ -26,3 +26,7 @@ def test_qilin_pipeline_plan_is_complete_and_seeded():
     assert "scale=1920:1080" in first["blend_graph"]
     assert first["keyframes"].startswith("0,")
 
+
+def test_qilin_sps_compatibility_is_provided_by_core():
+    assert core.qilin_sps_compat_byte(bytes.fromhex("caf016a040402010")) == 0x08
+    assert core.qilin_sps_compat_byte(bytes.fromhex("caf016a040402008")) == 0x08

@@ -105,6 +105,7 @@ def main():
         assert "anoisesrc=color=pink" in first_blend_graph
         for command in steps:
             assert runner.run(command) == 0, runner.tail(30)
+        assert "SPS" in qilin.finalize_render(str(qilin_base), {"use_gpu": False})
         assert (qilin_work / "geo.png").stat().st_size > 500
         assert (qilin_work / "rot.png").stat().st_size > 500
         ok, message = verify_output(cfg, str(qilin_base) + ".mp4")
