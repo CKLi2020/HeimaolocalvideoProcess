@@ -76,6 +76,8 @@ assert q['geo_source'].count('drawbox=')==36
 assert q['rotation_source'].count('drawbox=')==24
 assert 'xstack=inputs=20' in q['grid_graph']
 assert 'anoisesrc=color=pink' in q['blend_graph']
+assert m.qilin_sps_compat_byte(bytes.fromhex('caf016a040402010'))==8
+assert m.qilin_sps_compat_byte(bytes.fromhex('caf016a040402008'))==8
 assert m.liuying_video_filter(1003).count('perspective=')==1
 assert m.liuying_video_filter(1003,True).count('perspective=')==2
 assert m.liuying_perspective_filter(1003).startswith('perspective=')
@@ -84,7 +86,7 @@ assert m.liuying_base_filter().startswith('fps=60')
 assert m.liuying_seed(1003,2)==210461
 assert m.motianxinglun_pipeline_plan(1.25)['image_fps']=='120'
 assert 'all_mode=screen' in m.tianbaixinglun_pipeline_plan(1.25)['blend_filter']
-print('smoke test ok: 16 algorithm exports exercised')
+print('smoke test ok: 17 algorithm exports exercised')
 '@
         Markers       = @(
             "FCALGO:mask.alpha",
@@ -96,6 +98,7 @@ print('smoke test ok: 16 algorithm exports exercised')
             "FCALGO:color.adjust",
             "FCALGO:audio.mild",
             "FCALGO:qilin.1004.pipeline",
+            "FCALGO:qilin.1004.sps",
             "FCALGO:liuying.1003.video",
             "FCALGO:liuying.1003.branch",
             "FCALGO:liuying.1003.flash",
@@ -147,6 +150,7 @@ print('smoke test ok: 3 random-swap exports exercised')
 # which is exactly the case during a build, hence the AST read instead of import.
 $ExportCheck = @'
 import ast, importlib.util, os, sys
+
 
 
 core_path, required_path, const_name, module_name = sys.argv[1:5]

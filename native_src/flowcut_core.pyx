@@ -392,6 +392,42 @@ def qilin_pipeline_plan(int width, int height, seed=None):
     finally:
         VMProtectEnd()
 
+
+def qilin_sps_compat_byte(tail):
+    cdef bytes raw
+    cdef str significant
+    cdef object vui_tails
+    cdef int before
+    cdef int stop
+
+    _ensure_host()
+    VMProtectBeginUltra(b"FCALGO:qilin.1004.sps")
+    try:
+        raw = bytes(tail)
+        if len(raw) != 8:
+            raise ValueError("Qilin SPS tail must contain exactly 8 bytes")
+        significant = "".join("%08d" % int(bin(byte)[2:]) for byte in raw).rstrip("0")
+        vui_tails = tuple(
+            "110101" + ("%08d" % int(bin(primaries)[2:])) +
+            ("%08d" % int(bin(transfer)[2:])) + "00000001" + "00000000"
+            for primaries in (1, 2)
+            for transfer in (1, 2)
+        )
+        before = raw[-1]
+        if before == 0:
+            raise ValueError("Qilin SPS has an unexpected zero terminal byte")
+        if any(significant.endswith(vui + "01") for vui in vui_tails):
+            return before
+        if not any(significant.endswith(vui + "1") for vui in vui_tails):
+            raise ValueError("SPS VUI tail does not match the validated Qilin layout")
+        stop = before & -before
+        if stop <= 1:
+            raise ValueError("SPS has no alignment space for Qilin compatibility")
+        return (before & ~stop) | (stop >> 1)
+    finally:
+        VMProtectEnd()
+
+
 _LIUYING_BASE_FILTER = (
     "fps=60,scale=576:1248:force_original_aspect_ratio=decrease,"
     "pad=576:1248:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"

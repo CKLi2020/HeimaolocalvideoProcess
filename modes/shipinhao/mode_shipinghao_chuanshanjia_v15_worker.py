@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
+from engine.mp4_tool import iter_mp4_boxes
 from engine.native_core import core as _native_core
 
 
@@ -379,24 +380,6 @@ def run_random_perspective_branch(
             f"decode exit={decoder_code} ({source_message}); "
             f"perspective exit={transform_code} ({perspective_message})"
         )
-
-
-def iter_mp4_boxes(data: bytes | bytearray, start: int, end: int):
-    position = start
-    while position < end:
-        if end - position < 8:
-            raise ValueError(f"Truncated MP4 box header at byte {position}")
-        size, kind = struct.unpack_from(">I4s", data, position)
-        header = 8
-        if size == 1:
-            size = struct.unpack_from(">Q", data, position + 8)[0]
-            header = 16
-        elif size == 0:
-            size = end - position
-        if size < header or position + size > end:
-            raise ValueError(f"Invalid MP4 box {kind!r} at byte {position}")
-        yield kind, position, header, size
-        position += size
 
 
 def make_mp4_box(kind: bytes, payload: bytes | bytearray) -> bytes:

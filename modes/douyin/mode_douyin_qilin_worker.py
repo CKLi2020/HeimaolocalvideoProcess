@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from engine.native_core import core as _native_core
+from modes.douyin.qilin_sps_compat import apply_qilin_sps_compatibility
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -353,6 +354,12 @@ def produce(
         for command in commands:
             run_command(command)
 
+    compatibility = apply_qilin_sps_compatibility(output_path)
+    print(
+        "Qilin platform compatibility (nonstandard SPS): "
+        f"offset={compatibility.offset}, {compatibility.before:#04x} -> {compatibility.after:#04x}",
+        file=sys.stderr,
+    )
     return probe(ffprobe, output_path)
 
 
@@ -413,6 +420,12 @@ def main() -> int:
                     ],
                     "format_duration_tolerance_seconds": 0.001,
                     "format_duration_tolerance_requires_exact_stream_durations_and_frame_counts": True,
+                },
+                "platform_compatibility": {
+                    "enabled": True,
+                    "scope": "Qilin outputs only",
+                    "nonstandard_sps": True,
+                    "validation": "User-validated upload controls on 2026-10-05; local playback may flicker.",
                 },
                 "capture_evidence": {
                     "source_run": CAPTURE_RUN,
