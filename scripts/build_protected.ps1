@@ -136,11 +136,23 @@ Copy-Item -LiteralPath $Icon -Destination (Join-Path $Release "ico") -Force
 Copy-Item -LiteralPath $Ffmpeg, $Ffprobe -Destination $Release -Force
 
 $SProtectName = "$([IO.Path]::GetFileNameWithoutExtension($LauncherName)).sp.exe"
+$SProtectConfig = [ordered]@{
+    v = 2
+    Auth = 0
+    Shell = 2
+    ImportTable = @{ Type = 2 }
+    MemoryCheck = 2
+    CheckDbgBits = 3
+    YyyEnhance = 0
+    TlsFuncStat = 0
+    UseDllBox = 0
+} | ConvertTo-Json -Depth 3
+[IO.File]::WriteAllText((Join-Path $Release "$LauncherName.sp"), $SProtectConfig, [Text.Encoding]::UTF8)
 $Instructions = @(
     "The native algorithm core is protected by VMProtect Ultra.",
     "",
     "Next steps:",
-    "1. Open $LauncherName with SProtect.",
+    "1. Open $LauncherName with SProtect; keep Auth disabled (Auth=0, no NetVerify).",
     "2. Save the protected output as $SProtectName in this directory.",
     "3. Run finalize_sprotect_release.bat from the project root."
 ) -join [Environment]::NewLine
