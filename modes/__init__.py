@@ -45,7 +45,7 @@ PLATFORM_LABELS = {
     "tk": "TK处理",
     "baijia": "百家处理",
     "bili": "哔哩处理",
-    "duoduo": "多多处理",
+    "duoduo": "千川处理",
 }
 
 # 打包后兜底:文件扫描为空时直接导入这些编译进二进制的模块
@@ -67,6 +67,7 @@ _BUILTIN = [
     ("xiaohongshu", "mode_pianpian0924"),
     ("xiaohongshu", "mode_shuanggui0924"),
     ("xiaohongshu", "mode_yanjingshe0928"),
+    ("duoduo", "mode_manluo_jinghong"),
 ]
 
 # mode_defs 的 json 里允许覆盖的字段

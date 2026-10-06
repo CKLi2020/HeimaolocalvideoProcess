@@ -84,7 +84,9 @@ assert m.liuying_base_filter().startswith('fps=60')
 assert m.liuying_seed(1003,2)==210461
 assert m.motianxinglun_pipeline_plan(1.25)['image_fps']=='120'
 assert 'all_mode=screen' in m.tianbaixinglun_pipeline_plan(1.25)['blend_filter']
-print('smoke test ok: 17 algorithm exports exercised')
+p = m.manluo_jinghong_plan('medium', 3.0, 4, 20261006)
+assert p['fps'] > 0 and p['noise_indices'] and max(p['noise_indices']) < 4
+print('smoke test ok: 18 algorithm exports exercised')
 '@
         Markers       = @(
             "FCALGO:mask.alpha",
@@ -104,6 +106,7 @@ print('smoke test ok: 17 algorithm exports exercised')
             "FCALGO:liuying.1003.seed",
             "FCALGO:motianxinglun.1005.pipeline",
             "FCALGO:tianbaixinglun.1005.pipeline"
+            "FCALGO:manluo.jinghong"
         )
     },
     @{

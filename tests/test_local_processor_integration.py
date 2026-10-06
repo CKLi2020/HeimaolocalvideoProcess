@@ -33,7 +33,7 @@ finally:
     modes.MODES_DIR = source_modes_dir
 assert list(packaged_groups) == [
     "抖音处理", "快手处理", "视频号处理", "小红书处理",
-    "TK处理", "百家处理", "哔哩处理", "多多处理",
+    "TK处理", "百家处理", "哔哩处理", "千川处理",
 ]
 
 
@@ -57,11 +57,18 @@ assert len(page.service.mode_groups) == 8
 assert page.current_mode is not None
 assert page.start_button.text() == "▶ 开始处理"
 assert all(not page._platforms[title][1].isEnabled() for title in (
-    "TK处理", "百家处理", "哔哩处理", "多多处理",
+    "TK处理", "百家处理", "哔哩处理",
 ))
 assert all(page._platforms[title][1].isEnabled() for title in (
-    "抖音处理", "快手处理", "视频号处理", "小红书处理",
+    "抖音处理", "快手处理", "视频号处理", "小红书处理", "千川处理",
 ))
+
+_frame, qianchuan = page._platforms["千川处理"]
+assert [qianchuan.itemText(i) for i in range(qianchuan.count())] == ["漫落惊鸿"]
+page._activate("千川处理")
+assert page.current_mode.id == "duoduo/manluo_jinghong"
+assert not page.tianqiong_options.isHidden()
+assert page.dedup_mode.currentText() == "中度"
 
 _frame, shipinhao = page._platforms["视频号处理"]
 assert [shipinhao.itemText(i) for i in range(shipinhao.count())] == [
