@@ -187,11 +187,40 @@ def test_staged_mode_retries_all_cpu_steps_after_gpu_failure(tmp_path, monkeypat
     )
 
     assert commands == ["gpu-stage-1", "cpu-stage-1", "cpu-stage-2"], (completed, logs)
-    assert progress_enabled == [False, False, True]
+    assert progress_enabled == [True, True, True]
     assert finalized == [str(output_dir / "input_staged.part")]
     assert cleaned == [str(output_dir / "input_staged.part")]
     assert (output_dir / "input_staged.mp4").is_file()
     assert completed[0][:3] == (1, 0, 1)
+
+
+def test_staged_mode_maps_every_command_into_total_progress(tmp_path):
+    reported = []
+
+    class Runner:
+        def run(self, _command, on_progress, **_kwargs):
+            on_progress(50)
+            on_progress(100)
+            return 0
+
+    mode = SimpleNamespace(
+        gpu_supported=False,
+        ext="mp4",
+        has_gpu_command=lambda: False,
+        render_steps=lambda *_args, **_kwargs: (["stage-1", "stage-2"], False, ""),
+    )
+    service = local_processor.LocalProcessorService.__new__(local_processor.LocalProcessorService)
+    service.runner = Runner()
+    service._stop = threading.Event()
+
+    code, fell_back = service._run_commands(
+        {"use_gpu": False}, mode, tmp_path / "input.mp4", None,
+        str(tmp_path / "output.part"), 10.0, reported.append,
+        lambda _message: None, False,
+    )
+
+    assert (code, fell_back) == (0, False)
+    assert reported == [25.0, 50.0, 75.0, 100.0]
 
 
 @pytest.mark.parametrize("gpu_requested", [False, True])
