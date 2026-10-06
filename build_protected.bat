@@ -27,6 +27,6 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Core-protected standalone build completed.
-echo Protect the release EXE with SProtect, then run finalize_sprotect_release.bat.
+echo Core-protected standalone build completed and ready to use.
+echo Optional: protect the release EXE with SProtect, then run finalize_sprotect_release.bat.
 pause
