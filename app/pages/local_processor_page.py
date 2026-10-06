@@ -103,6 +103,17 @@ class LocalProcessorPage(QWidget):
         self.mode5_options.hide()
         execution_layout.addWidget(self.mode5_options)
 
+        self.tianqiong_options = QWidget()
+        tianqiong_layout = QHBoxLayout(self.tianqiong_options)
+        tianqiong_layout.setContentsMargins(0, 0, 0, 0)
+        tianqiong_layout.addWidget(QLabel("去重强度："))
+        self.dedup_mode = QComboBox()
+        self.dedup_mode.addItems(["中度", "重度"])
+        tianqiong_layout.addWidget(self.dedup_mode)
+        tianqiong_layout.addStretch()
+        self.tianqiong_options.hide()
+        execution_layout.addWidget(self.tianqiong_options)
+
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -156,7 +167,7 @@ class LocalProcessorPage(QWidget):
         return edit
 
     def _load_modes(self):
-        unavailable = {"TK处理", "百家处理", "哔哩处理", "多多处理"}
+        unavailable = {"TK处理", "百家处理", "哔哩处理"}
         for index, (title, modes) in enumerate(self.service.mode_groups.items()):
             frame = QFrame()
             frame.setObjectName("localModeCard")
@@ -194,6 +205,9 @@ class LocalProcessorPage(QWidget):
         self.copies_spin.setVisible(supports_copies)
         self.mode5_options.setVisible(
             bool(getattr(self.current_mode, "supports_mode5_switches", False))
+        )
+        self.tianqiong_options.setVisible(
+            bool(getattr(self.current_mode, "supports_dedup_strength", False))
         )
         if self.current_mode:
             self.log_received.emit(f"当前模式：{title} · {self.current_mode.name}")
@@ -257,6 +271,7 @@ class LocalProcessorPage(QWidget):
             "mode5_lasong": self.mode5_lasong.isChecked(),
             "mode5_ronghe": self.mode5_ronghe.isChecked(),
             "mode5_daoli": self.mode5_daoli.isChecked(),
+            "dedup_mode": self.dedup_mode.currentText(),
         }
         self.progress.setValue(0)
         self.start_button.setEnabled(False)

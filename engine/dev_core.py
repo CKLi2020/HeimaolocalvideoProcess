@@ -400,6 +400,109 @@ def tianbaixinglun_pipeline_plan(duration):
     }
 
 
+def manluo_jinghong_plan(mode, duration, noise_count, seed, crf_override=None):
+    """源码调试版；正式发布使用 VMProtect 保护的同名原生实现。"""
+    mode = str(mode).lower()
+    if mode not in ("medium", "heavy"):
+        raise ValueError("mode must be medium or heavy")
+    noise_count = int(noise_count)
+    if noise_count < 1:
+        raise ValueError("noise_count must be positive")
+    duration = max(0.0, float(duration))
+    rng = random.Random(int(seed))
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+    def token(length):
+        return "".join(rng.choice(chars) for _ in range(length))
+
+    heavy = mode == "heavy"
+    if heavy:
+        fps = round(rng.uniform(29.90, 30.00), 4)
+        crf = crf_override if crf_override is not None else rng.choice([20, 24])
+        dct8 = rng.choice([0, 1])
+        x264 = {
+            "qcomp": round(rng.uniform(.58, .77), 2), "qpmin": rng.randint(13, 19), "qpmax": 30,
+            "aq-mode": 2, "aq-strength": round(rng.uniform(.67, 1.40), 2), "deblock": "-1,0",
+            "me": "umh", "subme": rng.randint(6, 9), "direct": rng.choice(["spatial", "temporal"]),
+            "8x8dct": dct8, "weightb": rng.randint(0, 1),
+            "partitions": rng.choice(["none", "p8x8,i8x8,i4x4"]), "ref": rng.randint(1, 2),
+            "merange": rng.randint(21, 27), "scenecut": rng.randint(54, 80),
+            "deadzone_inter": rng.randint(17, 19), "deadzone_intra": rng.randint(19, 20), "qpstep": 4,
+        }
+        psy = f"{rng.uniform(.57,.74):.2f}:{rng.randint(0,1)}"
+        gop = rng.randint(19, 28)
+        key_start, key_step = (.53, .97), (.53, .97)
+        rate = 1.0 if rng.random() < .5 else rng.uniform(.9985, 1.0020)
+        extra_tempo = rng.uniform(.9975, 1.0030)
+        micro_tempo = rng.uniform(1.0015, 1.0070)
+        weight_range = (.015, .050)
+        effect_br, final_br = rng.randint(175, 182), rng.randint(159, 220)
+    else:
+        fps = round(rng.uniform(29.98, 30.08), 4)
+        crf = crf_override if crf_override is not None else rng.choice([21, 22])
+        dct8 = rng.choice([0, 1])
+        x264 = {
+            "qcomp": round(rng.uniform(.64, .82), 2), "qpmin": rng.randint(16, 19),
+            "qpmax": rng.randint(27, 29), "aq-mode": 2,
+            "aq-strength": round(rng.uniform(.88, 1.24), 2),
+            "deblock": f"-{rng.randint(1,2)},-1", "me": "dia", "subme": rng.randint(6, 8),
+            "direct": "spatial", "8x8dct": dct8, "weightb": 1,
+            "partitions": "p8x8,b8x8,i4x4", "ref": rng.randint(3, 4),
+            "merange": rng.randint(28, 31), "scenecut": rng.randint(45, 74),
+            "deadzone_inter": rng.randint(14, 20), "deadzone_intra": rng.randint(15, 18), "qpstep": 4,
+        }
+        psy = f"{rng.uniform(.70,.88):.2f}:{rng.randint(0,1)}"
+        gop = rng.randint(15, 18)
+        key_start, key_step = (.40, .63), (.40, .63)
+        rate = rng.uniform(1.0005, 1.0013)
+        extra_tempo = rng.uniform(.9983, 1.0018) if rng.random() < .65 else None
+        micro_tempo = rng.uniform(.9970, 1.0030)
+        weight_range = (.03, .10)
+        effect_br, final_br = rng.randint(165, 175), rng.randint(164, 176)
+
+    key_times = []
+    current = rng.uniform(*key_start)
+    while current < duration:
+        key_times.append(f"{current:.6f}")
+        current += rng.uniform(*key_step)
+    noise_indices = rng.sample(range(noise_count), min(noise_count, rng.choice([1, 2])))
+    delays = [rng.randint(20, 200) for _ in noise_indices]
+    weights = [rng.uniform(*weight_range) for _ in noise_indices]
+    eq_freqs = rng.sample(list(range(1000, 9000, 1000)), rng.randint(5, 7))
+    eqs = ",".join(
+        f"equalizer=f={frequency}:t=q:w=1:g={rng.uniform(-.30,.25):.2f}"
+        for frequency in eq_freqs
+    )
+    created = datetime(2020, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=rng.randrange(5 * 365 * 86400))
+    suffix = token(8)
+    profiles = [
+        {"title": f"VID_{suffix.upper()}", "album": "Camera", "genre": "Video", "description": "Video recorded with camera"},
+        {"title": f"kuaishou_{suffix}", "artist": f"KY_Creator_{token(6)}", "composer": "KuaiYing", "album": "KuaiYing_Video", "genre": "Video", "comment": token(12), "description": "Created by KuaiYing"},
+        {"title": f"untitled_{suffix}", "artist": f"Creator_{token(6)}", "composer": "Jianying", "album": "Jianying_Project", "genre": "Video", "comment": token(16), "description": "Created by Jianying"},
+    ]
+    tags = rng.choice(profiles)
+    tags.update(date=str(created.year), creation_time=created.isoformat(timespec="milliseconds").replace("+00:00", "Z"))
+
+    def echo():
+        return {
+            "delay": rng.uniform(10, 16), "decay": rng.uniform(.04, .09),
+            "left_delay": rng.uniform(.2, .7), "right_delay": rng.uniform(.2, .7),
+            "volume": rng.uniform(-.08, .05),
+        }
+
+    return {
+        "fps": fps, "crf": crf, "dct8": dct8, "x264": x264, "psy_rd": psy, "gop": gop,
+        "forced_keyframes": key_times, "rate_factor": rate, "extra_tempo": extra_tempo,
+        "micro_tempo": micro_tempo, "noise_indices": noise_indices, "delays_ms": delays,
+        "weights": weights, "eq_frequencies": eq_freqs, "eq_filter": eqs,
+        "effect_bitrate_k": effect_br, "final_bitrate_k": final_br,
+        "sei": token(32) + "+" + token(20), "metadata": tags,
+        "audio_title": f"Audio_Track_{token(6)}", "audio_artist": f"Creator_{token(6)}",
+        "fake_lavf": f"Lavf{rng.randint(58,61)}.{rng.randint(20,59)}.{rng.randint(100,699)}",
+        "echo_left": echo(), "echo_right": echo(), "stamp_days": rng.uniform(5, 30),
+    }
+
+
 def mask_alpha(w, h, feather, margin_tb, margin_lr):
     d = max(1, round(feather * min(w, h) / 1080.0))
     offset = d / 2
