@@ -150,8 +150,9 @@ $SProtectConfig = [ordered]@{
 [IO.File]::WriteAllText((Join-Path $Release "$LauncherName.sp"), $SProtectConfig, [Text.Encoding]::UTF8)
 $Instructions = @(
     "The native algorithm core is protected by VMProtect Ultra.",
+    "This build is ready to run without a manifest or signature.",
     "",
-    "Next steps:",
+    "Optional SProtect steps:",
     "1. Open $LauncherName with SProtect; keep Auth disabled (Auth=0, no NetVerify).",
     "2. Save the protected output as $SProtectName in this directory.",
     "3. Run finalize_sprotect_release.bat from the project root."
@@ -161,4 +162,4 @@ $Instructions = @(
 Write-Host "Native core protected and standalone build completed." -ForegroundColor Green
 Write-Host "SProtect input: $(Join-Path $Release $LauncherName)" -ForegroundColor Yellow
 Write-Host "Release directory: $Release" -ForegroundColor Green
-Write-Host "Next: protect the release launcher with SProtect, then run finalize_sprotect_release.bat." -ForegroundColor Yellow
+Write-Host "The release is ready to run. SProtect and finalization are optional." -ForegroundColor Green
