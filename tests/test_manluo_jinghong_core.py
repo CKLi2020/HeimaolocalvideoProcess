@@ -1,5 +1,7 @@
 """漫落惊鸿的关键参数必须由受保护 Core 统一生成。"""
 
+import re
+
 from engine.native_core import core
 
 
@@ -10,3 +12,4 @@ def test_manluo_jinghong_plan_is_seeded_and_bounded():
     assert medium["noise_indices"]
     assert max(medium["noise_indices"]) < 4
     assert 29.98 <= medium["fps"] <= 30.08
+    assert re.fullmatch(r"[0-9a-f]{32}\+[a-z0-9]{20}", medium["sei"])
