@@ -2,17 +2,18 @@
 setlocal
 cd /d "%~dp0"
 
-set "BUILD_PYTHON=%LocalAppData%\Programs\Python\Python39\python.exe"
+set "BUILD_PYTHON=%~dp0.venv\Scripts\python.exe"
 if not exist "%BUILD_PYTHON%" (
-  echo ERROR: Python 3.9 was not found:
+  echo ERROR: Project virtual environment was not found:
   echo %BUILD_PYTHON%
+  echo Run the project installation script to create .venv first.
   pause
   exit /b 1
 )
 
 "%BUILD_PYTHON%" -c "import Cython, nuitka, PySide6" >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: Python 3.9 is missing a build dependency.
+  echo ERROR: Project virtual environment is missing a build dependency.
   echo Run: "%BUILD_PYTHON%" -m pip install Cython Nuitka PySide6
   pause
   exit /b 1
