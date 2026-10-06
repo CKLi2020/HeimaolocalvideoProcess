@@ -18,77 +18,15 @@ cdef extern from "VMProtectSDK.h":
     void VMProtectEnd()
 
 
-cdef extern from *:
-    """
-    #ifdef FC_LICENSE_GATE
-    #include <windows.h>
-
-    static int fc_host_gate_enabled(void) { return 1; }
-
-    /* Only run inside the release launcher. Both paths come from the OS, so
-       monkeypatching sys/os in Python cannot influence the answer: this
-       module's own path is resolved from its code address, the running
-       process image from GetModuleFileNameW(NULL). 92 is the backslash. */
-    static int fc_host_ok(void) {
-        static wchar_t self[32768];
-        static wchar_t exe[32768];
-        HMODULE module = NULL;
-        DWORD n;
-        wchar_t *sep;
-
-        if (!GetModuleHandleExW(
-                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                (LPCWSTR)(const void *)&fc_host_ok, &module)) {
-            return 0;
-        }
-        n = GetModuleFileNameW(module, self, 32767);
-        if (n == 0 || n >= 32767) { return 0; }
-        self[n] = 0;
-
-        n = GetModuleFileNameW(NULL, exe, 32767);
-        if (n == 0 || n >= 32767) { return 0; }
-        exe[n] = 0;
-
-        /* <release>\\app\\_flowcut_core.pyd -> <release> */
-        sep = wcsrchr(self, 92);
-        if (sep == NULL) { return 0; }
-        *sep = 0;
-        sep = wcsrchr(self, 92);
-        if (sep == NULL) { return 0; }
-        *sep = 0;
-
-        /* <release>\\<launcher>.exe -> <release> */
-        sep = wcsrchr(exe, 92);
-        if (sep == NULL) { return 0; }
-        *sep = 0;
-
-        return _wcsicmp(self, exe) == 0;
-    }
-    /* Deny: end the process outright, never touching Python.
-
-       Why not raise an exception: measured 2026-10-05, this module does not
-       survive a Python exception path once VMProtect Ultra has virtualized its
-       regions. The same source unprotected gives a clean `raise`; packed, the
-       call runs off into another function's code and dies (access violation,
-       or an assert firing inside mild_voice_filters' f-string join). Tried
-       PermissionError, ValueError, RuntimeError, a custom exception class, and
-       raising from an unmarked helper function. With 2 virtualized regions it
-       sometimes worked; with 14 and 15 it never did. So the refusal happens
-       entirely in C: no exception object, no traceback, no module globals.
-       0x46434731 is "FCG1". */
-    static void fc_host_deny(void) {
-        ExitProcess(0x46434731u);
-    }
-    #else
-    static int fc_host_gate_enabled(void) { return 0; }
-    static int fc_host_ok(void) { return 1; }
-    static void fc_host_deny(void) { }
-    #endif
-    """
+cdef extern from "host_gate.h":
     int fc_host_gate_enabled()
     int fc_host_ok()
     void fc_host_deny()
+
+
+def host_gate_status():
+    """不进入虚拟化算法，供发布启动器检查宿主门禁。"""
+    return {"enabled": bool(fc_host_gate_enabled()), "allowed": bool(fc_host_ok())}
 
 
 # ── 算法宿主机门禁 ──────────────────────────────────────────────────────

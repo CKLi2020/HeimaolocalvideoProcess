@@ -55,10 +55,31 @@ native_src/random_frame_swap_core.pyx  爆闪帧序交换（3 个 RFCORE 标记�
 3. 用 VMProtect Ultimate 虚拟化该核心的标记区域；
 4. 按 `engine/native_core.py` 声明的导出清单（`_REQUIRED` / `RANDOM_SWAP_REQUIRED`）
    校验保护后的 `.pyd` 导出齐全；
-5. 导入保护后的 `.pyd` 并调用算法做冒烟测试；
-6. 测试通过后复制到 `app/`。
+5. 未启用宿主门禁时，导入保护后的 `.pyd` 并调用算法做冒烟测试；
+6. 复制到 `app/`，启用门禁的构建在 Nuitka 打包完成后由正式 EXE 自检两颗核心。
 
 只要编译、VMProtect、导出校验或冒烟测试中任意一步失败，正式打包就会停止。
+
+`scripts/build_protected.ps1` 默认使用两个编译任务以降低构建峰值内存，可用 `-Jobs`
+调整。验证构建可以用 `-OutputRoot` 指定独立输出根目录，避免覆盖已有客户包；
+未指定时仍输出到项目的 `build/protected` 和 `dist-protected`。
+构建开始前检查必需的 `resources`，缺失则明确报错。
+`贴纸` 和 `配置文件` 是可选素材目录：存在时完整复制，缺失时打印警告并在发布包中
+创建空目录，程序使用内置默认配置或用户选择的素材，不阻断打包。
+该资源检查与 FCG1 宿主门禁误判不同。
+
+宿主门禁的共同实现位于 `native_src/host_gate.h`。比较的是 Windows 目录的卷标识和文件标识，
+不是路径字符串：Nuitka 可能用中文目录的 8.3 短路径加载 `.pyd`，这与 EXE 的长路径
+实际是同一个目录；目录链接也按其实际目标判断。门禁仍然启用，不允许不同发布目录混用。
+
+正式 EXE 支持 `--native-core-self-test`，不打开界面、不修改用户配置，调用全部核心算法，
+并验证后台线程调用。结果保存在发布目录的 `native-core-self-test.json`。
+构建脚本会自动运行该检查，失败或超时不会报告构建成功。移动发布目录或加 SProtect 后，
+也应重新运行此检查。正常启动时先检查宿主门禁，失败会显示原因并写入
+`logs/native_core_error.log`，不再等到点击处理才无提示消失。
+
+星河摩轮、天穹星澜的媒体探测和公共 FFmpeg 分阶段执行器均使用 `CREATE_NO_WINDOW`，
+避免 GUI 版处理时黑色控制台一闪而过；日志、进度和退出码仍按原方式处理。
 
 ### 2. 调试版与发布版的区别
 
@@ -101,7 +122,7 @@ Nuitka 使用 standalone 模式生成完整程序目录。这里不再给外层 
 
 正式打包前确认电脑已经安装：
 
-- Python 3.9；
+- 项目虚拟环境 `.venv`（先运行 `安装.bat` 创建；构建使用其 Python 解释器）；
 - Cython、Nuitka、PySide6；
 - VMProtect Ultimate，并包含 SDK；
 - FFmpeg 和 FFprobe；
@@ -110,8 +131,10 @@ Nuitka 使用 standalone 模式生成完整程序目录。这里不再给外层 
 Python 依赖缺失时运行：
 
 ```bat
-%LocalAppData%\Programs\Python\Python39\python.exe -m pip install Cython Nuitka PySide6
+.venv\Scripts\python.exe -m pip install Cython Nuitka PySide6
 ```
+
+`build_protected.bat` 固定使用项目的 `.venv\Scripts\python.exe`，无需手动激活虚拟环境。原生核构建根据该解释器的版本选择对应的 Python 链接库，并从基础 Python 安装目录读取头文件和库文件，不再依赖固定的 Python 3.9 安装路径。
 
 项目默认使用：
 
@@ -119,9 +142,29 @@ Python 依赖缺失时运行：
 C:\Program Files (x86)\VMProtect Ultimate
 ```
 
-GCC 优先从系统 PATH 查找；没有配置 PATH 时，脚本会自动查找 Nuitka 下载的 64 位 GCC。
+GCC 优先从系统 PATH 查找，并用 `-dumpmachine` 验证必须是 x86_64 MinGW。
+32 位 GCC 会被明确忽略，然后查找 Nuitka 缓存及 `C:\msys64` 的 64 位工具链；
+也可以向 `scripts/build_native.ps1` 传入 `-Gcc` 指定编译器。原生构建要求 64 位 Python，
+不能只设置 `MS_WIN64` 宏却使用 32 位编译器。
 
 ## 三、正式打包步骤
+
+### 排查加密后闪退：仅 Nuitka 的独立测试版
+
+运行根目录 `build_nuitka_debug.bat`。它使用 `.venv`，仅用 Nuitka
+生成 standalone EXE，不执行 VMProtect/SProtect，不加载两颗加密原生核心，
+而由独立入口 `main_nuitka_debug.py` 显式使用开发等价核心。正式加密入口和
+发布版禁止开发核心回退的规则保持不变。
+
+产物位于 `dist-nuitka-debug\<名称>_V<版本>_<时间戳>\`，不会覆盖正式发布目录。
+请保留整个目录，不能只复制 EXE。双击产物目录中的 `run_nuitka_debug.bat`
+运行；软件退出后 BAT 会显示控制台日志和退出码并暂停。
+`logs\console_*.log` 保存输出及退出码，`logs\diagnostic_*.log`
+保存 Python 异常和 faulthandler 崩溃信息。
+
+可向 EXE 或启动 BAT 传入 `--diagnostic-smoke-test`，检查开发核心、
+全部平台通道加载和 Qt 窗口初始化后自动退出。该测试版不用于正式发布；
+它用于对照排查保护层是否导致闪退，并不能单凭正常启动证明闪退原因。
 
 ### 第 1 步：关闭正在运行的软件
 
