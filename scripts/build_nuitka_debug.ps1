@@ -42,7 +42,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Diagnostic build dependencies are missing" }
 
     & $Python -m nuitka `
-        --standalone --mingw64 --assume-yes-for-downloads "--jobs=$Jobs" `
+        --standalone --mingw64 --assume-yes-for-downloads --experimental=force-dependencies-pefile "--jobs=$Jobs" `
         --enable-plugin=pyside6 --windows-console-mode=force `
         --include-module=main --include-module=engine.dev_core `
         --include-module=modes.shipinhao.heimao_luoyue_core `

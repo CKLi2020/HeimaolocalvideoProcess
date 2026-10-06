@@ -87,7 +87,7 @@ Write-Host "==> Building Nuitka standalone application" -ForegroundColor Cyan
 Push-Location $Root
 try {
     & $Python -m nuitka `
-        --standalone --assume-yes-for-downloads "--jobs=$Jobs" `
+        --standalone --assume-yes-for-downloads --experimental=force-dependencies-pefile "--jobs=$Jobs" `
         --enable-plugin=pyside6 --windows-console-mode=disable `
         --include-module=app._flowcut_core --include-module=app._random_frame_swap_core `
         --include-package=core --include-package=modes --include-package=cryptography `
