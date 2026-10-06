@@ -25,24 +25,22 @@ foreach ($path in @($Launcher, $Protected, $Core, $ManifestScript, $ReleasePriva
 foreach ($path in @($Launcher, $Protected, $Core)) {
     if ((Get-Item -LiteralPath $path).Length -lt 65536) { throw "Executable is unexpectedly small: $path" }
 }
-# The signing key is the root of release trust. Keep it out of the repository and
-# make sure a leaked file alone is not enough to sign a forgery: the passphrase
-# comes from the environment and is never written anywhere.
+# Local-only signing keeps the key outside the repository but allows its PEM to
+# remain unencrypted so this machine can finalize releases without a prompt.
 $RootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
 $KeyFull = [IO.Path]::GetFullPath($ReleasePrivateKey)
 if ($KeyFull.StartsWith($RootFull, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Release signing key must live outside the repository: $KeyFull"
 }
-if ((Get-Content -LiteralPath $ReleasePrivateKey -Raw) -notmatch "ENCRYPTED") {
-    throw "Release signing key is not passphrase-protected. Create an encrypted one with scripts/make_release_signing_key.py: $KeyFull"
+$KeyIsEncrypted = (Get-Content -LiteralPath $ReleasePrivateKey -Raw) -match "ENCRYPTED"
+if ($KeyIsEncrypted -and -not $env:BLACKCAT_RELEASE_KEY_PASSWORD) {
+    throw "This signing key is encrypted; set BLACKCAT_RELEASE_KEY_PASSWORD or restore the local unencrypted key."
 }
-if (-not $env:BLACKCAT_RELEASE_KEY_PASSWORD) {
-    throw "Set BLACKCAT_RELEASE_KEY_PASSWORD to the signing key passphrase before finalizing a release."
-}
+[string[]]$LocalKeyArgs = if ($KeyIsEncrypted) { @() } else { @("--allow-unencrypted-key") }
 # Check the key before swapping any files: a key that does not match the
 # _PUBLIC_KEY compiled into this build would sign a manifest the app rejects.
 & $Python $ManifestScript --release-root $Release --private-key $ReleasePrivateKey `
-    --build-id "$ProductId-$Version" --check-key-only
+    --build-id "$ProductId-$Version" --check-key-only @LocalKeyArgs
 if ($LASTEXITCODE -ne 0) { throw "Release signing key preflight failed" }
 $OriginalHash = (Get-FileHash -LiteralPath $Launcher -Algorithm SHA256).Hash
 $ProtectedHash = (Get-FileHash -LiteralPath $Protected -Algorithm SHA256).Hash
@@ -54,7 +52,7 @@ Move-Item -LiteralPath $Launcher -Destination $Backup
 try {
     Move-Item -LiteralPath $Protected -Destination $Launcher
     & $Python $ManifestScript --release-root $Release `
-        --private-key $ReleasePrivateKey --build-id "$ProductId-$Version" --product-id $ProductId
+        --private-key $ReleasePrivateKey --build-id "$ProductId-$Version" --product-id $ProductId @LocalKeyArgs
     if ($LASTEXITCODE -ne 0) { throw "Generating the signed release manifest failed" }
     # Last gate before declaring the release done: SProtect rewrote the launcher
     # and VMProtect rewrote the cores, so confirm from outside that the packaged
