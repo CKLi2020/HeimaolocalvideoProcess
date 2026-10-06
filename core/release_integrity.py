@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import serialization
 
 
 _PUBLIC_KEY = b"""-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAQKOZna9f3CiWIQvYgKyZGlN/9eZAYci833gQSc8RwMk=
+MCowBQYDK2VwAyEAHlq0wwcMCD7NooUGgQg2H6mZU0OAORkvTcpfBUS+fY8=
 -----END PUBLIC KEY-----
 """
 
