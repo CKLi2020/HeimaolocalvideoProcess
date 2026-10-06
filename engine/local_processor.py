@@ -220,12 +220,20 @@ class LocalProcessorService:
                 continue
             self._remove(temporary_base, mode.ext)
             code = -1
+            command_total = len(commands)
+            reported_progress = 0.0
             for command_index, command in enumerate(commands):
+                def command_progress(value, index=command_index):
+                    nonlocal reported_progress
+                    mapped = 100.0 * (index + float(value) / 100.0) / command_total
+                    reported_progress = max(reported_progress, mapped)
+                    task_progress(reported_progress)
+
                 code = self.runner.run(
                     command,
                     duration=duration,
                     on_log=log,
-                    on_progress=(task_progress if command_index == len(commands) - 1 else None),
+                    on_progress=command_progress,
                 )
                 if code != 0 or self._stop.is_set():
                     break
