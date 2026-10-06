@@ -17,7 +17,6 @@ from PySide6.QtGui import QFont
 
 from config import AppConfig
 from app.main_window import MainWindow
-from core.release_integrity import verify_release_manifest
 from version import APP_NAME, APP_VERSION
 
 
@@ -39,7 +38,6 @@ def _style_native_title_bar(window: MainWindow) -> None:
 
 
 def main() -> None:
-    verify_release_manifest(ROOT)
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
