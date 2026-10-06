@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
         header.setObjectName("panel")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(6, 3, 8, 3)
-        brand = QLabel(APP_NAME)
+        brand = QLabel(f"{APP_NAME}（黑猫落月）")
         brand.setObjectName("brand")
         header_layout.addWidget(brand)
         brand_sub = QLabel("BLACKCAT")
