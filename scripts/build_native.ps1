@@ -88,7 +88,13 @@ assert m.motianxinglun_pipeline_plan(1.25)['image_fps']=='120'
 assert 'all_mode=screen' in m.tianbaixinglun_pipeline_plan(1.25)['blend_filter']
 p = m.manluo_jinghong_plan('medium', 3.0, 4, 20261006)
 assert p['fps'] > 0 and p['noise_indices'] and max(p['noise_indices']) < 4
-print('smoke test ok: 18 algorithm exports exercised')
+assert 'fps=120' in m.qianchuan_filter()
+assert 'level_in=5.72018' in m.qianchuan_audio_filter(2)
+r = m.qianchuan_fission_recipe(1000000, 120, 576, 1024)
+assert 23 <= r['frame_interval'] <= 29 and r['target_fps'] == 125
+assert 'hqdn3d=4:4:4:4' in m.qianchuan_fission_filter(r)
+assert m.qianchuan_verify_timestamps([{'pts_time': str(i / 120)} for i in range(20)])
+print('smoke test ok: 23 algorithm exports exercised')
 '@
         Markers       = @(
             "FCALGO:mask.alpha",
@@ -107,8 +113,13 @@ print('smoke test ok: 18 algorithm exports exercised')
             "FCALGO:liuying.1003.base",
             "FCALGO:liuying.1003.seed",
             "FCALGO:motianxinglun.1005.pipeline",
-            "FCALGO:tianbaixinglun.1005.pipeline"
-            "FCALGO:manluo.jinghong"
+            "FCALGO:tianbaixinglun.1005.pipeline",
+            "FCALGO:manluo.jinghong",
+            "FCALGO:qianchuan.filter",
+            "FCALGO:qianchuan.audio",
+            "FCALGO:qianchuan.fission",
+            "FCALGO:qianchuan.fission.filter",
+            "FCALGO:qianchuan.verify"
         )
     },
     @{

@@ -67,6 +67,7 @@ _BUILTIN = [
     ("xiaohongshu", "mode_pianpian0924"),
     ("xiaohongshu", "mode_shuanggui0924"),
     ("xiaohongshu", "mode_yanjingshe0928"),
+    ("duoduo", "mode_shaye_heiw"),
     ("duoduo", "mode_manluo_jinghong"),
 ]
 

@@ -695,6 +695,109 @@ def manluo_jinghong_plan(mode, duration, noise_count, seed, crf_override=None):
         VMProtectEnd()
 
 
+def qianchuan_filter(start_frame=10, end_frame=300, flash_value=5):
+    _ensure_host()
+    VMProtectBeginUltra(b"FCALGO:qianchuan.filter")
+    try:
+        start_frame = max(1, int(start_frame))
+        end_frame = max(start_frame + 1, int(end_frame))
+        flash_value = max(0, min(10, int(flash_value)))
+        base = (
+            "[0:v:0]scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,setsar=1,fps=120,"
+        )
+        if flash_value < 10:
+            blur_frames = max(1, 6 - flash_value)
+            period = 4 if flash_value <= 5 else 4 + (flash_value - 5) * 2
+            base += f"boxblur=40:2:enable='lt(n,16)+lt(mod(n-1,{period}),{blur_frames})',"
+        return base + "setparams=range=limited:colorspace=bt709:color_primaries=bt709:color_trc=bt709[outv]"
+    finally:
+        VMProtectEnd()
+
+
+def qianchuan_audio_filter(channels=2):
+    _ensure_host()
+    VMProtectBeginUltra(b"FCALGO:qianchuan.audio")
+    try:
+        right = "c0" if max(1, int(channels)) == 1 else "c1"
+        return (
+            f"pan=stereo|c0=-1*c0|c1={right},"
+            "alimiter=level_in=5.72018:limit=1:attack=5:release=50:level=false,"
+            "volume=0.911038,aresample=88200,"
+            "pan=5.1|FL=c0|FR=c1|FC=0*c0|LFE=0*c0|BL=0*c0|BR=0*c0"
+        )
+    finally:
+        VMProtectEnd()
+
+
+def qianchuan_fission_recipe(source_bitrate, source_fps, source_width, source_height):
+    _ensure_host()
+    VMProtectBeginUltra(b"FCALGO:qianchuan.fission")
+    try:
+        source_bitrate, source_fps = int(source_bitrate), float(source_fps)
+        source_width, source_height = int(source_width), int(source_height)
+        if min(source_bitrate, source_fps, source_width, source_height) <= 0:
+            raise ValueError("invalid fission source media properties")
+        entropy = os.urandom(16)
+        ratio = lambda index: entropy[index] / 255.0
+        portrait = source_height > source_width
+        compliant = (
+            source_width * 16 == source_height * 9 and 720 <= source_width <= 1440 and 1280 <= source_height <= 2560
+            if portrait else
+            source_width * 9 == source_height * 16 and 1280 <= source_width <= 2560 and 720 <= source_height <= 1440
+        )
+        target_width, target_height = (
+            (source_width, source_height) if compliant else ((720, 1280) if portrait else (1280, 720))
+        )
+        return {
+            "brightness": -0.04 + ratio(0) * 0.09,
+            "contrast": 0.93 + ratio(1) * 0.08,
+            "saturation": 0.96 + ratio(2) * 0.07,
+            "sharpen": 0.9 + ratio(3) * 0.2,
+            "denoise": 4,
+            "frame_interval": 23 + entropy[4] % 7,
+            "target_fps": source_fps + 5.0,
+            "target_bitrate_kbps": max(516, int(source_bitrate * (1.0 + ratio(5) * 0.3) / 1000)),
+            "source_width": source_width, "source_height": source_height,
+            "target_width": target_width, "target_height": target_height,
+        }
+    finally:
+        VMProtectEnd()
+
+
+def qianchuan_fission_filter(recipe):
+    _ensure_host()
+    VMProtectBeginUltra(b"FCALGO:qianchuan.fission.filter")
+    try:
+        denoise = int(recipe["denoise"])
+        filters = [
+            f"eq=brightness={recipe['brightness']:.3f}:contrast={recipe['contrast']:.3f}:saturation={recipe['saturation']:.3f}",
+            f"unsharp=5:5:{recipe['sharpen']:.2f}:5:5:{recipe['sharpen']:.2f}",
+            f"hqdn3d={denoise}:{denoise}:{denoise}:{denoise}",
+            f"select='not(eq(mod(n\,{int(recipe['frame_interval'])}),0))'",
+            "setpts=PTS-STARTPTS", f"fps={recipe['target_fps']:.2f}",
+        ]
+        if (recipe["source_width"], recipe["source_height"]) != (recipe["target_width"], recipe["target_height"]):
+            filters.append(
+                f"scale={int(recipe['target_width'])}:{int(recipe['target_height'])}:force_original_aspect_ratio=decrease,"
+                f"pad={int(recipe['target_width'])}:{int(recipe['target_height'])}:(ow-iw)/2:(oh-ih)/2"
+            )
+        return ",".join(filters)
+    finally:
+        VMProtectEnd()
+
+
+def qianchuan_verify_timestamps(packets, flash_value=5):
+    _ensure_host()
+    VMProtectBeginUltra(b"FCALGO:qianchuan.verify")
+    try:
+        pts = sorted({float(packet["pts_time"]) for packet in packets})
+        gaps = [right - left for left, right in zip(pts, pts[1:])]
+        return len(gaps) >= 12 and all(abs(gap - 1 / 120.0) < 0.0002 for gap in gaps[:60])
+    finally:
+        VMProtectEnd()
+
+
 def mask_alpha(w, h, feather, margin_tb, margin_lr):
     cdef int d
     cdef double offset

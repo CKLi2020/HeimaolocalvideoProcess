@@ -9,6 +9,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -57,7 +60,19 @@ class LocalProcessorPage(QWidget):
         files_layout = QGridLayout(files)
         self.main_edit = self._path_row(files_layout, 0, "主视频：", True)
         self.aux_edit = self._path_row(files_layout, 1, "辅视频：", True)
-        self.output_edit = self._path_row(files_layout, 2, "输出路径：", False)
+        self.shaye_cover_row = QWidget()
+        cover_layout = QHBoxLayout(self.shaye_cover_row)
+        cover_layout.setContentsMargins(0, 0, 0, 0)
+        cover_layout.addWidget(QLabel("首图："))
+        self.shaye_cover_edit = QLineEdit()
+        cover_layout.addWidget(self.shaye_cover_edit, 1)
+        cover_button = QPushButton("选择图片")
+        cover_button.setObjectName("browse")
+        cover_button.clicked.connect(self._choose_shaye_cover)
+        cover_layout.addWidget(cover_button)
+        self.shaye_cover_row.hide()
+        files_layout.addWidget(self.shaye_cover_row, 2, 0, 1, 4)
+        self.output_edit = self._path_row(files_layout, 3, "输出路径：", False)
         self.output_edit.setText(str(self.root_dir / "output"))
         layout.addWidget(files)
 
@@ -113,6 +128,82 @@ class LocalProcessorPage(QWidget):
         tianqiong_layout.addStretch()
         self.tianqiong_options.hide()
         execution_layout.addWidget(self.tianqiong_options)
+
+        self.shaye_options = QWidget()
+        shaye_button_layout = QHBoxLayout(self.shaye_options)
+        shaye_button_layout.setContentsMargins(0, 0, 0, 0)
+        self.shaye_settings_button = QPushButton("⚙ 刹夜黑五参数设置")
+        self.shaye_settings_button.setObjectName("browse")
+        shaye_button_layout.addWidget(self.shaye_settings_button)
+        shaye_button_layout.addStretch()
+        self.shaye_options.hide()
+        execution_layout.addWidget(self.shaye_options)
+
+        self.shaye_dialog = QDialog(self)
+        self.shaye_dialog.setWindowTitle("刹夜黑五参数设置")
+        self.shaye_dialog.setModal(True)
+        self.shaye_dialog.setMinimumWidth(620)
+        shaye_dialog_layout = QVBoxLayout(self.shaye_dialog)
+        shaye_group = QGroupBox("处理参数")
+        shaye_layout = QGridLayout(shaye_group)
+        self.shaye_flash_enabled = QCheckBox("启用闪动")
+        self.shaye_flash_value = QSpinBox()
+        self.shaye_flash_value.setRange(0, 10)
+        self.shaye_flash_value.setValue(5)
+        self.shaye_flash_value.setEnabled(False)
+        self.shaye_flash_enabled.toggled.connect(self.shaye_flash_value.setEnabled)
+        shaye_layout.addWidget(self.shaye_flash_enabled, 0, 0)
+        shaye_layout.addWidget(QLabel("闪动值："), 0, 1)
+        shaye_layout.addWidget(self.shaye_flash_value, 0, 2)
+
+        self.shaye_audio_enabled = QCheckBox("启用伪装音频")
+        self.shaye_audio_enabled.setChecked(True)
+        self.shaye_audio_mode = QComboBox()
+        self.shaye_audio_mode.addItems(["汉语方言", "全语种"])
+        self.shaye_audio_enabled.toggled.connect(self.shaye_audio_mode.setEnabled)
+        shaye_layout.addWidget(self.shaye_audio_enabled, 0, 3)
+        shaye_layout.addWidget(self.shaye_audio_mode, 0, 4)
+
+        self.shaye_fake_duration_enabled = QCheckBox("启用伪装时长")
+        self.shaye_fake_hours = QDoubleSpinBox()
+        self.shaye_fake_hours.setRange(0.1, 2.0)
+        self.shaye_fake_hours.setSingleStep(0.1)
+        self.shaye_fake_hours.setValue(1.9)
+        self.shaye_fake_hours.setSuffix(" 小时")
+        self.shaye_fake_hours.setEnabled(False)
+        self.shaye_fake_duration_enabled.toggled.connect(self.shaye_fake_hours.setEnabled)
+        shaye_layout.addWidget(self.shaye_fake_duration_enabled, 1, 0)
+        shaye_layout.addWidget(self.shaye_fake_hours, 1, 1, 1, 2)
+
+        self.shaye_face_enabled = QCheckBox("启用人脸遮挡")
+        self.shaye_face_enabled.setChecked(True)
+        self.shaye_face_strength = QSpinBox()
+        self.shaye_face_strength.setRange(1, 100)
+        self.shaye_face_strength.setValue(10)
+        self.shaye_face_expand = QSpinBox()
+        self.shaye_face_expand.setRange(0, 300)
+        self.shaye_face_expand.setValue(30)
+        self.shaye_face_expand.setSuffix(" %")
+        self.shaye_face_every = QSpinBox()
+        self.shaye_face_every.setRange(1, 30)
+        self.shaye_face_every.setValue(5)
+        for control in (self.shaye_face_strength, self.shaye_face_expand, self.shaye_face_every):
+            self.shaye_face_enabled.toggled.connect(control.setEnabled)
+        shaye_layout.addWidget(self.shaye_face_enabled, 1, 3)
+        shaye_layout.addWidget(QLabel("强度："), 1, 4)
+        shaye_layout.addWidget(self.shaye_face_strength, 1, 5)
+        shaye_layout.addWidget(QLabel("扩展："), 2, 0)
+        shaye_layout.addWidget(self.shaye_face_expand, 2, 1)
+        shaye_layout.addWidget(QLabel("检测间隔："), 2, 3)
+        shaye_layout.addWidget(self.shaye_face_every, 2, 4)
+        shaye_dialog_layout.addWidget(shaye_group)
+        shaye_hint = QLabel("设置将用于下一次刹夜黑五处理。")
+        shaye_hint.setObjectName("muted")
+        shaye_dialog_layout.addWidget(shaye_hint)
+        shaye_buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        shaye_buttons.accepted.connect(self.shaye_dialog.accept)
+        shaye_dialog_layout.addWidget(shaye_buttons)
+        self.shaye_settings_button.clicked.connect(self.shaye_dialog.open)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -209,6 +300,12 @@ class LocalProcessorPage(QWidget):
         self.tianqiong_options.setVisible(
             bool(getattr(self.current_mode, "supports_dedup_strength", False))
         )
+        self.shaye_options.setVisible(
+            bool(getattr(self.current_mode, "supports_shaye_options", False))
+        )
+        self.shaye_cover_row.setVisible(
+            bool(getattr(self.current_mode, "supports_shaye_options", False))
+        )
         if self.current_mode:
             self.log_received.emit(f"当前模式：{title} · {self.current_mode.name}")
 
@@ -272,6 +369,17 @@ class LocalProcessorPage(QWidget):
             "mode5_ronghe": self.mode5_ronghe.isChecked(),
             "mode5_daoli": self.mode5_daoli.isChecked(),
             "dedup_mode": self.dedup_mode.currentText(),
+            "shaye_flash_enabled": self.shaye_flash_enabled.isChecked(),
+            "shaye_flash_value": self.shaye_flash_value.value(),
+            "shaye_audio_enabled": self.shaye_audio_enabled.isChecked(),
+            "shaye_audio_mode": self.shaye_audio_mode.currentText(),
+            "shaye_fake_duration_enabled": self.shaye_fake_duration_enabled.isChecked(),
+            "shaye_fake_hours": self.shaye_fake_hours.value(),
+            "shaye_face_enabled": self.shaye_face_enabled.isChecked(),
+            "shaye_face_strength": self.shaye_face_strength.value(),
+            "shaye_face_expand": self.shaye_face_expand.value(),
+            "shaye_face_every": self.shaye_face_every.value(),
+            "shaye_cover": self.shaye_cover_edit.text().strip(),
         }
         self.progress.setValue(0)
         self.start_button.setEnabled(False)
@@ -306,6 +414,13 @@ class LocalProcessorPage(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "选择视频", "", f"视频文件 ({patterns})")
         if path:
             edit.setText(path)
+
+    def _choose_shaye_cover(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择首图", "", "图片文件 (*.jpg *.jpeg *.png *.webp *.bmp);;全部文件 (*.*)"
+        )
+        if path:
+            self.shaye_cover_edit.setText(path)
 
     def _choose_folder(self, edit):
         path = QFileDialog.getExistingDirectory(self, "选择文件夹", edit.text())

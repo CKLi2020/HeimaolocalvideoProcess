@@ -23,7 +23,7 @@ $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 if (-not (Test-Path -LiteralPath $Icon)) { throw "Icon not found: $Icon" }
 if (-not $Ffmpeg -or -not $Ffprobe) { throw "ffmpeg.exe and ffprobe.exe are required" }
 if (-not (Test-Path -LiteralPath $NativeBuild)) { throw "Native build script not found: $NativeBuild" }
-& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); ids={m.id for ms in g.values() for m in ms}; assert len(g)==8, list(g); assert {'shipinhao/qixia_mode5','duoduo/manluo_jinghong'} <= ids, (sorted(ids), modes.load_modes.errors)"
+& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); ids={m.id for ms in g.values() for m in ms}; assert len(g)==8, list(g); assert {'shipinhao/qixia_mode5','duoduo/manluo_jinghong','duoduo/shaye_heiw'} <= ids, (sorted(ids), modes.load_modes.errors)"
 if ($LASTEXITCODE -ne 0) { throw "Packaged mode registry preflight failed" }
 
 $DistFull = [IO.Path]::GetFullPath($Dist).TrimEnd('\') + '\'
@@ -158,6 +158,32 @@ $Instructions = @(
     "3. Run finalize_sprotect_release.bat from the project root."
 ) -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $Release "SPROTECT-NEXT-STEP.txt"), $Instructions, [Text.Encoding]::UTF8)
+
+$DiagnosticName = ConvertFrom-CodePoints @(0x8BCA, 0x65AD, 0x542F, 0x52A8)
+$DiagnosticLauncher = @"
+@echo off
+chcp 65001 >nul
+setlocal
+set "LOGDIR=%LOCALAPPDATA%\$ProductName\logs"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%"
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%i"
+set "LOG=%LOGDIR%\launcher-%STAMP%.log"
+echo time=%date% %time%>"%LOG%"
+echo computer=%COMPUTERNAME%>>"%LOG%"
+ver>>"%LOG%"
+start "" /wait "%~dp0$LauncherName"
+set "CODE=%ERRORLEVEL%"
+echo exit=%CODE%>>"%LOG%"
+echo Diagnostic log: %LOG%
+start "" notepad.exe "%LOG%"
+pause
+exit /b %CODE%
+"@
+[IO.File]::WriteAllText(
+    (Join-Path $Release "$DiagnosticName.bat"),
+    $DiagnosticLauncher,
+    (New-Object Text.UTF8Encoding($true))
+)
 
 Write-Host "Native core protected and standalone build completed." -ForegroundColor Green
 Write-Host "SProtect input: $(Join-Path $Release $LauncherName)" -ForegroundColor Yellow
