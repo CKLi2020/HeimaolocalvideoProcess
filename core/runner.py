@@ -381,7 +381,7 @@ class FFmpegRunner:
                 errors="replace",
                 shell=use_shell,
                 startupinfo=_hide_child_windows(),
-                creationflags=_CREATE_NEW_PROCESS_GROUP,
+                creationflags=_CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW,
             )
         except Exception as exc:
             emit_log("启动 ffmpeg 失败: %s: %s" % (type(exc).__name__, exc))

@@ -1,6 +1,7 @@
 param(
     [string]$Python = "python",
     [string]$VmProtectDir = "C:\Program Files (x86)\VMProtect Ultimate",
+    [string]$Gcc = "",
     # Turn on the algorithm host gate: define FC_LICENSE_GATE at compile time so
     # the core algorithms refuse to run anywhere but inside the release launcher.
     # Off by default, so source-tree builds are unaffected. No key material is
@@ -11,27 +12,62 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
+Push-Location $Root
+$OriginalPath = $env:PATH
+try {
 $Build = Join-Path ([System.IO.Path]::GetTempPath()) "flowcut_native_build"
 $VmProtect = Join-Path $VmProtectDir "VMProtect_Con.exe"
 $SdkInclude = Join-Path $VmProtectDir "Include\C"
 $SdkLibrary = Join-Path $VmProtectDir "Lib\Windows\MinGW\VMProtectSDK64.a"
 
-foreach ($path in @($VmProtect, $SdkLibrary)) {
+foreach ($path in @($VmProtect, $SdkLibrary, (Join-Path $SdkInclude "VMProtectSDK.h"))) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Native dependency not found: $path" }
 }
-$Gcc = (Get-Command gcc.exe -ErrorAction SilentlyContinue).Source
-if (-not $Gcc) {
-    $NuitkaGccRoot = Join-Path $env:LOCALAPPDATA "Nuitka\Nuitka\Cache\downloads\gcc"
-    $Gcc = Get-ChildItem -LiteralPath $NuitkaGccRoot -Filter gcc.exe -File -Recurse -ErrorAction SilentlyContinue |
-        Where-Object FullName -Match 'mingw64\\bin\\gcc\.exe$' |
-        Select-Object -First 1 -ExpandProperty FullName
+$PythonBits = (& $Python -c "import struct; print(struct.calcsize('P') * 8)").Trim()
+if ($LASTEXITCODE -ne 0 -or $PythonBits -ne "64") {
+    throw "Protected native cores require a 64-bit Python interpreter"
 }
-if (-not $Gcc) { throw "64-bit gcc.exe not found (PATH or Nuitka cache)" }
+$Candidates = @()
+if ($Gcc) {
+    $Candidates += $Gcc
+}
+else {
+    $PathGcc = Get-Command gcc.exe -ErrorAction SilentlyContinue
+    if ($PathGcc) { $Candidates += $PathGcc.Source }
+    $NuitkaGccRoot = Join-Path $env:LOCALAPPDATA "Nuitka\Nuitka\Cache\downloads\gcc"
+    $Candidates += @(Get-ChildItem -LiteralPath $NuitkaGccRoot -Filter gcc.exe -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object FullName -Match 'mingw64\\bin\\gcc\.exe$' |
+        Select-Object -ExpandProperty FullName)
+    $Candidates += @("C:\msys64\ucrt64\bin\gcc.exe", "C:\msys64\mingw64\bin\gcc.exe")
+}
+$SelectedGcc = $null
+foreach ($Candidate in ($Candidates | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { continue }
+    $Target = (& $Candidate -dumpmachine).Trim()
+    if ($LASTEXITCODE -eq 0 -and $Target -match '^x86_64-.*mingw') {
+        $SelectedGcc = $Candidate
+        break
+    }
+    Write-Warning "Ignoring incompatible native compiler: $Candidate (target: $Target)"
+}
+if (-not $SelectedGcc) {
+    throw "No x86_64 MinGW GCC found. Install a 64-bit toolchain or specify -Gcc."
+}
+$Gcc = $SelectedGcc
+$env:PATH = (Split-Path -Parent $Gcc) + ";" + $env:PATH
+Write-Host "Native compiler: $Gcc" -ForegroundColor Cyan
 & $Python -c "import Cython"
 if ($LASTEXITCODE -ne 0) { throw "Cython is required" }
 
 $PythonInclude = & $Python -c "import sysconfig; print(sysconfig.get_paths()['include'])"
-$PythonLib = & $Python -c "import sysconfig; print(sysconfig.get_config_var('installed_base') + r'\libs')"
+if ($LASTEXITCODE -ne 0) { throw "Cannot resolve Python include directory" }
+$PythonLib = & $Python -c "import os, sys; print(os.path.join(sys.base_prefix, 'libs'))"
+if ($LASTEXITCODE -ne 0) { throw "Cannot resolve Python library directory" }
+$PythonLinkName = & $Python -c "import sys; print('python%d%d' % sys.version_info[:2])"
+if ($LASTEXITCODE -ne 0) { throw "Cannot resolve Python link library" }
+if (-not (Test-Path -LiteralPath (Join-Path $PythonLib "$PythonLinkName.lib"))) {
+    throw "Python import library not found: $PythonLib\$PythonLinkName.lib"
+}
 New-Item -ItemType Directory -Force -Path $Build | Out-Null
 
 $LicenseDefine = @()
@@ -54,7 +90,7 @@ $Modules = @(
         Smoke         = @'
 import importlib.util, os, sys
 p = r'__PYD__'
-for _d in (os.path.dirname(sys.executable), os.path.dirname(os.path.abspath(p))):
+for _d in (sys.base_prefix, os.path.dirname(sys.executable), os.path.dirname(os.path.abspath(p))):
     if os.path.isdir(_d):
         try:
             os.add_dll_directory(_d)
@@ -121,7 +157,7 @@ print('smoke test ok: 18 algorithm exports exercised')
         Smoke         = @'
 import importlib.util, os, sys
 p = r'__PYD__'
-for _d in (os.path.dirname(sys.executable), os.path.dirname(os.path.abspath(p))):
+for _d in (sys.base_prefix, os.path.dirname(sys.executable), os.path.dirname(os.path.abspath(p))):
     if os.path.isdir(_d):
         try:
             os.add_dll_directory(_d)
@@ -158,9 +194,9 @@ import ast, importlib.util, os, sys
 core_path, required_path, const_name, module_name = sys.argv[1:5]
 core_path = os.path.abspath(core_path)
 core_dir = os.path.dirname(core_path)
-# On Windows an extension module needs python39.dll (and the gcc runtime) to
+# On Windows an extension module needs the selected Python DLL (and the gcc runtime) to
 # resolve before it can load.
-for candidate in (os.path.dirname(os.path.abspath(sys.executable)), core_dir, os.path.dirname(core_dir)):
+for candidate in (sys.base_prefix, os.path.dirname(os.path.abspath(sys.executable)), core_dir, os.path.dirname(core_dir)):
     try:
         os.add_dll_directory(candidate)
     except (AttributeError, OSError):
@@ -199,8 +235,8 @@ foreach ($m in $Modules) {
 
     & $Gcc -shared -O0 -fno-crossjumping -fno-ipa-icf -fno-reorder-blocks-and-partition `
         -DMS_WIN64=1 -D_M_X64=1 @LicenseDefine `
-        "-I$PythonInclude" "-I$SdkInclude" $Generated `
-        "-L$PythonLib" -lpython39 $SdkLibrary -o $Raw
+        "-I$PythonInclude" "-I$SdkInclude" "-I$(Join-Path $Root 'native_src')" $Generated `
+        "-L$PythonLib" "-l$PythonLinkName" $SdkLibrary -o $Raw
     if ($LASTEXITCODE -ne 0) { throw "Native compilation failed: $($m.Module)" }
 
     # No <LicenseManager> section: the gate does not use VMProtect's licensing
@@ -245,7 +281,7 @@ foreach ($m in $Modules) {
     # Python, which is exactly what the host gate refuses. With -LicenseGate the
     # only place a protected core can be exercised is inside the packaged launcher.
     if ($LicenseGate) {
-        Write-Host "Host gate is on: skipping the functional smoke test for $Short (the gate only permits the packaged launcher). Launch the built release once to exercise the algorithms." -ForegroundColor Yellow
+        Write-Host "Host gate is on: deferring the functional smoke test for $Short to the packaged launcher's --native-core-self-test." -ForegroundColor Yellow
     }
     else {
         & $Python -c $m.Smoke.Replace('__PYD__', $Protected)
@@ -259,4 +295,9 @@ foreach ($m in $Modules) {
         throw "Cannot replace $($m.Output). Close the running app/Python process that loaded it, then build again."
     }
     Write-Host "Protected native core: $($m.Output)" -ForegroundColor Green
+}
+}
+finally {
+    $env:PATH = $OriginalPath
+    Pop-Location
 }

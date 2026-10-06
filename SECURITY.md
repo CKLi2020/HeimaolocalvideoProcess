@@ -83,11 +83,16 @@ auth.set_gate(lambda engine, job: None)   # 返回 False 或抛异常即拒绝
 各带一份相同的 `_ensure_host()`，在每个导出函数入口调用。原生侧 `fc_host_ok()` 用
 `GetModuleHandleExW` 从自己的代码地址取本 `.pyd` 的路径、用 `GetModuleFileNameW(NULL)`
 取当前进程映像，两者都来自操作系统，Python 层 monkeypatch `sys` / `os` 影响不了。
-判定就是两者「上两级目录是否相同」，即 `<发布根>\app\<核心>.pyd` 与
-`<发布根>\<启动器>.exe`。
+判定就是两者所属发布根目录的身份是否相同，即 `<发布根>\app\<核心>.pyd` 与
+`<发布根>\<启动器>.exe`。共同实现位于 `native_src/host_gate.h`，通过目录句柄的
+卷标识、文件标识比较；不比较长短路径字符串，兼容 Nuitka 使用的 Windows 8.3
+别名、中文路径和目录链接。临时路径缓冲区属于每次调用，不在多个线程间共享。
 
 判定通过就直接返回；不通过调 `fc_host_deny()`，即 `ExitProcess(0x46434731)`，
-**整个拒绝过程不经过 Python**。
+**整个算法入口的拒绝过程不经过 Python**，并先显示 FCG1 错误提示。
+未虚拟化的 `host_gate_status()` 可供启动器在调用算法前检查门禁，失败时显示错误并
+写入 `logs/native_core_error.log`。正式构建还会自动运行 EXE 的
+`--native-core-self-test`，验证两颗核心全部算法及线程调用。
 
 **为什么是结束进程而不是抛异常**（2026-10-05 实测，这条踩过坑）：同一份源码，
 加壳后的 Python 异常路径存在不稳定风险，曾出现访问越界以及 `PyUnicode_IS_READY`
@@ -111,7 +116,9 @@ SHA-256 对到 `manifest.json` 的签名清单上（`cryptography` 已随包）�
 
 1. 带门禁构建的算法冒烟测试在构建机上跑不了（构建机是 `python.exe`，不在发布
    目录里）。`build_native.ps1 -LicenseGate` 会为两颗核心各跳过它并打印提示，
-   功能验证改为启动一次打好包的发布版。算法正确性本身仍由未开门禁的 dev 构建加
+   功能验证由 `build_protected.ps1` 自动运行打好包的 EXE 的
+   `--native-core-self-test` 完成，测试全部算法和后台线程，失败即停止发布。
+   算法正确性本身仍由未开门禁的 dev 构建加
    `tests/test_local_mask_alpha.py` / `tests/test_butterfly_plan_parity.py` 保证；
    爆闪核心则由与明文等价实现的逐位对拍保证（见下）。
 2. `-LicenseGate` 会把工作树里的 `app\_flowcut_core.pyd` 和

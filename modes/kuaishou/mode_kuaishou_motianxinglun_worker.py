@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from engine import HIDDEN_SUBPROCESS
 from engine.native_core import core as _native_core
 
 
@@ -90,6 +91,7 @@ def run_command(arguments: list[str]) -> None:
         errors="replace",
         capture_output=True,
         check=False,
+        **HIDDEN_SUBPROCESS,
     )
     if result.returncode:
         details = result.stderr.strip() or result.stdout.strip()
@@ -118,6 +120,7 @@ def probe(ffprobe: Path, media_path: Path) -> dict[str, Any]:
         errors="replace",
         capture_output=True,
         check=False,
+        **HIDDEN_SUBPROCESS,
     )
     if result.returncode:
         raise ProcessingError(
