@@ -1,12 +1,22 @@
 param(
     [string]$Python = "python",
-    [string]$VmProtectDir = "C:\Program Files (x86)\VMProtect Ultimate"
+    [string]$VmProtectDir = "C:\Program Files (x86)\VMProtect Ultimate",
+    [string]$OutputRoot = "",
+    [int]$Jobs = 2
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$Build = Join-Path $Root "build\protected"
-$Dist = Join-Path $Root "dist-protected"
+. (Join-Path $PSScriptRoot "release_assets.ps1")
+if ($Jobs -lt 1) { throw "Jobs must be positive" }
+if ($OutputRoot) {
+    $Build = Join-Path $OutputRoot "build\protected"
+    $Dist = Join-Path $OutputRoot "dist-protected"
+}
+else {
+    $Build = Join-Path $Root "build\protected"
+    $Dist = Join-Path $Root "dist-protected"
+}
 $NativeBuild = Join-Path $PSScriptRoot "build_native.ps1"
 $Version = (& $Python -c "import runpy; print(runpy.run_path(r'$Root\version.py')['APP_VERSION'])").Trim()
 if ($LASTEXITCODE -ne 0 -or $Version -notmatch '^\d+(\.\d+){2,3}$') {
@@ -23,7 +33,11 @@ $Ffprobe = (Get-Command ffprobe.exe -ErrorAction SilentlyContinue).Source
 if (-not (Test-Path -LiteralPath $Icon)) { throw "Icon not found: $Icon" }
 if (-not $Ffmpeg -or -not $Ffprobe) { throw "ffmpeg.exe and ffprobe.exe are required" }
 if (-not (Test-Path -LiteralPath $NativeBuild)) { throw "Native build script not found: $NativeBuild" }
-& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); ids={m.id for ms in g.values() for m in ms}; assert len(g)==8, list(g); assert {'douyin/yunqi_qilin','shipinhao/qixia_mode5','shipinhao/liuying_v15','duoduo/manluo_jinghong'} <= ids, (sorted(ids), modes.load_modes.errors)"
+function ConvertFrom-CodePoints([int[]]$Codes) {
+    return -join ($Codes | ForEach-Object { [char]$_ })
+}
+Test-RequiredReleaseAssets $Root
+& $Python -c "import modes; modes.MODES_DIR=''; g=modes.load_modes(); ids={m.id for ms in g.values() for m in ms}; assert len(g)==8, list(g); assert {'douyin/yunqi_qilin','shipinhao/qixia_mode5','shipinhao/liuying_v15','duoduo/manluo_jinghong','duoduo/shaye_heiw'} <= ids, (sorted(ids), modes.load_modes.errors)"
 if ($LASTEXITCODE -ne 0) { throw "Packaged mode registry preflight failed" }
 
 $DistFull = [IO.Path]::GetFullPath($Dist).TrimEnd('\') + '\'
@@ -73,7 +87,7 @@ Write-Host "==> Building Nuitka standalone application" -ForegroundColor Cyan
 Push-Location $Root
 try {
     & $Python -m nuitka `
-        --standalone --assume-yes-for-downloads `
+        --standalone --assume-yes-for-downloads --experimental=force-dependencies-pefile "--jobs=$Jobs" `
         --enable-plugin=pyside6 --windows-console-mode=disable `
         --include-module=app._flowcut_core --include-module=app._random_frame_swap_core `
         --include-package=core --include-package=modes --include-package=cryptography `
@@ -104,19 +118,7 @@ if (-not (Test-Path -LiteralPath $BuiltLauncher)) { throw "Nuitka launcher not f
 
 Copy-Item -Path (Join-Path $NuitkaDist.FullName "*") -Destination $Release -Recurse -Force
 
-function ConvertFrom-CodePoints([int[]]$Codes) {
-    return -join ($Codes | ForEach-Object { [char]$_ })
-}
-$ReleaseAssets = @(
-    "resources",
-    (ConvertFrom-CodePoints @(0x8D34, 0x7EB8)),
-    (ConvertFrom-CodePoints @(0x914D, 0x7F6E, 0x6587, 0x4EF6))
-)
-foreach ($name in $ReleaseAssets) {
-    $source = Join-Path $Root $name
-    if (-not (Test-Path -LiteralPath $source)) { throw "Release directory not found: $source" }
-    Copy-Item -LiteralPath $source -Destination $Release -Recurse -Force
-}
+Copy-ReleaseAssets $Root $Release
 $WorkingDirectories = @(
     "showlight", "startmovie",
     (ConvertFrom-CodePoints @(0x4E3B, 0x89C6, 0x9891)),
@@ -134,6 +136,23 @@ foreach ($name in $WorkingDirectories) {
 New-Item -ItemType Directory -Force -Path (Join-Path $Release "ico") | Out-Null
 Copy-Item -LiteralPath $Icon -Destination (Join-Path $Release "ico") -Force
 Copy-Item -LiteralPath $Ffmpeg, $Ffprobe -Destination $Release -Force
+
+Write-Host "==> Testing both protected cores inside the release launcher" -ForegroundColor Cyan
+$SelfTestReport = Join-Path $Release "native-core-self-test.json"
+$SelfTestProcess = Start-Process -FilePath (Join-Path $Release $LauncherName) `
+    -ArgumentList "--native-core-self-test" -WorkingDirectory $Release -PassThru
+$null = $SelfTestProcess.Handle
+if (-not $SelfTestProcess.WaitForExit(120000)) {
+    Stop-Process -Id $SelfTestProcess.Id -Force
+    throw "Release native core self-test timed out"
+}
+if ($SelfTestProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $SelfTestReport)) {
+    throw "Release native core self-test failed (exit $($SelfTestProcess.ExitCode)). See $SelfTestReport"
+}
+$SelfTestResult = Get-Content -LiteralPath $SelfTestReport -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($SelfTestResult.passed -ne $true) {
+    throw "Release native core self-test failed: $($SelfTestResult.error)"
+}
 
 $SProtectName = "$([IO.Path]::GetFileNameWithoutExtension($LauncherName)).sp.exe"
 $SProtectConfig = [ordered]@{
@@ -158,6 +177,32 @@ $Instructions = @(
     "3. Run finalize_sprotect_release.bat from the project root."
 ) -join [Environment]::NewLine
 [IO.File]::WriteAllText((Join-Path $Release "SPROTECT-NEXT-STEP.txt"), $Instructions, [Text.Encoding]::UTF8)
+
+$DiagnosticName = ConvertFrom-CodePoints @(0x8BCA, 0x65AD, 0x542F, 0x52A8)
+$DiagnosticLauncher = @"
+@echo off
+chcp 65001 >nul
+setlocal
+set "LOGDIR=%LOCALAPPDATA%\$ProductName\logs"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%"
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%i"
+set "LOG=%LOGDIR%\launcher-%STAMP%.log"
+echo time=%date% %time%>"%LOG%"
+echo computer=%COMPUTERNAME%>>"%LOG%"
+ver>>"%LOG%"
+start "" /wait "%~dp0$LauncherName"
+set "CODE=%ERRORLEVEL%"
+echo exit=%CODE%>>"%LOG%"
+echo Diagnostic log: %LOG%
+start "" notepad.exe "%LOG%"
+pause
+exit /b %CODE%
+"@
+[IO.File]::WriteAllText(
+    (Join-Path $Release "$DiagnosticName.bat"),
+    $DiagnosticLauncher,
+    (New-Object Text.UTF8Encoding($true))
+)
 
 Write-Host "Native core protected and standalone build completed." -ForegroundColor Green
 Write-Host "SProtect input: $(Join-Path $Release $LauncherName)" -ForegroundColor Yellow

@@ -24,6 +24,11 @@ _REQUIRED = (
     "motianxinglun_pipeline_plan",
     "tianbaixinglun_pipeline_plan",
     "manluo_jinghong_plan",
+    "qianchuan_filter",
+    "qianchuan_audio_filter",
+    "qianchuan_fission_recipe",
+    "qianchuan_fission_filter",
+    "qianchuan_verify_timestamps",
 )
 
 # 第二颗受保护核心 app/_random_frame_swap_core.pyd 的导出清单。它不从这里加载

@@ -35,6 +35,7 @@ assert list(packaged_groups) == [
     "抖音处理", "快手处理", "视频号处理", "小红书处理",
     "TK处理", "百家处理", "哔哩处理", "千川处理",
 ]
+assert [mode.name for mode in packaged_groups["千川处理"]] == ["刹夜黑五", "漫落惊鸿"]
 
 
 app = QApplication.instance() or QApplication([])
@@ -64,10 +65,44 @@ assert all(page._platforms[title][1].isEnabled() for title in (
 ))
 
 _frame, qianchuan = page._platforms["千川处理"]
-assert [qianchuan.itemText(i) for i in range(qianchuan.count())] == ["漫落惊鸿"]
+assert [qianchuan.itemText(i) for i in range(qianchuan.count())] == ["刹夜黑五", "漫落惊鸿"]
+page._activate("千川处理")
+assert page.current_mode.id == "duoduo/shaye_heiw"
+assert not page.shaye_options.isHidden()
+assert not page.shaye_settings_button.isHidden()
+page.shaye_settings_button.click()
+assert page.shaye_dialog.isVisible()
+assert page.shaye_dialog.windowTitle() == "刹夜黑五参数设置"
+page.shaye_dialog.accept()
+assert not page.shaye_dialog.isVisible()
+assert page.tianqiong_options.isHidden()
+assert not page.copies_spin.isHidden()
+assert page.shaye_audio_enabled.isChecked()
+assert page.shaye_audio_mode.currentText() == "汉语方言"
+assert page.shaye_face_enabled.isChecked()
+assert not page.shaye_cover_row.isHidden()
+page.main_edit.setText("main.mp4")
+with patch.object(page, "_files", return_value=[Path("main.mp4")]):
+    with patch.object(page.service, "start", return_value=True) as shaye_start:
+        page.start()
+shaye_state = shaye_start.call_args.args[0]
+assert shaye_state["shaye_audio_enabled"]
+assert shaye_state["shaye_audio_mode"] == "汉语方言"
+assert shaye_state["shaye_face_enabled"]
+assert shaye_state["shaye_cover"] == ""
+assert shaye_start.call_args.args[1].id == "duoduo/shaye_heiw"
+page._on_done(0, 0, 0, "", False)
+
+manluo_index = next(
+    index for index in range(qianchuan.count())
+    if qianchuan.itemData(index).id == "duoduo/manluo_jinghong"
+)
+qianchuan.setCurrentIndex(manluo_index)
 page._activate("千川处理")
 assert page.current_mode.id == "duoduo/manluo_jinghong"
 assert not page.tianqiong_options.isHidden()
+assert page.shaye_options.isHidden()
+assert page.shaye_cover_row.isHidden()
 assert page.dedup_mode.currentText() == "中度"
 
 _frame, shipinhao = page._platforms["视频号处理"]
