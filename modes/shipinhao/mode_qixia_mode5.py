@@ -13,14 +13,15 @@ class ModeQixiaMode5(BaseMode):
     name = "栖霞"
     sort_priority = -150
     platform = "shipinhao"
-    needs_aux = True
+    needs_aux = False
     gpu_supported = True
     supports_copies = True
     supports_mode5_switches = True
+    capture_output = True
     output_suffix = "_qixia_mode5"
     output_naming = "source"
     ext = "mp4"
-    help_text = "视频号处理 · 栖霞（主视频 + 辅助视频，拉松 / 融合 / 倒立，CPU / NVIDIA / AMD）"
+    help_text = "视频号处理 · 栖霞（仅主视频，拉伸 / 自融合 / 倒立，融合透明度 0–100%，CPU / NVIDIA / AMD，输出到工具 capture）"
 
     def has_gpu_command(self):
         return True
@@ -38,11 +39,8 @@ class ModeQixiaMode5(BaseMode):
     def render(self, state, main_video=None, aux_video=None, use_gpu=None, out_base=None):
         state = state or {}
         source = Path(main_video or state.get("main_video") or "")
-        auxiliary = Path(aux_video or state.get("aux_video") or "")
         if not source.is_file():
             return "", False, "输入视频不存在: %s" % source
-        if not auxiliary.is_file():
-            return "", False, "辅视频不存在: %s" % auxiliary
 
         daoli = bool(state.get("mode5_daoli"))
         lasong = bool(state.get("mode5_lasong"))
@@ -54,19 +52,20 @@ class ModeQixiaMode5(BaseMode):
             encoder, encoder_options, gpu_error = select_h264_encoder(state, use_gpu)
             if gpu_error:
                 return "", bool(use_gpu), gpu_error
-            params = self.build_params(state, str(source), str(auxiliary))
+            params = self.build_params(state, str(source), None)
             encoded, _output = self._paths(out_base or params["output"])
             command = worker.build_ffmpeg_command(
                 Path("ffmpeg"),
                 source,
                 encoded,
-                auxiliary_path=auxiliary,
+                auxiliary_path=source,
                 video_encoder=encoder,
                 encoder_options=encoder_options,
                 threads=int(params["threads"]),
                 daoli=daoli,
                 lasong=lasong,
                 ronghe=ronghe,
+                opacity=state.get("mode5_opacity", 50),
             )
         except (OSError, ValueError, KeyError, RuntimeError) as error:
             return "", bool(use_gpu), "栖霞参数生成失败: %s" % error

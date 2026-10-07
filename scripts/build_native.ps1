@@ -130,7 +130,11 @@ r = m.qianchuan_fission_recipe(1000000, 120, 576, 1024)
 assert 23 <= r['frame_interval'] <= 29 and r['target_fps'] == 125
 assert 'hqdn3d=4:4:4:4' in m.qianchuan_fission_filter(r)
 assert m.qianchuan_verify_timestamps([{'pts_time': str(i / 120)} for i in range(20)])
-print('smoke test ok: 23 algorithm exports exercised')
+q = m.qixia_pipeline_plan(True, True, True, 50)
+assert q['filter_complex'].count('vflip') == 2
+assert 'A*0.50+B*0.50' in q['filter_complex']
+assert 'ref=4' in q['x264_params'] and 'b-adapt=0' in q['x264_params']
+print('smoke test ok: 24 algorithm exports exercised')
 '@
         Markers       = @(
             "FCALGO:mask.alpha",
@@ -155,7 +159,8 @@ print('smoke test ok: 23 algorithm exports exercised')
             "FCALGO:qianchuan.audio",
             "FCALGO:qianchuan.fission",
             "FCALGO:qianchuan.fission.filter",
-            "FCALGO:qianchuan.verify"
+            "FCALGO:qianchuan.verify",
+            "FCALGO:qixia.1007.pipeline"
         )
     },
     @{
