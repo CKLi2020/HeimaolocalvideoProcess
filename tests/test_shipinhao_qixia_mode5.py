@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import modes as mode_registry
 from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, verify_output
 from modes import load_modes
 from modes.shipinhao.mode_qixia_mode5 import MODE
@@ -26,9 +27,9 @@ def _state(**updates):
 def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     modes = {mode.id: mode for mode in load_modes()["视频号处理"]}
     assert modes[MODE.id] is MODE
-    assert MODE.name == "栖霞"
+    assert MODE.name == "栖霞1007"
     assert not MODE.needs_aux and MODE.gpu_supported and MODE.has_gpu_command()
-    assert MODE.capture_output
+    assert not getattr(MODE, "capture_output", False)
     assert MODE.supports_copies and MODE.output_count({}) == 1
     assert MODE.output_count({"copies": 999}) == 100
     assert MODE.supports_mode5_switches
@@ -183,11 +184,25 @@ def test_qixia_all_switch_combinations_use_main_input(tmp_path, daoli, lasong, r
         assert "A*0.25+B*0.75" in command
 
 
-def test_qixia_keeps_existing_name_id_and_list_position():
+@pytest.mark.parametrize("packaged", [False, True])
+def test_qixia_has_dated_name_and_is_first_without_reordering_others(
+    monkeypatch, tmp_path, packaged,
+):
+    if packaged:
+        monkeypatch.setattr(mode_registry, "MODES_DIR", str(tmp_path / "missing-modes"))
     modes = load_modes()["视频号处理"]
-    assert [mode.id for mode in modes].index(MODE.id) == 1
-    assert MODE.name == "栖霞"
-    assert MODE.sort_priority == -150
+    ids = [mode.id for mode in modes]
+    assert ids == [
+        "shipinhao/qixia_mode5",
+        "shipinhao/liuying_v15",
+        "shipinhao/heimao_luoyue",
+        "shipinhao/caishen0923",
+        "shipinhao/tianjia0923",
+    ]
+    assert len(ids) == len(set(ids))
+    assert modes[0] is MODE
+    assert MODE.name == "栖霞1007"
+    assert MODE.sort_priority < min(getattr(mode, "sort_priority", 0) for mode in modes[1:])
 
 
 @pytest.fixture(scope="module")
