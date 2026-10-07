@@ -45,7 +45,7 @@ native_src/random_frame_swap_core.pyx  爆闪帧序交换（3 个 RFCORE 标记�
 | `RFCORE:shuffle` | 帧序洗牌 |
 | `RFCORE:offsets` | ctts 时间戳偏移重算 |
 
-主核心当前包含 17 个 `FCALGO:*` 标记，覆盖云麒 SPS 兼容与两条星轮管线；爆闪核心另有 3 个 `RFCORE:*` 标记。宿主门禁本身不增加 VMProtect 区域。
+主核心当前包含 24 个 `FCALGO:*` 标记，包含栖霞管线；爆闪核心另有 3 个 `RFCORE:*` 标记。宿主门禁本身不增加 VMProtect 区域。
 
 `scripts/build_native.ps1` 对两颗核心各完成以下工作：
 
@@ -115,6 +115,13 @@ modes/douyin/feimao_recipe.py      FILTER_GRAPH（滤镜图）+ FFARGS（编码�
 `title` 会写进成品 MP4，所以保持文件形态。
 
 ### 3. 外层程序
+
+栖霞模式五的滤镜和 CPU 编码计划通过 `qixia_pipeline_plan` 接入主原生核，
+对应 `FCALGO:qixia.1007.pipeline` 标记。开发等价实现、必需导出、构建 smoke
+及发布启动器的核心自检同步维护；worker 不再保留明文计划常量。
+融合透明度与三开关传入该 API，非法透明度在进入虚拟化区域前拒绝。
+源码解释器遇到只允许发布 EXE 调用的主核心时，loader 使用现有开发等价实现；
+编译/冻结的 Release 仍必须使用保护核，不允许此回退，也不关闭宿主门禁。
 
 Nuitka 使用 standalone 模式生成完整程序目录。这里不再给外层 EXE 套 VMProtect，因为最终外层由 SProtect 处理，避免重复加壳造成启动或兼容问题。
 

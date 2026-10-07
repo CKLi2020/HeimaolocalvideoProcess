@@ -155,18 +155,37 @@ qixia_index = next(
 )
 shipinhao.setCurrentIndex(qixia_index)
 page._activate("视频号处理")
-assert page.aux_edit.isEnabled() and not page.aux_edit.text()
-assert all(button.isEnabled() for button in page.aux_edit._path_buttons)
+assert not page.aux_edit.isEnabled()
+assert all(not button.isEnabled() for button in page.aux_edit._path_buttons)
 assert not page.mode5_options.isHidden()
 assert not page.copies_spin.isHidden()
 assert page.copies_label.text() == "裂变个数："
 assert page.copies_spin.value() == 1
 assert page.mode5_ronghe.isChecked()
 assert not page.mode5_lasong.isChecked() and not page.mode5_daoli.isChecked()
+assert page.mode5_lasong.text() == "拉伸"
+assert page.mode5_opacity.value() == 50
+assert page.mode5_opacity.minimum() == 0 and page.mode5_opacity.maximum() == 100
+assert page.output_edit.text() == str(page.root_dir / "capture")
+assert page.output_edit.isReadOnly()
+page.mode5_ronghe.setChecked(False)
+assert not page.mode5_opacity.isEnabled()
+page.mode5_ronghe.setChecked(True)
+page.mode5_opacity.setValue(25)
+page.main_edit.setText("main.mp4")
+with patch.object(page, "_files", return_value=[Path("main.mp4")]):
+    with patch.object(page.service, "start", return_value=True) as qixia_start:
+        page.start()
+assert qixia_start.call_args.args[0]["mode5_opacity"] == 25
+assert qixia_start.call_args.args[0]["tool_root"] == str(page.root_dir.resolve())
+assert qixia_start.call_args.args[3] == []
+page._on_done(0, 0, 0, "", False)
 
 shipinhao.setCurrentIndex(heimao_index)
 page._activate("视频号处理")
 assert page.mode5_options.isHidden()
+assert not page.output_edit.isReadOnly()
+assert page.output_edit.text() == str(page.root_dir / "output")
 
 caishen_index = next(
     index for index in range(shipinhao.count())

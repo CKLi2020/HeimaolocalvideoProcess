@@ -63,6 +63,11 @@ def exercise_algorithms(core, swap):
           swap.shuffled_order(20, 1) == swap.shuffled_order(20, 1), "shuffled_order")
     check(swap.special_offsets([1000, 1000, 1000], [0, 10, 20]) == [0, 498, 996],
           "special_offsets")
+    qixia = core.qixia_pipeline_plan(True, True, True, 50)
+    check(qixia["filter_complex"].count("vflip") == 2 and
+          "A*0.50+B*0.50" in qixia["filter_complex"] and
+          "ref=4" in qixia["x264_params"] and
+          "b-adapt=0" in qixia["x264_params"], "qixia_pipeline_plan")
 
 
 def run_self_test(core, swap):

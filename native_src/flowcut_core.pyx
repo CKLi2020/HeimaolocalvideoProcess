@@ -736,6 +736,36 @@ def qianchuan_verify_timestamps(packets, flash_value=5):
         VMProtectEnd()
 
 
+def qixia_pipeline_plan(daoli=False, lasong=False, ronghe=False, opacity=50):
+    _ensure_host()
+    if isinstance(opacity, bool) or not isinstance(opacity, int) or not 0 <= opacity <= 100:
+        raise ValueError("Qixia fusion opacity must be an integer from 0 to 100")
+    VMProtectBeginUltra(b"FCALGO:qixia.1007.pipeline")
+    transform = "fps=60,scale=576:1024,pad=576:1248:0:112:black,setsar=1"
+    if daoli:
+        transform += ",vflip"
+    if not lasong:
+        transform += ",setparams=range=unspecified:color_primaries=unknown:color_trc=unknown:colorspace=unknown"
+    if ronghe:
+        weight = opacity / 100.0
+        graph = (
+            f"[0:v:0]{transform}[main];[1:v:0]{transform}[aux];"
+            f"[aux][main]blend=all_expr='A*{weight:.2f}+B*{1-weight:.2f}':shortest=1[v]"
+        )
+    else:
+        graph = f"[0:v:0]{transform}[v]"
+    x264 = (
+        "bframes=3:b-adapt=0:b-pyramid=2:keyint=18:keyint-min=10:scenecut=0:"
+        "ref=4:me=hex:subme=4:trellis=0:8x8dct=0:weightp=1:rc-lookahead=20:"
+        "rc=cbr:vbv-maxrate=9000:vbv-bufsize=18000:nal-hrd=vbr"
+    )
+    if lasong:
+        x264 += ":colorprim=bt709:transfer=bt709:colormatrix=bt709:range=tv"
+    result = {"filter_complex": graph, "x264_params": x264}
+    VMProtectEnd()
+    return result
+
+
 def mask_alpha(w, h, feather, margin_tb, margin_lr):
     cdef int d
     cdef double offset
