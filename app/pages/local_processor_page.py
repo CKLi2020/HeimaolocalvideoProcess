@@ -108,7 +108,7 @@ class LocalProcessorPage(QWidget):
         self.mode5_options = QWidget()
         mode5_layout = QHBoxLayout(self.mode5_options)
         mode5_layout.setContentsMargins(0, 0, 0, 0)
-        mode5_layout.addWidget(QLabel("栖霞1007效果："))
+        mode5_layout.addWidget(QLabel("栖霞效果："))
         self.mode5_lasong = QCheckBox("拉伸")
         self.mode5_ronghe = QCheckBox("融合")
         self.mode5_daoli = QCheckBox("倒立")

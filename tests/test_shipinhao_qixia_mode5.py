@@ -9,6 +9,7 @@ import pytest
 import modes as mode_registry
 from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, verify_output
 from modes import load_modes
+from modes.shipinhao.mode_limeng_1007 import MODE as LIMENG_MODE
 from modes.shipinhao.mode_qixia_mode5 import MODE
 from modes.shipinhao import mode_shipinghao_mode5_combined_worker as worker
 
@@ -27,9 +28,9 @@ def _state(**updates):
 def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     modes = {mode.id: mode for mode in load_modes()["视频号处理"]}
     assert modes[MODE.id] is MODE
-    assert MODE.name == "栖霞1007"
+    assert MODE.name == "栖霞"
     assert not MODE.needs_aux and MODE.gpu_supported and MODE.has_gpu_command()
-    assert not getattr(MODE, "capture_output", False)
+    assert MODE.capture_output
     assert MODE.supports_copies and MODE.output_count({}) == 1
     assert MODE.output_count({"copies": 999}) == 100
     assert MODE.supports_mode5_switches
@@ -185,7 +186,7 @@ def test_qixia_all_switch_combinations_use_main_input(tmp_path, daoli, lasong, r
 
 
 @pytest.mark.parametrize("packaged", [False, True])
-def test_qixia_has_dated_name_and_is_first_without_reordering_others(
+def test_limeng_is_first_and_original_qixia_is_preserved(
     monkeypatch, tmp_path, packaged,
 ):
     if packaged:
@@ -193,16 +194,40 @@ def test_qixia_has_dated_name_and_is_first_without_reordering_others(
     modes = load_modes()["视频号处理"]
     ids = [mode.id for mode in modes]
     assert ids == [
-        "shipinhao/qixia_mode5",
+        "shipinhao/limeng_1007",
         "shipinhao/liuying_v15",
+        "shipinhao/qixia_mode5",
         "shipinhao/heimao_luoyue",
         "shipinhao/caishen0923",
         "shipinhao/tianjia0923",
     ]
     assert len(ids) == len(set(ids))
-    assert modes[0] is MODE
-    assert MODE.name == "栖霞1007"
-    assert MODE.sort_priority < min(getattr(mode, "sort_priority", 0) for mode in modes[1:])
+    assert modes[0] is LIMENG_MODE
+    assert LIMENG_MODE.name == "立梦1007"
+    assert LIMENG_MODE.sort_priority < min(
+        getattr(mode, "sort_priority", 0) for mode in modes[1:]
+    )
+    assert modes[2] is MODE
+    assert MODE.name == "栖霞"
+    assert MODE.id == "shipinhao/qixia_mode5"
+    assert MODE.capture_output and MODE.supports_mode5_switches
+
+
+def test_limeng_forces_only_inversion_and_hides_effect_settings(tmp_path):
+    source = tmp_path / "main.mp4"
+    source.touch()
+    command, is_gpu, error = LIMENG_MODE.render(
+        _state(mode5_daoli=False, mode5_lasong=True, mode5_ronghe=True),
+        str(source),
+        use_gpu=False,
+        out_base=str(tmp_path / "limeng.part"),
+    )
+    assert command and not is_gpu and not error
+    assert "vflip" in command
+    assert "blend=" not in command
+    assert "colorprim=bt709" not in command
+    assert not LIMENG_MODE.supports_mode5_switches
+    assert not getattr(LIMENG_MODE, "capture_output", False)
 
 
 @pytest.fixture(scope="module")

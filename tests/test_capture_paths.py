@@ -7,6 +7,7 @@ import pytest
 
 from core.tool_paths import prepare_capture_directory
 from engine.local_processor import LocalProcessorService
+from modes.shipinhao.mode_limeng_1007 import MODE as LIMENG_MODE
 from modes.shipinhao.mode_qixia_mode5 import MODE
 
 
@@ -70,7 +71,7 @@ def test_capture_only_service_reports_outside_capture_and_does_not_run(tmp_path)
     assert not (tmp_path / "outside").exists()
 
 
-def test_qixia_service_uses_user_selected_folder(tmp_path, monkeypatch):
+def test_limeng_service_uses_user_selected_folder(tmp_path, monkeypatch):
     import engine.local_processor as local_processor
 
     service = LocalProcessorService.__new__(LocalProcessorService)
@@ -90,9 +91,9 @@ def test_qixia_service_uses_user_selected_folder(tmp_path, monkeypatch):
         return 0, False
 
     monkeypatch.setattr(service, "_run_commands", run_commands)
-    monkeypatch.setattr(MODE, "finalize_render", lambda *_args: None)
+    monkeypatch.setattr(LIMENG_MODE, "finalize_render", lambda *_args: None)
     LocalProcessorService._run(
-        service, {"use_gpu": False, "output_dir": str(selected)}, MODE,
+        service, {"use_gpu": False, "output_dir": str(selected)}, LIMENG_MODE,
         [source], [], lambda _line: None, lambda _value: None,
         lambda *result: done.append(result),
     )

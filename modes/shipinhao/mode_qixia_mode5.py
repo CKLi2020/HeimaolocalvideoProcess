@@ -1,4 +1,4 @@
-"""视频号栖霞1007通道。"""
+"""视频号栖霞通道。"""
 
 import subprocess
 from pathlib import Path
@@ -10,17 +10,18 @@ from modes.shipinhao.h264_gpu import select_h264_encoder
 
 class ModeQixiaMode5(BaseMode):
     id = "shipinhao/qixia_mode5"
-    name = "栖霞1007"
-    sort_priority = -201
+    name = "栖霞"
+    sort_priority = -150
     platform = "shipinhao"
     needs_aux = False
     gpu_supported = True
     supports_copies = True
     supports_mode5_switches = True
+    capture_output = True
     output_suffix = "_qixia_mode5"
     output_naming = "source"
     ext = "mp4"
-    help_text = "视频号处理 · 栖霞1007（仅主视频，拉伸 / 自融合 / 倒立，融合透明度 0–100%，CPU / NVIDIA / AMD，输出文件夹可选）"
+    help_text = "视频号处理 · 栖霞（仅主视频，拉伸 / 自融合 / 倒立，融合透明度 0–100%，CPU / NVIDIA / AMD，输出到工具 capture）"
 
     def has_gpu_command(self):
         return True

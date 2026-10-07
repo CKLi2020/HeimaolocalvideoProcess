@@ -99,14 +99,14 @@ def _style_native_title_bar(window: MainWindow) -> None:
 
 
 def main(*, check_native_host: bool = True) -> None:
-    if "--qixia-self-test" in sys.argv:
-        from engine.qixia_self_test import run_self_test
+    if "--limeng-self-test" in sys.argv:
+        from engine.limeng_self_test import run_self_test
 
         report = {"passed": False}
         try:
-            position = sys.argv.index("--qixia-self-test")
+            position = sys.argv.index("--limeng-self-test")
             if position + 1 >= len(sys.argv):
-                raise ValueError("--qixia-self-test requires an input video path")
+                raise ValueError("--limeng-self-test requires an input video path")
             report = run_self_test(ROOT, Path(sys.argv[position + 1]))
         except Exception:
             report["error"] = traceback.format_exc()
@@ -114,7 +114,7 @@ def main(*, check_native_host: bool = True) -> None:
         report["app_version"] = APP_VERSION
         report_dir = ROOT / "capture"
         report_dir.mkdir(parents=True, exist_ok=True)
-        (report_dir / "qixia-self-test.json").write_text(
+        (report_dir / "limeng-self-test.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         sys.exit(0 if report["passed"] else 1)
