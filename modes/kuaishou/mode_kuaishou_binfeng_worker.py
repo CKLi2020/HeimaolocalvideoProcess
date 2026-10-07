@@ -12,6 +12,8 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any, Sequence
 
+from engine import HIDDEN_SUBPROCESS
+
 
 X264_PARAMS = (
     "lookahead_threads=3:aq-mode=2:aq-strength=1.00:"
@@ -47,6 +49,7 @@ def run_capture(command: Sequence[str]) -> str:
         encoding="utf-8",
         errors="replace",
         check=False,
+        **HIDDEN_SUBPROCESS,
     )
     if completed.returncode:
         raise ProcessingError(completed.stderr.strip() or "Command failed")
@@ -246,7 +249,7 @@ def build_command(
         "-b:a", "72k",
         "-ac", str(audio["channels"]),
         "-ar", audio["sample_rate"],
-        "-tag:v", video["codec_tag_string"],
+        "-tag:v", "avc1",
         "-movflags", "+faststart+write_colr",
         str(output_path),
     ])
@@ -262,7 +265,7 @@ def process(
     threads: int,
 ) -> None:
     command = build_command(ffmpeg, input_path, effect_input, output_path, reference, threads)
-    completed = subprocess.run(command, check=False)
+    completed = subprocess.run(command, check=False, **HIDDEN_SUBPROCESS)
     if completed.returncode:
         raise ProcessingError(f"ffmpeg failed with exit code {completed.returncode}")
 
