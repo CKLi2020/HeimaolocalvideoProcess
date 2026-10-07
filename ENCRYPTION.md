@@ -45,7 +45,7 @@ native_src/random_frame_swap_core.pyx  爆闪帧序交换（3 个 RFCORE 标记�
 | `RFCORE:shuffle` | 帧序洗牌 |
 | `RFCORE:offsets` | ctts 时间戳偏移重算 |
 
-主核心当前包含 24 个 `FCALGO:*` 标记，包含栖霞管线；爆闪核心另有 3 个 `RFCORE:*` 标记。宿主门禁本身不增加 VMProtect 区域。
+主核心当前包含 24 个 `FCALGO:*` 标记，包含栖霞及立梦1007共用管线；爆闪核心另有 3 个 `RFCORE:*` 标记。宿主门禁本身不增加 VMProtect 区域。
 
 `scripts/build_native.ps1` 对两颗核心各完成以下工作：
 

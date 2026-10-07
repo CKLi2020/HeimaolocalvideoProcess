@@ -37,7 +37,7 @@ assert list(packaged_groups) == [
 ]
 assert [mode.name for mode in packaged_groups["千川处理"]] == ["刹夜黑五", "漫落惊鸿"]
 assert [mode.name for mode in packaged_groups["视频号处理"]] == [
-    "栖霞1007", "流萤1003", "爆闪", "云水", "青岚",
+    "立梦1007", "栖霞1007", "流萤1003", "爆闪", "云水", "青岚",
 ]
 
 
@@ -110,9 +110,9 @@ assert page.dedup_mode.currentText() == "中度"
 
 _frame, shipinhao = page._platforms["视频号处理"]
 assert [shipinhao.itemText(i) for i in range(shipinhao.count())] == [
-    "栖霞1007", "流萤1003", "爆闪", "云水", "青岚",
+    "立梦1007", "栖霞1007", "流萤1003", "爆闪", "云水", "青岚",
 ]
-assert shipinhao.currentText() == "栖霞1007"
+assert shipinhao.currentText() == "立梦1007"
 liuying_index = next(
     index for index in range(shipinhao.count())
     if shipinhao.itemData(index).id == "shipinhao/liuying_v15"
@@ -161,7 +161,7 @@ qixia_index = next(
     index for index in range(shipinhao.count())
     if shipinhao.itemData(index).id == "shipinhao/qixia_mode5"
 )
-assert qixia_index == 0
+assert qixia_index == 1
 shipinhao.setCurrentIndex(qixia_index)
 page._activate("视频号处理")
 assert page.current_mode.name == "栖霞1007"
@@ -196,6 +196,28 @@ assert qixia_start.call_args.args[0]["mode5_opacity"] == 25
 assert qixia_start.call_args.args[0]["output_dir"] == selected_output
 assert qixia_start.call_args.args[0]["tool_root"] == str(page.root_dir.resolve())
 assert qixia_start.call_args.args[3] == []
+page._on_done(0, 0, 0, "", False)
+
+limeng_index = next(
+    index for index in range(shipinhao.count())
+    if shipinhao.itemData(index).id == "shipinhao/limeng_1007"
+)
+assert limeng_index == 0
+shipinhao.setCurrentIndex(limeng_index)
+page._activate("视频号处理")
+assert page.current_mode.name == "立梦1007"
+assert page.mode5_options.isHidden()
+assert not page.aux_edit.isEnabled()
+assert not page.output_edit.isReadOnly()
+assert page.output_edit.text() == selected_output
+page.main_edit.setText("main.mp4")
+with patch.object(page, "_files", return_value=[Path("main.mp4")]):
+    with patch.object(page.service, "start", return_value=True) as limeng_start:
+        page.start()
+assert limeng_start.call_args.args[0]["output_dir"] == selected_output
+assert limeng_start.call_args.args[0]["tool_root"] == str(page.root_dir.resolve())
+assert limeng_start.call_args.args[1].id == "shipinhao/limeng_1007"
+assert limeng_start.call_args.args[3] == []
 page._on_done(0, 0, 0, "", False)
 
 shipinhao.setCurrentIndex(heimao_index)
