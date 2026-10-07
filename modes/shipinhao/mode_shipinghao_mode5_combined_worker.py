@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from engine.native_core import core as _native_core
 
 SWITCH_MODES = {
     "daoli": "shipinghao_mode5_daolimoshi",
@@ -16,16 +17,10 @@ SWITCH_MODES = {
 }
 CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl"}
 VERTICAL_FLIP_MATRIX = (65536, 0, 0, 0, -65536, 0, 0, 0, 1073741824)
-BASE_TRANSFORM = "fps=60,scale=576:1024,pad=576:1248:0:112:black,setsar=1"
-BASE_X264_PARAMS = (
-    "bframes=3:b-adapt=1:b-pyramid=2:keyint=18:keyint-min=10:scenecut=0:ref=3:me=hex:subme=4:"
-    "trellis=0:8x8dct=0:weightp=1:rc-lookahead=20:rc=cbr:vbv-maxrate=9000:vbv-bufsize=18000:nal-hrd=vbr"
-)
-LASONG_X264_VUI = ":colorprim=bt709:transfer=bt709:colormatrix=bt709:range=tv"
 UNKNOWN_TRANSFORMATIONS = {
-    "daoli": "The raw-frame producer is hidden. The observed sample supports a centered 576x1024 scale, vertical pixel flip, and matching vertical-flip MP4 display matrix; the underlying application implementation remains unknown.",
-    "lasong": "The application supplied raw frames through a hidden protocol. The observed sample supports a centered 576x1024 scale with 112-pixel top and bottom padding; exact hidden scaling details and pixel determinism remain unknown.",
-    "ronghe": "The application supplied raw frames through a hidden protocol. The observed sample supports a centered 576x1024 main image before fusion; exact hidden transformation and pixel determinism remain unknown.",
+    "daoli": "The captured raw-video decoder applies vflip; the output also has a vertical-flip MP4 display matrix. Additional in-application raw-frame changes are not inferred from this evidence.",
+    "lasong": "The captured main-input sample confirms BT.709/TV signaling and a centered 576x1024 image with 112-pixel padding; unobserved source-aspect-ratio behavior is not certified.",
+    "ronghe": "Fusion was captured with the main input used as its own auxiliary at 50% opacity. This cannot prove the external application's general two-source blending implementation.",
 }
 STREAM_FIELDS = (
     "index",
@@ -383,18 +378,12 @@ def build_ffmpeg_command(
     daoli: bool = False,
     lasong: bool = False,
     ronghe: bool = False,
+    opacity: int = 50,
 ) -> list[str]:
-    main_output = "main" if ronghe and auxiliary_path else "v"
-    transform = BASE_TRANSFORM + (",vflip" if daoli else "")
-    filters = [f"[0:v:0]{transform}[{main_output}]"]
+    plan = _native_core.qixia_pipeline_plan(daoli, lasong, ronghe, opacity)
     inputs = ["-i", str(input_path)]
-    if auxiliary_path:
-        inputs.extend(["-stream_loop", "-1", "-i", str(auxiliary_path)])
-    if ronghe and auxiliary_path:
-        filters.append(f"[1:v:0]{transform}[aux]")
-        filters.append("[aux][main]blend=all_expr='A*0.18+B*0.82':shortest=1[v]")
-    video_filter = ";".join(filters)
-    x264_params = BASE_X264_PARAMS + (LASONG_X264_VUI if lasong else "")
+    if ronghe:
+        inputs.extend(["-stream_loop", "-1", "-i", str(auxiliary_path or input_path)])
     color_options = (
         ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
         if lasong
@@ -410,7 +399,7 @@ def build_ffmpeg_command(
         str(threads),
         *inputs,
         "-filter_complex",
-        video_filter,
+        plan["filter_complex"],
         "-map",
         "[v]",
         "-map",
@@ -429,11 +418,11 @@ def build_ffmpeg_command(
             "-bf",
             "3",
             "-refs",
-            "3",
+            "4",
             "-g",
             "18",
             "-x264-params",
-            x264_params,
+            plan["x264_params"],
         ])
     else:
         command.extend(encoder_options)
@@ -474,19 +463,26 @@ def main() -> int:
     parser.add_argument("--reference", required=True, type=Path)
     parser.add_argument("--auxiliary", type=Path, help="optional auxiliary video used by the fusion switch")
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--ffmpeg", type=Path, help="explicit FFmpeg binary for reference comparisons")
+    parser.add_argument("--ffprobe", type=Path, help="explicit ffprobe binary for reference comparisons")
+    parser.add_argument("--opacity", type=int, default=50, help="fusion opacity, 0 to 100 (default: 50)")
     parser.add_argument("--daoli", action="store_true", help="倒立: vertical pixel flip plus vertical-flip display matrix")
-    parser.add_argument("--lasong", action="store_true", help="拉松: BT.709/TV color signaling")
+    parser.add_argument("--lasong", action="store_true", help="拉伸: captured BT.709/TV color signaling")
     parser.add_argument("--ronghe", action="store_true", help="融合: captured base pipeline")
     args = parser.parse_args()
 
     switches = [name for name in SWITCH_MODES if getattr(args, name)]
-    if not switches:
-        parser.error("Enable at least one of --daoli, --lasong, or --ronghe.")
+    if not 0 <= args.opacity <= 100:
+        parser.error("--opacity must be from 0 to 100")
 
     report_path = args.report or args.output.with_suffix(".comparison.json")
     report: dict[str, Any] = {
-        "mode": SWITCH_MODES[switches[0]] if len(switches) == 1 else "shipinghao_mode5_" + "+".join(switches),
+        "mode": (
+            SWITCH_MODES[switches[0]] if len(switches) == 1
+            else "shipinghao_mode5_" + ("+".join(switches) or "baseline")
+        ),
         "switches": switches,
+        "opacity": args.opacity,
         "input": str(args.input.resolve()),
         "reference": str(args.reference.resolve()),
         "auxiliary": str(args.auxiliary.resolve()) if args.auxiliary else None,
@@ -515,8 +511,8 @@ def main() -> int:
             raise WorkerError(f"Auxiliary input does not exist: {args.auxiliary}")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         script_directory = Path(__file__).resolve().parents[2]
-        ffmpeg = resolve_tool("ffmpeg.exe" if os.name == "nt" else "ffmpeg", script_directory)
-        ffprobe = resolve_tool("ffprobe.exe" if os.name == "nt" else "ffprobe", script_directory)
+        ffmpeg = args.ffmpeg or resolve_tool("ffmpeg.exe" if os.name == "nt" else "ffmpeg", script_directory)
+        ffprobe = args.ffprobe or resolve_tool("ffprobe.exe" if os.name == "nt" else "ffprobe", script_directory)
 
         command = build_ffmpeg_command(
             ffmpeg,
@@ -526,6 +522,7 @@ def main() -> int:
             daoli=args.daoli,
             lasong=args.lasong,
             ronghe=args.ronghe,
+            opacity=args.opacity,
         )
         run(command)
         rewrite_timing(encoded_path, args.output, flip=args.daoli)

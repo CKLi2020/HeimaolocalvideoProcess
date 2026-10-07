@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 from core.build_config import load_config, resolve_path
+from core.tool_paths import prepare_capture_directory
 from core.hardware import detect_gpu_profile
 from core.runner import FFmpegRunner, find_ffmpeg, find_ffprobe, probe_duration, verify_output
 from engine.output_naming import CHANNEL_FILENAME_PLATFORMS, channel_output_stem
@@ -67,9 +68,14 @@ class LocalProcessorService:
         total = source_total * copies_per_source
         gpu_disabled = False
         output_dir = Path(resolve_path(state["output_dir"]))
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            if getattr(mode, "capture_output", False):
+                output_dir = prepare_capture_directory(
+                    state.get("tool_root", ""), state["output_dir"]
+                )
+            else:
+                output_dir.mkdir(parents=True, exist_ok=True)
             for index, source in enumerate(files):
                 if self._stop.is_set():
                     break

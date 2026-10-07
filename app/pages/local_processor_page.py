@@ -43,6 +43,7 @@ class LocalProcessorPage(QWidget):
         self.service = LocalProcessorService()
         self.current_mode = None
         self._aux_saved_value = ""
+        self._capture_previous_output = None
         self._platforms = {}
         self.log_received.connect(self._append_log)
         self.progress_received.connect(self._set_progress)
@@ -108,12 +109,20 @@ class LocalProcessorPage(QWidget):
         mode5_layout = QHBoxLayout(self.mode5_options)
         mode5_layout.setContentsMargins(0, 0, 0, 0)
         mode5_layout.addWidget(QLabel("栖霞效果："))
-        self.mode5_lasong = QCheckBox("拉松")
+        self.mode5_lasong = QCheckBox("拉伸")
         self.mode5_ronghe = QCheckBox("融合")
         self.mode5_daoli = QCheckBox("倒立")
         self.mode5_ronghe.setChecked(True)
         for checkbox in (self.mode5_lasong, self.mode5_ronghe, self.mode5_daoli):
             mode5_layout.addWidget(checkbox)
+        mode5_layout.addWidget(QLabel("融合透明度："))
+        self.mode5_opacity = QSpinBox()
+        self.mode5_opacity.setRange(0, 100)
+        self.mode5_opacity.setValue(50)
+        self.mode5_opacity.setSuffix("%")
+        self.mode5_opacity.setEnabled(self.mode5_ronghe.isChecked())
+        self.mode5_ronghe.toggled.connect(self.mode5_opacity.setEnabled)
+        mode5_layout.addWidget(self.mode5_opacity)
         mode5_layout.addStretch()
         self.mode5_options.hide()
         execution_layout.addWidget(self.mode5_options)
@@ -292,6 +301,17 @@ class LocalProcessorPage(QWidget):
                 self.current_mode = combo.currentData()
         needs_auxiliary = bool(self.current_mode and self.current_mode.needs_aux)
         self._set_auxiliary_enabled(needs_auxiliary)
+        capture_output = bool(getattr(self.current_mode, "capture_output", False))
+        if capture_output:
+            if self._capture_previous_output is None:
+                self._capture_previous_output = self.output_edit.text()
+            self.output_edit.setText(str(self.root_dir / "capture"))
+        elif self._capture_previous_output is not None:
+            self.output_edit.setText(self._capture_previous_output)
+            self._capture_previous_output = None
+        self.output_edit.setReadOnly(capture_output)
+        for button in self.output_edit._path_buttons:
+            button.setEnabled(not capture_output)
         supports_copies = bool(getattr(self.current_mode, "supports_copies", False))
         self.copies_label.setVisible(supports_copies)
         self.copies_spin.setVisible(supports_copies)
@@ -360,6 +380,7 @@ class LocalProcessorPage(QWidget):
             "main_video": main_value,
             "aux_video": self.aux_edit.text().strip() if self.current_mode.needs_aux else "",
             "output_dir": output,
+            "tool_root": str(self.root_dir.resolve()),
             "threads": int(self.service.config.get("default_threads") or 6),
             "bitrate": str(self.service.config.get("default_bitrate") or "6000k"),
             "use_gpu": bool(self.processor.currentData()) and self.service.gpu_profile.get("available"),
@@ -369,6 +390,7 @@ class LocalProcessorPage(QWidget):
             "mode5_lasong": self.mode5_lasong.isChecked(),
             "mode5_ronghe": self.mode5_ronghe.isChecked(),
             "mode5_daoli": self.mode5_daoli.isChecked(),
+            "mode5_opacity": self.mode5_opacity.value(),
             "dedup_mode": self.dedup_mode.currentText(),
             "shaye_flash_enabled": self.shaye_flash_enabled.isChecked(),
             "shaye_flash_value": self.shaye_flash_value.value(),
