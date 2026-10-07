@@ -50,8 +50,14 @@ except ImportError:
 if core is not None and not all(hasattr(core, name) for name in _REQUIRED):
     core = None
 
+_release = bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
+if core is not None and not _release:
+    host_status = core.host_gate_status()
+    if host_status["enabled"] and not host_status["allowed"]:
+        core = None
+
 if core is None:
-    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+    if _release:
         raise RuntimeError("发布版缺少或无法加载受保护的原生算法核心")
     # 拆开模块名，避免 Nuitka 把仅供源码测试的实现自动收进发布目录。
     core = importlib.import_module("engine." + "dev_core")

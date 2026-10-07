@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -69,6 +70,8 @@ def test_qixia_cpu_conversion_and_gpu_commands(tmp_path):
             "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30:duration=0.4",
             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=0.4",
             "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+            "-color_range", "tv", "-colorspace", "bt709",
+            "-color_primaries", "bt709", "-color_trc", "bt709",
             str(source),
         ],
         check=True,
@@ -116,6 +119,14 @@ def test_qixia_cpu_conversion_and_gpu_commands(tmp_path):
     MODE.cleanup_render(str(disabled_output_base))
     disabled_final_path = str(disabled_output_base) + ".mp4"
     assert verify_output({"ffprobe_path": ffprobe}, disabled_final_path, expected_audio_tracks=1)[0]
+    disabled_probe = json.loads(subprocess.run(
+        [ffprobe, "-v", "error", "-show_streams", "-of", "json", disabled_final_path],
+        check=True, capture_output=True, text=True,
+    ).stdout)
+    disabled_video = disabled_probe["streams"][0]
+    assert all(disabled_video.get(field) is None for field in (
+        "color_range", "color_space", "color_primaries", "color_transfer",
+    ))
 
     profiles = (
         ("nvidia", "h264_nvenc"),

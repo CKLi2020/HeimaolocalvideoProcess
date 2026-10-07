@@ -588,6 +588,8 @@ def qixia_pipeline_plan(daoli=False, lasong=False, ronghe=False, opacity=50):
     transform = "fps=60,scale=576:1024,pad=576:1248:0:112:black,setsar=1"
     if daoli:
         transform += ",vflip"
+    if not lasong:
+        transform += ",setparams=range=unspecified:color_primaries=unknown:color_trc=unknown:colorspace=unknown"
     if ronghe:
         weight = opacity / 100.0
         graph = (

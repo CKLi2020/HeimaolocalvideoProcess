@@ -18,9 +18,9 @@ SWITCH_MODES = {
 CONTAINER_BOXES = {b"moov", b"trak", b"mdia", b"minf", b"stbl"}
 VERTICAL_FLIP_MATRIX = (65536, 0, 0, 0, -65536, 0, 0, 0, 1073741824)
 UNKNOWN_TRANSFORMATIONS = {
-    "daoli": "The raw-frame producer is hidden. The observed sample supports a centered 576x1024 scale, vertical pixel flip, and matching vertical-flip MP4 display matrix; the underlying application implementation remains unknown.",
-    "lasong": "The application supplied raw frames through a hidden protocol. The observed sample supports a centered 576x1024 scale with 112-pixel top and bottom padding; exact hidden scaling details and pixel determinism remain unknown.",
-    "ronghe": "The application supplied raw frames through a hidden protocol. The observed sample supports a centered 576x1024 main image before fusion; exact hidden transformation and pixel determinism remain unknown.",
+    "daoli": "The captured raw-video decoder applies vflip; the output also has a vertical-flip MP4 display matrix. Additional in-application raw-frame changes are not inferred from this evidence.",
+    "lasong": "The captured main-input sample confirms BT.709/TV signaling and a centered 576x1024 image with 112-pixel padding; unobserved source-aspect-ratio behavior is not certified.",
+    "ronghe": "Fusion was captured with the main input used as its own auxiliary at 50% opacity. This cannot prove the external application's general two-source blending implementation.",
 }
 STREAM_FIELDS = (
     "index",
@@ -477,7 +477,10 @@ def main() -> int:
 
     report_path = args.report or args.output.with_suffix(".comparison.json")
     report: dict[str, Any] = {
-        "mode": SWITCH_MODES[switches[0]] if len(switches) == 1 else "shipinghao_mode5_" + "+".join(switches),
+        "mode": (
+            SWITCH_MODES[switches[0]] if len(switches) == 1
+            else "shipinghao_mode5_" + ("+".join(switches) or "baseline")
+        ),
         "switches": switches,
         "opacity": args.opacity,
         "input": str(args.input.resolve()),
