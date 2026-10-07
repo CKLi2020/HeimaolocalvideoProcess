@@ -6,7 +6,7 @@ from modes.shipinhao.mode_qixia_mode5 import ModeQixiaMode5
 class ModeLimeng1007(ModeQixiaMode5):
     id = "shipinhao/limeng_1007"
     name = "立梦1007"
-    sort_priority = -201
+    sort_priority = -202
     supports_mode5_switches = False
     capture_output = False
     output_suffix = "_limeng_1007"

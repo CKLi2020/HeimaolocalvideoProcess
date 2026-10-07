@@ -28,9 +28,9 @@ def _state(**updates):
 def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     modes = {mode.id: mode for mode in load_modes()["视频号处理"]}
     assert modes[MODE.id] is MODE
-    assert MODE.name == "栖霞"
+    assert MODE.name == "栖霞1007"
     assert not MODE.needs_aux and MODE.gpu_supported and MODE.has_gpu_command()
-    assert MODE.capture_output
+    assert not getattr(MODE, "capture_output", False)
     assert MODE.supports_copies and MODE.output_count({}) == 1
     assert MODE.output_count({"copies": 999}) == 100
     assert MODE.supports_mode5_switches
@@ -186,7 +186,7 @@ def test_qixia_all_switch_combinations_use_main_input(tmp_path, daoli, lasong, r
 
 
 @pytest.mark.parametrize("packaged", [False, True])
-def test_limeng_is_first_and_original_qixia_is_preserved(
+def test_limeng_is_first_and_dated_qixia_is_preserved(
     monkeypatch, tmp_path, packaged,
 ):
     if packaged:
@@ -195,8 +195,8 @@ def test_limeng_is_first_and_original_qixia_is_preserved(
     ids = [mode.id for mode in modes]
     assert ids == [
         "shipinhao/limeng_1007",
-        "shipinhao/liuying_v15",
         "shipinhao/qixia_mode5",
+        "shipinhao/liuying_v15",
         "shipinhao/heimao_luoyue",
         "shipinhao/caishen0923",
         "shipinhao/tianjia0923",
@@ -207,10 +207,10 @@ def test_limeng_is_first_and_original_qixia_is_preserved(
     assert LIMENG_MODE.sort_priority < min(
         getattr(mode, "sort_priority", 0) for mode in modes[1:]
     )
-    assert modes[2] is MODE
-    assert MODE.name == "栖霞"
+    assert modes[1] is MODE
+    assert MODE.name == "栖霞1007"
     assert MODE.id == "shipinhao/qixia_mode5"
-    assert MODE.capture_output and MODE.supports_mode5_switches
+    assert not getattr(MODE, "capture_output", False) and MODE.supports_mode5_switches
 
 
 def test_limeng_forces_only_inversion_and_hides_effect_settings(tmp_path):
