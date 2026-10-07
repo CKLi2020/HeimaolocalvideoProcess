@@ -29,6 +29,7 @@ _REQUIRED = (
     "qianchuan_fission_recipe",
     "qianchuan_fission_filter",
     "qianchuan_verify_timestamps",
+    "qixia_pipeline_plan",
 )
 
 # 第二颗受保护核心 app/_random_frame_swap_core.pyd 的导出清单。它不从这里加载

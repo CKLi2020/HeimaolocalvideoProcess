@@ -6,6 +6,13 @@ argument-hint: 'Describe the worker script, platform, channel name, input roles,
 
 # Video Channel Worker Integration
 
+For the complete capture-to-Release workflow, new channels, historical-channel
+derivation, or explicitly requested in-place updates, use
+[Video Channel Lifecycle](../video-channel-lifecycle/SKILL.md). This legacy skill
+remains available for worker-only integrations. The new skill is standalone and
+documents the current service execution path, multi-setting integration, and
+tool-root `capture` output policy.
+
 Use this workflow to turn one or more standalone Python video workers into selectable channels in this repository. A completed integration must work on CPU-only machines and use supported NVIDIA or AMD hardware encoding when selected.
 
 ## Required Inputs

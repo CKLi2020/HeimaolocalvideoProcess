@@ -116,6 +116,11 @@ modes/douyin/feimao_recipe.py      FILTER_GRAPH（滤镜图）+ FFARGS（编码�
 
 ### 3. 外层程序
 
+栖霞模式五的滤镜和 CPU 编码计划通过 `qixia_pipeline_plan` 接入主原生核，
+对应 `FCALGO:qixia.1007.pipeline` 标记。开发等价实现、必需导出、构建 smoke
+及发布启动器的核心自检同步维护；worker 不再保留明文计划常量。
+融合透明度与三开关传入该 API，非法透明度在进入虚拟化区域前拒绝。
+
 Nuitka 使用 standalone 模式生成完整程序目录。这里不再给外层 EXE 套 VMProtect，因为最终外层由 SProtect 处理，避免重复加壳造成启动或兼容问题。
 
 ## 二、打包前准备

@@ -25,7 +25,8 @@ def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     modes = {mode.id: mode for mode in load_modes()["视频号处理"]}
     assert modes[MODE.id] is MODE
     assert MODE.name == "栖霞"
-    assert MODE.needs_aux and MODE.gpu_supported and MODE.has_gpu_command()
+    assert not MODE.needs_aux and MODE.gpu_supported and MODE.has_gpu_command()
+    assert MODE.capture_output
     assert MODE.supports_copies and MODE.output_count({}) == 1
     assert MODE.output_count({"copies": 999}) == 100
     assert MODE.supports_mode5_switches
@@ -51,6 +52,7 @@ def test_qixia_mode_is_discovered_and_allows_effect_combinations(tmp_path):
     assert "colorprim=bt709" in command
     assert command.count("scale=576:1024,pad=576:1248:0:112:black,setsar=1,vflip") == 2
     assert "force_original_aspect_ratio" not in command and "crop=" not in command
+    assert "-refs 4" in command and "b-adapt=0" in command
 
 
 def test_qixia_cpu_conversion_and_gpu_commands(tmp_path):
@@ -86,7 +88,8 @@ def test_qixia_cpu_conversion_and_gpu_commands(tmp_path):
         state, str(source), str(auxiliary), use_gpu=False, out_base=str(output_base)
     )
     assert not error and not is_gpu
-    assert str(auxiliary) in command and "blend=" in command and "vflip" in command
+    assert str(auxiliary) not in command and "blend=" in command and "vflip" in command
+    assert "A*0.50+B*0.50" in command
     assert "-x264-params" in command
     assert str(output_base) + ".mp4.encoding.mp4" in command
 
@@ -135,3 +138,41 @@ def test_qixia_cpu_conversion_and_gpu_commands(tmp_path):
         assert "libx264" not in gpu_command
         assert all(option not in gpu_command for option in ("-x264-params", "-refs", "-bf"))
         assert str(tmp_path / f"{vendor}.part.mp4.encoding.mp4") in gpu_command
+
+
+@pytest.mark.parametrize("opacity", [-1, 101, 50.5, True, "50"])
+def test_qixia_invalid_opacity_is_reported(tmp_path, opacity):
+    source = tmp_path / "main.mp4"
+    source.touch()
+    command, is_gpu, error = MODE.render(
+        _state(mode5_opacity=opacity), str(source), use_gpu=False,
+        out_base=str(tmp_path / "invalid.part"),
+    )
+    assert not command and not is_gpu
+    assert "opacity" in error
+
+
+@pytest.mark.parametrize("daoli", [False, True])
+@pytest.mark.parametrize("lasong", [False, True])
+@pytest.mark.parametrize("ronghe", [False, True])
+def test_qixia_all_switch_combinations_use_main_input(tmp_path, daoli, lasong, ronghe):
+    source = tmp_path / "main.mp4"
+    source.touch()
+    command, is_gpu, error = MODE.render(
+        _state(mode5_daoli=daoli, mode5_lasong=lasong, mode5_ronghe=ronghe,
+               mode5_opacity=25),
+        str(source), use_gpu=False, out_base=str(tmp_path / "combination.part"),
+    )
+    assert command and not is_gpu and not error
+    assert ("vflip" in command) is daoli
+    assert ("colorprim=bt709" in command) is lasong
+    assert ("blend=" in command) is ronghe
+    if ronghe:
+        assert "A*0.25+B*0.75" in command
+
+
+def test_qixia_keeps_existing_name_id_and_list_position():
+    modes = load_modes()["视频号处理"]
+    assert [mode.id for mode in modes].index(MODE.id) == 1
+    assert MODE.name == "栖霞"
+    assert MODE.sort_priority == -150
