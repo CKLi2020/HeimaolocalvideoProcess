@@ -1,11 +1,13 @@
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from core.tool_paths import prepare_capture_directory
 from engine.local_processor import LocalProcessorService
+from modes.shipinhao.mode_limeng_1007 import MODE as LIMENG_MODE
 from modes.shipinhao.mode_qixia_mode5 import MODE
 
 
@@ -50,7 +52,7 @@ def test_capture_reports_creation_and_write_errors(tmp_path):
             prepare_capture_directory(str(tmp_path), "capture")
 
 
-def test_qixia_service_reports_outside_capture_and_does_not_run(tmp_path):
+def test_capture_only_service_reports_outside_capture_and_does_not_run(tmp_path):
     service = LocalProcessorService.__new__(LocalProcessorService)
     service.config = {}
     service._stop = threading.Event()
@@ -61,9 +63,41 @@ def test_qixia_service_reports_outside_capture_and_does_not_run(tmp_path):
     LocalProcessorService._run(
         service,
         {"use_gpu": False, "tool_root": str(tmp_path), "output_dir": str(tmp_path / "outside")},
-        MODE, [source], [], logs.append, lambda _value: None,
+        SimpleNamespace(capture_output=True), [source], [], logs.append, lambda _value: None,
         lambda *result: done.append(result),
     )
     assert done[0][:3] == (0, 1, 1)
     assert any("Capture output must be inside" in line for line in logs)
     assert not (tmp_path / "outside").exists()
+
+
+def test_limeng_service_uses_user_selected_folder(tmp_path, monkeypatch):
+    import engine.local_processor as local_processor
+
+    service = LocalProcessorService.__new__(LocalProcessorService)
+    service.config = {}
+    service._stop = threading.Event()
+    source = tmp_path / "input.mp4"
+    source.touch()
+    selected = tmp_path / "user-selected" / "videos"
+    paths = []
+    done = []
+    monkeypatch.setattr(local_processor, "probe_duration", lambda *_args: 1.0)
+    monkeypatch.setattr(local_processor, "verify_output", lambda *_args, **_kwargs: (True, "ok"))
+
+    def run_commands(_state, _mode, _source, _aux, base, *_args):
+        paths.append(Path(base + ".mp4"))
+        paths[-1].write_bytes(b"test-output")
+        return 0, False
+
+    monkeypatch.setattr(service, "_run_commands", run_commands)
+    monkeypatch.setattr(LIMENG_MODE, "finalize_render", lambda *_args: None)
+    LocalProcessorService._run(
+        service, {"use_gpu": False, "output_dir": str(selected)}, LIMENG_MODE,
+        [source], [], lambda _line: None, lambda _value: None,
+        lambda *result: done.append(result),
+    )
+    assert done[0][:3] == (1, 0, 1)
+    assert paths[0].parent == selected
+    assert len(list(selected.glob("*.mp4"))) == 1
+    assert not (tmp_path / "capture").exists()

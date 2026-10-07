@@ -36,6 +36,9 @@ assert list(packaged_groups) == [
     "TK处理", "百家处理", "哔哩处理", "千川处理",
 ]
 assert [mode.name for mode in packaged_groups["千川处理"]] == ["刹夜黑五", "漫落惊鸿"]
+assert [mode.name for mode in packaged_groups["视频号处理"]] == [
+    "立梦1007", "流萤1003", "栖霞", "爆闪", "云水", "青岚",
+]
 
 
 app = QApplication.instance() or QApplication([])
@@ -106,9 +109,14 @@ assert page.dedup_mode.currentText() == "中度"
 
 _frame, shipinhao = page._platforms["视频号处理"]
 assert [shipinhao.itemText(i) for i in range(shipinhao.count())] == [
-    "流萤1003", "栖霞", "爆闪", "云水", "青岚",
+    "立梦1007", "流萤1003", "栖霞", "爆闪", "云水", "青岚",
 ]
-assert shipinhao.currentText() == "流萤1003"
+assert shipinhao.currentText() == "立梦1007"
+liuying_index = next(
+    index for index in range(shipinhao.count())
+    if shipinhao.itemData(index).id == "shipinhao/liuying_v15"
+)
+shipinhao.setCurrentIndex(liuying_index)
 page._activate("视频号处理")
 assert page.current_mode.id == "shipinhao/liuying_v15"
 assert not hasattr(page, "random_enhance")
@@ -150,8 +158,10 @@ qixia_index = next(
     index for index in range(shipinhao.count())
     if shipinhao.itemData(index).id == "shipinhao/qixia_mode5"
 )
+assert qixia_index == 2
 shipinhao.setCurrentIndex(qixia_index)
 page._activate("视频号处理")
+assert page.current_mode.name == "栖霞"
 assert not page.aux_edit.isEnabled()
 assert all(not button.isEnabled() for button in page.aux_edit._path_buttons)
 assert not page.mode5_options.isHidden()
@@ -165,24 +175,41 @@ assert page.mode5_opacity.value() == 50
 assert page.mode5_opacity.minimum() == 0 and page.mode5_opacity.maximum() == 100
 assert page.output_edit.text() == str(page.root_dir / "capture")
 assert page.output_edit.isReadOnly()
-page.mode5_ronghe.setChecked(False)
-assert not page.mode5_opacity.isEnabled()
-page.mode5_ronghe.setChecked(True)
-page.mode5_opacity.setValue(25)
+assert all(not button.isEnabled() for button in page.output_edit._path_buttons)
+
+limeng_index = next(
+    index for index in range(shipinhao.count())
+    if shipinhao.itemData(index).id == "shipinhao/limeng_1007"
+)
+assert limeng_index == 0
+shipinhao.setCurrentIndex(limeng_index)
+page._activate("视频号处理")
+assert page.current_mode.name == "立梦1007"
+assert page.mode5_options.isHidden()
+assert not page.aux_edit.isEnabled()
+assert not page.output_edit.isReadOnly()
+assert page.output_edit.text() == str(page.root_dir / "output")
+assert all(button.isEnabled() for button in page.output_edit._path_buttons)
+selected_output = str(page.root_dir / "output" / "user-selected-qixia")
+with patch("app.pages.local_processor_page.QFileDialog.getExistingDirectory",
+           return_value=selected_output):
+    page.output_edit._path_buttons[0].click()
+assert page.output_edit.text() == selected_output
 page.main_edit.setText("main.mp4")
 with patch.object(page, "_files", return_value=[Path("main.mp4")]):
-    with patch.object(page.service, "start", return_value=True) as qixia_start:
+    with patch.object(page.service, "start", return_value=True) as limeng_start:
         page.start()
-assert qixia_start.call_args.args[0]["mode5_opacity"] == 25
-assert qixia_start.call_args.args[0]["tool_root"] == str(page.root_dir.resolve())
-assert qixia_start.call_args.args[3] == []
+assert limeng_start.call_args.args[0]["output_dir"] == selected_output
+assert limeng_start.call_args.args[0]["tool_root"] == str(page.root_dir.resolve())
+assert limeng_start.call_args.args[1].id == "shipinhao/limeng_1007"
+assert limeng_start.call_args.args[3] == []
 page._on_done(0, 0, 0, "", False)
 
 shipinhao.setCurrentIndex(heimao_index)
 page._activate("视频号处理")
 assert page.mode5_options.isHidden()
 assert not page.output_edit.isReadOnly()
-assert page.output_edit.text() == str(page.root_dir / "output")
+assert page.output_edit.text() == selected_output
 
 caishen_index = next(
     index for index in range(shipinhao.count())
