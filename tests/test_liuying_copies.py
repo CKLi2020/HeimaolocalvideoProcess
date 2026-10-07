@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -133,3 +134,37 @@ def test_liuying_restores_valid_encode_when_retime_corrupts_output(tmp_path):
     output = Path(str(base) + ".mp4")
     assert verify_output({"ffprobe_path": ffprobe}, output)[0]
     assert not Path(str(base) + ".original.mp4").exists()
+
+
+def test_liuying_probe_retries_transient_failures_without_console(monkeypatch):
+    calls = []
+    results = iter([
+        SimpleNamespace(returncode=1, stderr="", stdout=""),
+        SimpleNamespace(returncode=0, stderr="", stdout='{"streams": []}'),
+    ])
+
+    def run(command, **options):
+        calls.append(options)
+        return next(results)
+
+    monkeypatch.setattr(worker.subprocess, "run", run)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+    assert worker.run_probe("ffprobe.exe", Path("output.mp4")) == {"streams": []}
+    assert len(calls) == 2
+    assert all(
+        call["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        for call in calls
+    )
+
+
+def test_liuying_probe_reports_all_retry_failures(monkeypatch):
+    monkeypatch.setattr(
+        worker.subprocess,
+        "run",
+        lambda *_args, **_options: SimpleNamespace(
+            returncode=7, stderr="", stdout="",
+        ),
+    )
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+    with pytest.raises(RuntimeError, match=r"after 3 attempts.*exit code 7.*no diagnostic output"):
+        worker.run_probe("ffprobe.exe", Path("output.mp4"))

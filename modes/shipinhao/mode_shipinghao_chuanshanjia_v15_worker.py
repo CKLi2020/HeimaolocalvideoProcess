@@ -12,9 +12,11 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
+from engine import HIDDEN_SUBPROCESS
 from engine.mp4_tool import iter_mp4_boxes
 from engine.native_core import core as _native_core
 
@@ -83,32 +85,40 @@ def resolve_tool(name: str, script_dir: Path) -> str:
     raise FileNotFoundError(f"Could not find {name} beside the worker, in bin/, or on PATH")
 
 
-def run_probe(ffprobe: str, path: Path) -> dict[str, Any]:
-    result = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-show_programs",
-            "-show_chapters",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result.returncode:
-        raise RuntimeError(f"ffprobe failed for {path}: {result.stderr.strip()}")
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"ffprobe returned invalid JSON for {path}: {exc}") from exc
+def run_probe(ffprobe: str, path: Path, attempts: int = 3) -> dict[str, Any]:
+    errors = []
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-show_programs",
+                "-show_chapters",
+                "-of",
+                "json",
+                str(path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **HIDDEN_SUBPROCESS,
+        )
+        if result.returncode == 0:
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                errors.append(f"attempt {attempt}: invalid JSON: {exc}")
+        else:
+            details = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+            errors.append(f"attempt {attempt}: exit code {result.returncode}: {details}")
+        if attempt < attempts:
+            time.sleep(0.2)
+    raise RuntimeError(f"ffprobe failed for {path} after {attempts} attempts: {'; '.join(errors)}")
 
 
 def stable_mapping(source: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
